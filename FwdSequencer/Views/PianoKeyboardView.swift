@@ -5,32 +5,35 @@ struct PianoKeyboardView: View {
     let scale: MusicalScale
     var playingNote: Int? = nil
     var key: Int = 0
-
-    @State private var scrollLock = false
+    var onPreview: ((Int) -> Void)? = nil
 
     // Full 88-key range: A0 (21) – C8 (108)
-    private let midiRange = 21...108
     private let keyH:   CGFloat = 140
     // Key width is derived from container size at render time (see body)
 
-    private func isWhiteKey(_ midi: Int) -> Bool {
-        [0, 2, 4, 5, 7, 9, 11].contains(midi % 12)
+    // Keyboard geometry is fixed for the whole 88-key range, so these are computed
+    // once at type-load rather than rebuilt on every body evaluation (this view
+    // re-renders on every playing-note change during playback).
+    private static let midiRange = 21...108
+    private static let whitePitchClasses: Set<Int> = [0, 2, 4, 5, 7, 9, 11]
+    private static func isWhiteKey(_ midi: Int) -> Bool {
+        whitePitchClasses.contains(midi % 12)
     }
-
-    private var whiteKeys: [Int] { midiRange.filter { isWhiteKey($0) } }
-    private var blackKeys: [Int] { midiRange.filter { !isWhiteKey($0) } }
-
+    private static let whiteKeys: [Int] = midiRange.filter { isWhiteKey($0) }
+    private static let blackKeys: [Int] = midiRange.filter { !isWhiteKey($0) }
     // Index of each white key (used to position black keys)
-    private var whiteKeyIndex: [Int: Int] {
+    private static let whiteKeyIndex: [Int: Int] =
         Dictionary(uniqueKeysWithValues: whiteKeys.enumerated().map { ($1, $0) })
-    }
+
+    private var whiteKeys: [Int] { Self.whiteKeys }
+    private var blackKeys: [Int] { Self.blackKeys }
 
     // X offset of a black key's leading edge within the ZStack
     private func blackKeyX(_ midi: Int, whiteW: CGFloat) -> CGFloat {
         let blackW = whiteW * 0.65
         var left = midi - 1
-        while left >= 21 && !isWhiteKey(left) { left -= 1 }
-        guard let idx = whiteKeyIndex[left] else { return 0 }
+        while left >= 21 && !Self.isWhiteKey(left) { left -= 1 }
+        guard let idx = Self.whiteKeyIndex[left] else { return 0 }
         return CGFloat(idx + 1) * whiteW - blackW / 2
     }
 
@@ -51,6 +54,7 @@ struct PianoKeyboardView: View {
             let entry = NoteEntry(midiNote: midi)
             let insertAt = notePool.firstIndex(where: { $0.midiNote > midi }) ?? notePool.endIndex
             notePool.insert(entry, at: insertAt)
+            onPreview?(midi)
         }
     }
 
@@ -110,22 +114,6 @@ struct PianoKeyboardView: View {
                     // Small delay lets layout complete before scrolling
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
                         proxy.scrollTo(60, anchor: .center)
-                    }
-                }
-                .overlay(alignment: .topTrailing) {
-                    Button { scrollLock.toggle() } label: {
-                        Image(systemName: scrollLock ? "lock.fill" : "lock.open")
-                            .font(.caption2)
-                            .padding(5)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 5))
-                    }
-                    .padding(4)
-                }
-                .onChange(of: playingNote) { newNote in
-                    guard scrollLock, let note = newNote else { return }
-                    let target = isWhiteKey(note) ? note : note - 1
-                    withAnimation(.easeInOut(duration: 0.15)) {
-                        proxy.scrollTo(target, anchor: .center)
                     }
                 }
             }

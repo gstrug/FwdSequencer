@@ -7,6 +7,7 @@ struct TrackDetailView: View {
 
     @State private var showNoteParams = false
     @State private var showDeleteAlert = false
+    @State private var showScalePicker = false
 
     var body: some View {
         ScrollView {
@@ -43,6 +44,9 @@ struct TrackDetailView: View {
         }
         .sheet(isPresented: $showNoteParams) {
             NoteParametersView(notePool: $track.notePool)
+        }
+        .sheet(isPresented: $showScalePicker) {
+            ScalePickerView(selectedScale: $track.scale)
         }
         .alert("Delete \"\(track.name)\"?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) { onDelete() }
@@ -83,12 +87,12 @@ struct TrackDetailView: View {
                         }
                     }
                     .pickerStyle(.menu)
-                    Picker("", selection: $track.scale) {
-                        ForEach(MusicalScale.allCases, id: \.self) {
-                            Text($0.rawValue).tag($0)
-                        }
+                    Button {
+                        showScalePicker = true
+                    } label: {
+                        Text(track.scale.rawValue)
                     }
-                    .pickerStyle(.menu)
+                    .buttonStyle(.bordered)
                 }
             }
             .padding(.vertical, 8)
@@ -103,7 +107,7 @@ struct TrackDetailView: View {
                 PianoKeyboardView(
                     notePool: $track.notePool,
                     scale: track.scale,
-                    playingNote: store.playingNotes[track.id],
+                    playingNote: store.playback.playingNotes[track.id],
                     key: track.key
                 )
 
@@ -178,6 +182,62 @@ struct TrackDetailView: View {
     static let noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
 }
 
+// MARK: - Step Type Picker Sheet
+
+struct StepTypePickerSheet: View {
+    @Binding var selectedType: StepType
+    @Environment(\.dismiss) private var dismiss
+
+    private func description(for type: StepType) -> String {
+        switch type {
+        case .fwd:    return "Play the current note, then move the pointer forward"
+        case .back:   return "Play the current note, then move the pointer backward"
+        case .rep:    return "Play the current note N times without moving"
+        case .play:   return "Jump to note N in the pool and play it"
+        case .skip:   return "Hold — keep the previous note ringing, don't play a new one"
+        case .random: return "Jump to a random step and execute it"
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(StepType.allCases, id: \.self) { type in
+                Button {
+                    selectedType = type
+                    dismiss()
+                } label: {
+                    HStack(alignment: .center, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(type.rawValue)
+                                .font(.body)
+                                .foregroundStyle(.primary)
+                            Text(description(for: type))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if type == selectedType {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                    .padding(.vertical, 4)
+                }
+                .buttonStyle(.plain)
+            }
+            .navigationTitle("Choose Step Type")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
 // MARK: - Step Row
 
 struct StepRow: View {
@@ -185,39 +245,91 @@ struct StepRow: View {
     let index: Int
     let onDelete: () -> Void
 
-    private var usesN: Bool {
-        step.type == .fwd || step.type == .back
+    @State private var showTypePicker = false
+
+    private var currentDescription: String {
+        switch step.type {
+        case .fwd:
+            return step.n == 1 ? "Play current, move forward 1"
+                               : "Play current, move forward \(step.n)"
+        case .back:
+            return step.n == 1 ? "Play current, move back 1"
+                               : "Play current, move back \(step.n)"
+        case .rep:
+            return step.n == 1 ? "Play current note once"
+                               : "Play current note \(step.n) times"
+        case .play:   return "Jump to pool note \(step.n) and play it"
+        case .skip:   return "Hold — previous note keeps ringing"
+        case .random: return "Jump to a random step and execute it"
+        }
+    }
+
+    private var stepperLabel: String? {
+        switch step.type {
+        case .fwd:  return "Advance: \(step.n)"
+        case .back: return "Retreat: \(step.n)"
+        case .rep:  return "×\(step.n)"
+        case .play: return "Note: \(step.n)"
+        default:    return nil
+        }
+    }
+
+    private var stepperRange: ClosedRange<Int> {
+        switch step.type {
+        case .rep:  return 1...32
+        case .play: return 1...128
+        default:    return 1...16
+        }
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Text("\(index + 1)")
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .frame(width: 22, alignment: .trailing)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 12) {
+                Text("\(index + 1)")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22, alignment: .trailing)
 
-            Picker("", selection: $step.type) {
-                ForEach(StepType.allCases, id: \.self) {
-                    Text($0.rawValue).tag($0)
+                Button {
+                    showTypePicker = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(step.type.rawValue)
+                            .font(.body)
+                        Image(systemName: "chevron.up.chevron.down")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+                    .foregroundStyle(.primary)
                 }
-            }
-            .pickerStyle(.menu)
-            .frame(maxWidth: 140)
+                .buttonStyle(.plain)
+                .sheet(isPresented: $showTypePicker) {
+                    StepTypePickerSheet(selectedType: $step.type)
+                }
 
-            if usesN {
-                Stepper("N: \(step.n)", value: $step.n, in: 1...8)
-                    .frame(maxWidth: 130)
+                if let label = stepperLabel {
+                    Stepper(label, value: $step.n, in: stepperRange)
+                        .frame(maxWidth: 150)
+                }
+
+                Spacer()
+
+                Button(role: .destructive, action: onDelete) {
+                    Image(systemName: "minus.circle.fill")
+                        .foregroundColor(.red)
+                }
+                .buttonStyle(.plain)
             }
 
-            Spacer()
-
-            Button(role: .destructive, action: onDelete) {
-                Image(systemName: "minus.circle.fill")
-                    .foregroundColor(.red)
-            }
-            .buttonStyle(.plain)
+            Text(currentDescription)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 34)
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, 4)
     }
 }
 

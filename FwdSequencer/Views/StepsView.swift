@@ -15,13 +15,14 @@ struct StepsView: View {
                     Spacer()
                 } else {
                     List {
-                        // Use step.id (UUID) so SwiftUI tracks identity correctly
                         ForEach(Array(steps.enumerated()), id: \.element.id) { idx, _ in
                             StepRow(step: $steps[idx], index: idx) {
                                 steps.remove(at: idx)
                             }
                         }
+                        .onMove { from, to in steps.move(fromOffsets: from, toOffset: to) }
                     }
+                    .environment(\.editMode, .constant(.active))
                 }
 
                 HStack {

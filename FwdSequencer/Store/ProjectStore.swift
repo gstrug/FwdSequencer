@@ -26,13 +26,14 @@ class ProjectStore: ObservableObject {
     }
     @Published var isPlaying: Bool = false
     @Published var isPaused: Bool = false
-    @Published var currentBar: Int = 0
-    @Published var playingNotes: [UUID: Int] = [:]
-    @Published var activeSteps: [UUID: Int] = [:]
-    @Published var trackLevels: [UUID: Float] = [:]
-    @Published var masterLevel: Float = 0
 
-    let audioEngine = AudioEngineManager()
+    /// High-frequency VU-meter telemetry, isolated from this store so meter
+    /// updates don't invalidate the whole view tree during playback.
+    let levels = LevelMonitor()
+    /// Note/step/bar telemetry, isolated for the same reason.
+    let playback = PlaybackMonitor()
+
+    let audioEngine = AudioEngineManager.shared
     let sequencer = SequencerEngine()
     let pluginManager = PluginManager.shared
 
@@ -50,27 +51,27 @@ class ProjectStore: ObservableObject {
         sequencer.onNotePlayed = { [weak self] trackID, midiNote in
             DispatchQueue.main.async {
                 if let note = midiNote {
-                    self?.playingNotes[trackID] = note
+                    self?.playback.playingNotes[trackID] = note
                 } else {
-                    self?.playingNotes.removeValue(forKey: trackID)
+                    self?.playback.playingNotes.removeValue(forKey: trackID)
                 }
             }
         }
 
         audioEngine.onLevelUpdate = { [weak self] id, level in
-            DispatchQueue.main.async { self?.trackLevels[id] = level }
+            DispatchQueue.main.async { self?.levels.trackLevels[id] = level }
         }
 
         audioEngine.onMasterLevelUpdate = { [weak self] level in
-            DispatchQueue.main.async { self?.masterLevel = level }
+            DispatchQueue.main.async { self?.levels.masterLevel = level }
         }
 
         sequencer.onBarChange = { [weak self] bar in
-            DispatchQueue.main.async { self?.currentBar = bar }
+            DispatchQueue.main.async { self?.playback.currentBar = bar }
         }
 
         sequencer.onStepChange = { [weak self] trackID, stepIdx in
-            DispatchQueue.main.async { self?.activeSteps[trackID] = stepIdx }
+            DispatchQueue.main.async { self?.playback.activeSteps[trackID] = stepIdx }
         }
 
         sequencer.onBeat = { [weak self] isDownbeat in
@@ -92,6 +93,47 @@ class ProjectStore: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] vol in self?.audioEngine.setMasterVolume(vol) }
             .store(in: &cancellables)
+
+        // Apply volume/pan to mixer nodes whenever track mixer state changes.
+        // Running on the main thread avoids data races with node graph modifications.
+        // Only touch the audio node graph when a volume/pan value actually changed
+        // (removeDuplicates) — not on every unrelated project edit (rename, note
+        // toggle, tempo, step change all mutate `project` and would otherwise
+        // re-push volume+pan to every mixer node).
+        $project
+            .map { project -> [TrackMix] in
+                project.tracks.map { TrackMix(id: $0.id, volume: $0.mixer.volume, pan: $0.mixer.pan) }
+            }
+            .removeDuplicates()
+            .sink { [weak self] states in
+                guard let self else { return }
+                for mix in states {
+                    audioEngine.setVolume(mix.volume, for: mix.id)
+                    audioEngine.setPan(mix.pan, for: mix.id)
+                }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Lightweight snapshot of a track's mixer routing, used to drive the
+    /// volume/pan Combine pipeline with cheap `removeDuplicates` comparison.
+    private struct TrackMix: Equatable {
+        let id: UUID
+        let volume: Float
+        let pan: Float
+    }
+
+    /// Claim the shared engine's level callbacks for this store. The engine is a
+    /// singleton shared with SongStore, so whichever document is on screen must
+    /// (re)claim these when it appears. Call from ProjectView.onAppear.
+    func activate() {
+        audioEngine.onLevelUpdate = { [weak self] id, level in
+            DispatchQueue.main.async { self?.levels.trackLevels[id] = level }
+        }
+        audioEngine.onMasterLevelUpdate = { [weak self] level in
+            DispatchQueue.main.async { self?.levels.masterLevel = level }
+        }
+        audioEngine.setMasterVolume(project.masterVolume)
     }
 
     // MARK: - File save / load
@@ -106,22 +148,54 @@ class ProjectStore: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: item)
     }
 
+    /// True during the load/restore window. While set, saveNow keeps the state we
+    /// just loaded rather than re-capturing a plugin that may still be restoring.
+    private var isLoadingInstruments = false
+
     func saveNow() {
-        guard let data = try? JSONEncoder().encode(project) else { return }
-        try? data.write(to: projectURL(for: project.id), options: .atomic)
+        // Build a snapshot copy with current AUv3 states — never mutate self.project
+        // here or it would re-trigger didSet → scheduleSave → infinite loop.
+        var snapshot = project
+        // Skip re-capturing plugin state mid-load (see SongStore.saveNow): reading a
+        // half-restored plugin would clobber the good state we just loaded.
+        if !isLoadingInstruments {
+            for idx in snapshot.tracks.indices {
+                if let state = audioEngine.getPluginState(for: snapshot.tracks[idx].id) {
+                    snapshot.tracks[idx].pluginStateData = state
+                }
+            }
+        }
+        guard let data = try? JSONEncoder().encode(snapshot) else { return }
+        try? data.write(to: projectURL(for: snapshot.id), options: .atomic)
         DispatchQueue.main.async { self.savedSignal.send() }
     }
 
     func load(project: Project) {
         stop()
-        // Remove all existing audio tracks
         for track in self.project.tracks {
             audioEngine.removeTrack(id: track.id)
         }
         self.project = project
-        // Re-add audio nodes for the loaded project
+        let hasPlugins = project.tracks.contains { $0.pluginInfo != nil }
+        if hasPlugins {
+            isLoadingInstruments = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+                self?.isLoadingInstruments = false
+            }
+        }
         for track in project.tracks {
-            audioEngine.addTrack(id: track.id)
+            audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
+            if let plugin = track.pluginInfo {
+                audioEngine.loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
+            }
+        }
+    }
+
+    /// Reads the plugin's current state and saves it into the track model.
+    func capturePluginState(for trackID: UUID) {
+        guard let idx = project.tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        if let state = audioEngine.getPluginState(for: trackID) {
+            project.tracks[idx].pluginStateData = state
         }
     }
 
@@ -153,10 +227,13 @@ class ProjectStore: ObservableObject {
 
     func play() {
         for track in project.tracks {
-            audioEngine.addTrack(id: track.id)
+            audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
+            if let plugin = track.pluginInfo, !audioEngine.hasInstrument(for: track.id) {
+                audioEngine.loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
+            }
         }
         isPlaying = true
-        currentBar = 0
+        playback.currentBar = 0
         sequencer.start(project: project)
     }
 
@@ -164,8 +241,8 @@ class ProjectStore: ObservableObject {
         sequencer.pause()
         isPlaying = false
         isPaused = true
-        playingNotes.removeAll()
-        activeSteps.removeAll()
+        playback.playingNotes.removeAll()
+        playback.activeSteps.removeAll()
     }
 
     func resume() {
@@ -178,16 +255,16 @@ class ProjectStore: ObservableObject {
         sequencer.stop()
         isPlaying = false
         isPaused = false
-        currentBar = 0
-        playingNotes.removeAll()
-        activeSteps.removeAll()
+        playback.currentBar = 0
+        playback.playingNotes.removeAll()
+        playback.activeSteps.removeAll()
     }
 
     func rewind() {
         sequencer.rewind()
-        currentBar = 0
-        playingNotes.removeAll()
-        activeSteps.removeAll()
+        playback.currentBar = 0
+        playback.playingNotes.removeAll()
+        playback.activeSteps.removeAll()
     }
 
     // MARK: - Track management
@@ -195,7 +272,7 @@ class ProjectStore: ObservableObject {
     func addTrack() {
         let track = Track(name: "Track \(project.tracks.count + 1)")
         project.tracks.append(track)
-        audioEngine.addTrack(id: track.id)
+        audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
     }
 
     func deleteTrack(at offsets: IndexSet) {
@@ -215,11 +292,24 @@ class ProjectStore: ObservableObject {
         project.tracks.swapAt(index, index + 1)
     }
 
+    func midiPanic() {
+        sequencer.stop()
+        audioEngine.allNotesOff()
+        isPlaying = false
+        isPaused = false
+        playback.playingNotes.removeAll()
+        playback.activeSteps.removeAll()
+    }
+
+    func setPlugin(_ pluginInfo: PluginInfo?, for trackID: UUID) {
+        audioEngine.loadPlugin(pluginInfo, for: trackID)
+    }
+
     func copyTrack(at index: Int) {
         var copy = project.tracks[index]
         copy.id = UUID()
         copy.name = copy.name + " Copy"
         project.tracks.insert(copy, at: index + 1)
-        audioEngine.addTrack(id: copy.id)
+        audioEngine.addTrack(id: copy.id, volume: copy.mixer.volume, pan: copy.mixer.pan)
     }
 }

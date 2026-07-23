@@ -12,10 +12,8 @@ struct TrackRowView: View {
     @State private var showSteps = false
     @State private var showDeleteAlert = false
     @State private var showPluginPicker = false
-
-    private var activeStep: Int? { store.activeSteps[track.id] }
-    private var isPlaying: Bool { store.playingNotes[track.id] != nil }
-    private var level: Float { store.trackLevels[track.id] ?? 0 }
+    @State private var showScalePicker = false
+    @State private var showPluginEditor = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -29,6 +27,9 @@ struct TrackRowView: View {
             }
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .onChange(of: track.pluginInfo) { newPlugin in
+            store.setPlugin(newPlugin, for: track.id)
+        }
         .onChange(of: track.scale) { _ in pruneNotePool() }
         .onChange(of: track.key)   { _ in pruneNotePool() }
         .sheet(isPresented: $showNoteParams) {
@@ -39,6 +40,13 @@ struct TrackRowView: View {
         }
         .sheet(isPresented: $showPluginPicker) {
             PluginPickerView(selectedPlugin: $track.pluginInfo)
+        }
+        .sheet(isPresented: $showScalePicker) {
+            ScalePickerView(selectedScale: $track.scale)
+        }
+        .fullScreenCover(isPresented: $showPluginEditor) {
+            PluginEditorView(trackID: track.id, trackName: track.name,
+                             onCommitState: { store.capturePluginState(for: track.id) })
         }
         .alert("Delete \"\(track.name)\"?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) { onDelete() }
@@ -65,10 +73,7 @@ struct TrackRowView: View {
             .foregroundStyle(.secondary)
 
             // Playing dot
-            Circle()
-                .fill(isPlaying ? Color.green : Color.secondary.opacity(0.25))
-                .frame(width: 8, height: 8)
-                .animation(.easeInOut(duration: 0.1), value: isPlaying)
+            TrackPlayingDot(trackID: track.id)
 
             // Track name
             Text(track.name)
@@ -91,9 +96,19 @@ struct TrackRowView: View {
 
             Divider().frame(height: 16)
 
+            // Key + scale
+            Text("\(noteNames[track.key]) \(track.scale.rawValue)")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(maxWidth: 100, alignment: .leading)
+
+            Divider().frame(height: 16)
+
             // Mini step indicators
             if !track.steps.isEmpty {
-                miniStepIndicators
+                TrackStepStrip(trackID: track.id, steps: track.steps, compact: true)
+                    .frame(width: 180)
             } else {
                 Text("\(track.notePool.count) notes")
                     .font(.caption2)
@@ -102,8 +117,19 @@ struct TrackRowView: View {
 
             Spacer()
 
+            // Compact volume slider
+            HStack(spacing: 4) {
+                Image(systemName: "speaker.wave.1")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                Slider(value: $track.mixer.volume, in: 0...1)
+                    .frame(width: 70)
+            }
+
+            Divider().frame(height: 16)
+
             // Mini level meter
-            miniLevelMeter
+            TrackLevelMeter(trackID: track.id)
 
             Divider().frame(height: 16)
 
@@ -119,83 +145,39 @@ struct TrackRowView: View {
         .padding(.vertical, 8)
     }
 
-    private var miniStepIndicators: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 3) {
-                ForEach(Array(track.steps.enumerated()), id: \.element.id) { idx, step in
-                    let isActive = activeStep == idx
-                    Text(step.type.abbreviation)
-                        .font(.system(size: 8, weight: isActive ? .bold : .regular, design: .monospaced))
-                        .foregroundStyle(isActive ? .black : .secondary)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
-                        .background(
-                            isActive ? Color.accentColor : Color.secondary.opacity(0.15),
-                            in: RoundedRectangle(cornerRadius: 3)
-                        )
-                        .animation(.easeInOut(duration: 0.08), value: isActive)
-                }
-            }
-            .padding(.horizontal, 2)
-        }
-        .frame(width: 180)
-    }
-
-    private var miniLevelMeter: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Color.secondary.opacity(0.2))
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(meterColor(level))
-                    .frame(width: geo.size.width * CGFloat(min(1, level)))
-                    .animation(.easeOut(duration: 0.08), value: level)
-            }
-        }
-        .frame(width: 50, height: 6)
-    }
-
-    private func meterColor(_ level: Float) -> Color {
-        if level > 0.85 { return .red }
-        if level > 0.6  { return .orange }
-        if level > 0.3  { return .yellow }
-        return .green
-    }
-
     // MARK: - Expanded content
 
     private var expandedContent: some View {
         VStack(alignment: .leading, spacing: 8) {
 
-            // ── Header ──────────────────────────────────────────────
-            HStack(spacing: 8) {
+            // ── Header row 1: sound controls ────────────────────────
+            HStack(spacing: 6) {
                 TextField("Name", text: $track.name)
                     .font(.subheadline.bold())
-                    .frame(minWidth: 80, maxWidth: 120)
+                    .frame(minWidth: 70, maxWidth: 110)
 
                 Divider().frame(height: 20)
 
+                // Key
                 Picker("", selection: $track.key) {
-                    ForEach(0..<12, id: \.self) { n in
-                        Text(noteNames[n]).tag(n)
-                    }
+                    ForEach(0..<12, id: \.self) { n in Text(noteNames[n]).tag(n) }
                 }
                 .pickerStyle(.menu)
                 .fixedSize()
 
-                Picker("", selection: $track.scale) {
-                    ForEach(MusicalScale.allCases, id: \.self) {
-                        Text($0.rawValue).tag($0)
-                    }
+                // Scale
+                Button { showScalePicker = true } label: {
+                    Text(track.scale.rawValue)
+                        .font(.caption).lineLimit(1)
                 }
-                .pickerStyle(.menu)
-                .fixedSize()
+                .buttonStyle(.bordered)
 
                 Divider().frame(height: 20)
 
+                // Division
                 Picker("", selection: $track.tempoDivision) {
                     ForEach(TempoDivision.allCases, id: \.self) {
-                        Text($0.rawValue).tag($0)
+                        Text($0.abbreviation).tag($0)
                     }
                 }
                 .pickerStyle(.menu)
@@ -203,38 +185,46 @@ struct TrackRowView: View {
 
                 Divider().frame(height: 20)
 
-                Button {
-                    showPluginPicker = true
-                } label: {
+                // Plugin
+                Button { showPluginPicker = true } label: {
                     Label(
                         track.pluginInfo?.name ?? "Plugin",
                         systemImage: track.pluginInfo == nil
                             ? "puzzlepiece.extension"
                             : "puzzlepiece.extension.fill"
                     )
-                    .font(.caption)
-                    .lineLimit(1)
+                    .font(.caption).lineLimit(1)
                 }
                 .buttonStyle(.bordered)
                 .tint(track.pluginInfo == nil ? nil : .accentColor)
 
+                // Edit plugin UI — only shown when an AUv3 is loaded
+                if track.pluginInfo != nil {
+                    Button { showPluginEditor = true } label: {
+                        Label("Edit Sound", systemImage: "slider.horizontal.3")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.purple)
+                }
+
                 Spacer()
 
+                // Track management actions
                 Text("\(track.notePool.count) notes")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .font(.caption2).foregroundStyle(.secondary)
+
+                Divider().frame(height: 16)
 
                 Button { store.moveTrackUp(at: index) } label: {
                     Image(systemName: "chevron.up").font(.caption)
                 }
-                .buttonStyle(.plain)
-                .disabled(index == 0)
+                .buttonStyle(.plain).disabled(index == 0)
 
                 Button { store.moveTrackDown(at: index) } label: {
                     Image(systemName: "chevron.down").font(.caption)
                 }
-                .buttonStyle(.plain)
-                .disabled(index == trackCount - 1)
+                .buttonStyle(.plain).disabled(index == trackCount - 1)
 
                 Button { store.copyTrack(at: index) } label: {
                     Image(systemName: "plus.square.on.square").font(.caption)
@@ -278,35 +268,22 @@ struct TrackRowView: View {
 
             // ── Step indicator ───────────────────────────────────────
             if !track.steps.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(Array(track.steps.enumerated()), id: \.element.id) { idx, step in
-                            let isActive = activeStep == idx
-                            Text(step.type.abbreviation)
-                                .font(.system(size: 10,
-                                              weight: isActive ? .bold : .regular,
-                                              design: .monospaced))
-                                .foregroundStyle(isActive ? .black : .secondary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 3)
-                                .background(
-                                    isActive ? Color.accentColor : Color.secondary.opacity(0.15),
-                                    in: RoundedRectangle(cornerRadius: 4)
-                                )
-                                .animation(.easeInOut(duration: 0.08), value: isActive)
-                        }
-                    }
-                    .padding(.horizontal, 2)
-                    .padding(.vertical, 2)
-                }
+                TrackStepStrip(trackID: track.id, steps: track.steps)
             }
 
             // ── 88-key keyboard ──────────────────────────────────────
-            PianoKeyboardView(
+            TrackKeyboard(
+                trackID: track.id,
                 notePool: $track.notePool,
                 scale: track.scale,
-                playingNote: store.playingNotes[track.id],
-                key: track.key
+                key: track.key,
+                onPreview: { midi in
+                    let midiNote = UInt8(midi)
+                    store.audioEngine.playNote(trackID: track.id, midiNote: midiNote, velocity: 100)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        store.audioEngine.stopNote(trackID: track.id, midiNote: midiNote)
+                    }
+                }
             )
 
             // ── Action buttons ───────────────────────────────────────
@@ -349,4 +326,101 @@ struct TrackRowView: View {
     }
 
     private let noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
+}
+
+// MARK: - Telemetry leaf views
+//
+// Each observes ONLY the relevant monitor so a playback update re-renders just
+// the small element that changed — not the whole (per-track) TrackRowView.
+
+private struct TrackPlayingDot: View {
+    let trackID: UUID
+    @EnvironmentObject var playback: PlaybackMonitor
+
+    var body: some View {
+        let isPlaying = playback.playingNotes[trackID] != nil
+        Circle()
+            .fill(isPlaying ? Color.green : Color.secondary.opacity(0.25))
+            .frame(width: 8, height: 8)
+            .animation(.easeInOut(duration: 0.1), value: isPlaying)
+    }
+}
+
+private struct TrackLevelMeter: View {
+    let trackID: UUID
+    @EnvironmentObject var levels: LevelMonitor
+
+    var body: some View {
+        let level = levels.trackLevels[trackID] ?? 0
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.secondary.opacity(0.2))
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(meterColor(level))
+                    .frame(width: geo.size.width * CGFloat(min(1, level)))
+                    .animation(.easeOut(duration: 0.08), value: level)
+            }
+        }
+        .frame(width: 50, height: 6)
+    }
+
+    private func meterColor(_ level: Float) -> Color {
+        if level > 0.85 { return .red }
+        if level > 0.6  { return .orange }
+        if level > 0.3  { return .yellow }
+        return .green
+    }
+}
+
+private struct TrackStepStrip: View {
+    let trackID: UUID
+    let steps: [Step]
+    var compact: Bool = false
+    @EnvironmentObject var playback: PlaybackMonitor
+
+    var body: some View {
+        let active = playback.activeSteps[trackID]
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: compact ? 3 : 4) {
+                ForEach(Array(steps.enumerated()), id: \.element.id) { idx, step in
+                    let isActive = active == idx
+                    Text(step.label)
+                        .font(.system(size: compact ? 8 : 10,
+                                      weight: isActive ? .bold : .regular,
+                                      design: .monospaced))
+                        .foregroundStyle(isActive ? .black : .secondary)
+                        .padding(.horizontal, compact ? 4 : 6)
+                        .padding(.vertical, compact ? 2 : 3)
+                        .background(
+                            isActive ? Color.accentColor : Color.secondary.opacity(0.15),
+                            in: RoundedRectangle(cornerRadius: compact ? 3 : 4)
+                        )
+                        .animation(.easeInOut(duration: 0.08), value: isActive)
+                }
+            }
+            .padding(.horizontal, 2)
+            .padding(.vertical, compact ? 0 : 2)
+        }
+    }
+}
+
+// Wraps the keyboard so only it (not the whole row) re-renders on note events.
+private struct TrackKeyboard: View {
+    let trackID: UUID
+    @Binding var notePool: [NoteEntry]
+    let scale: MusicalScale
+    let key: Int
+    let onPreview: (Int) -> Void
+    @EnvironmentObject var playback: PlaybackMonitor
+
+    var body: some View {
+        PianoKeyboardView(
+            notePool: $notePool,
+            scale: scale,
+            playingNote: playback.playingNotes[trackID],
+            key: key,
+            onPreview: onPreview
+        )
+    }
 }

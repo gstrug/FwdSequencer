@@ -22,16 +22,14 @@ struct MixerView: View {
 
                             // Master strip — fixed on the left
                             MasterStrip(
-                                masterVolume: $store.project.masterVolume,
-                                level: store.masterLevel
+                                masterVolume: $store.project.masterVolume
                             )
                             Divider().padding(.vertical, 8)
 
                             // Per-track strips
                             ForEach(store.project.tracks.indices, id: \.self) { idx in
                                 ChannelStrip(
-                                    track: $store.project.tracks[idx],
-                                    level: store.trackLevels[store.project.tracks[idx].id] ?? 0
+                                    track: $store.project.tracks[idx]
                                 )
                                 if idx < store.project.tracks.count - 1 {
                                     Divider().padding(.vertical, 8)
@@ -59,7 +57,6 @@ struct MixerView: View {
 
 struct MasterStrip: View {
     @Binding var masterVolume: Float
-    let level: Float
 
     var body: some View {
         VStack(spacing: 14) {
@@ -68,7 +65,7 @@ struct MasterStrip: View {
                 .foregroundStyle(.secondary)
                 .frame(width: 80)
 
-            FaderWithMeter(value: $masterVolume, level: level)
+            FaderWithMeter(value: $masterVolume) { MasterVUMeter() }
 
             Text("Vol")
                 .font(.caption2)
@@ -83,7 +80,6 @@ struct MasterStrip: View {
 
 struct ChannelStrip: View {
     @Binding var track: Track
-    let level: Float
 
     var body: some View {
         VStack(spacing: 14) {
@@ -94,7 +90,7 @@ struct ChannelStrip: View {
                 .multilineTextAlignment(.center)
                 .frame(width: 80)
 
-            FaderWithMeter(value: $track.mixer.volume, level: level)
+            FaderWithMeter(value: $track.mixer.volume) { TrackVUMeter(trackID: track.id) }
 
             Text("Vol")
                 .font(.caption2)
@@ -135,9 +131,9 @@ struct ChannelStrip: View {
 
 // MARK: - Fader With Meter (vertical slider + VU side by side)
 
-struct FaderWithMeter: View {
+struct FaderWithMeter<Meter: View>: View {
     @Binding var value: Float
-    let level: Float
+    @ViewBuilder var meter: Meter
 
     private let faderHeight: CGFloat = 160
 
@@ -155,10 +151,28 @@ struct FaderWithMeter: View {
                     .frame(width: 36, height: faderHeight)
             }
 
-            // VU meter alongside
-            VUMeter(level: level)
+            // VU meter alongside — an observing leaf so level ticks re-render
+            // only the meter, not the whole channel strip.
+            meter
                 .frame(width: 10, height: faderHeight)
         }
+    }
+}
+
+// MARK: - VU meter leaves (observe the LevelMonitor directly)
+
+struct TrackVUMeter: View {
+    let trackID: UUID
+    @EnvironmentObject var levels: LevelMonitor
+    var body: some View {
+        VUMeter(level: levels.trackLevels[trackID] ?? 0)
+    }
+}
+
+struct MasterVUMeter: View {
+    @EnvironmentObject var levels: LevelMonitor
+    var body: some View {
+        VUMeter(level: levels.masterLevel)
     }
 }
 

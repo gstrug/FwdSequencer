@@ -6,8 +6,9 @@ struct TransportBar: View {
     @State private var showMixer = false
     @State private var savedVisible = false
     @State private var tapTimes: [Date] = []
-    @State private var beatFlash = false
-    @State private var beatIsDown = false
+    @State private var currentBeat: Int = 0
+
+    private var beatCount: Int { store.project.timeSignature.numerator }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -34,13 +35,9 @@ struct TransportBar: View {
 
             // Play / Pause
             Button {
-                if store.isPlaying {
-                    store.pause()
-                } else if store.isPaused {
-                    store.resume()
-                } else {
-                    store.play()
-                }
+                if store.isPlaying      { store.pause() }
+                else if store.isPaused  { store.resume() }
+                else                    { store.play() }
             } label: {
                 Image(systemName: store.isPlaying ? "pause.fill" : "play.fill")
                     .font(.title2)
@@ -57,6 +54,15 @@ struct TransportBar: View {
             }
             .buttonStyle(.plain)
 
+            // MIDI Panic
+            Button { store.midiPanic() } label: {
+                Text("!")
+                    .font(.body.bold())
+                    .foregroundStyle(.red)
+                    .frame(width: 20)
+            }
+            .buttonStyle(.plain)
+            .help("MIDI Panic — all notes off")
 
             Divider().frame(height: 28)
 
@@ -75,71 +81,86 @@ struct TransportBar: View {
 
             Divider().frame(height: 28)
 
-            // Time Signature
-            HStack(spacing: 4) {
-                Text("Sig").font(.caption).foregroundStyle(.secondary)
+            // Time Signature — fixedSize lets pickers breathe
+            HStack(spacing: 2) {
                 Picker("", selection: $store.project.timeSignature.numerator) {
                     ForEach([2,3,4,5,6,7,8], id: \.self) { Text("\($0)").tag($0) }
                 }
                 .pickerStyle(.menu)
-                .frame(width: 44)
-                .clipped()
-                Text("/").foregroundStyle(.secondary)
+                .fixedSize()
+
+                Text("/")
+                    .font(.body.bold())
+                    .foregroundStyle(.secondary)
+
                 Picker("", selection: $store.project.timeSignature.denominator) {
                     ForEach([2,4,8], id: \.self) { Text("\($0)").tag($0) }
                 }
                 .pickerStyle(.menu)
-                .frame(width: 44)
-                .clipped()
+                .fixedSize()
             }
 
             Divider().frame(height: 28)
 
-            // Bars — beat indicator, bar counter, and bars stepper
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(beatFlash
-                          ? (beatIsDown ? Color.red : Color.green)
-                          : Color.gray.opacity(0.25))
-                    .frame(width: 10, height: 10)
-                    .animation(.easeOut(duration: 0.1), value: beatFlash)
+            // Beat lights + bar counter
+            HStack(spacing: 8) {
+                // One dot per beat — red for beat 1, green for the rest
+                HStack(spacing: 4) {
+                    ForEach(0..<beatCount, id: \.self) { beat in
+                        let isActive = store.isPlaying && beat == currentBeat
+                        let dotColor: Color = beat == 0 ? .red : .green
+                        Circle()
+                            .fill(isActive ? dotColor : Color.gray.opacity(0.25))
+                            .frame(width: 10, height: 10)
+                            .animation(.easeOut(duration: 0.08), value: isActive)
+                    }
+                }
 
-                Text("Bar").font(.caption).foregroundStyle(.secondary)
-                Text("\(store.currentBar + 1)").font(.caption.monospacedDigit())
-                Text("of").font(.caption).foregroundStyle(.secondary)
-
+                // Bar X of [stepper]
+                Text("Bar")
+                    .font(.caption).foregroundStyle(.secondary)
+                BarCounter()
+                    .font(.caption.monospacedDigit())
+                    .frame(minWidth: 20, alignment: .trailing)
+                Text("of")
+                    .font(.caption).foregroundStyle(.secondary)
                 Stepper("\(store.project.numberOfBars)",
                         value: $store.project.numberOfBars,
                         in: 1...32)
+                    .labelsHidden()
+                Text("\(store.project.numberOfBars)")
+                    .font(.caption.monospacedDigit())
+                    .frame(minWidth: 20, alignment: .leading)
             }
             .onReceive(store.beatSignal) { isDownbeat in
-                beatIsDown = isDownbeat
-                beatFlash = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    beatFlash = false
+                if isDownbeat {
+                    currentBeat = 0
+                } else {
+                    currentBeat = (currentBeat + 1) % max(1, beatCount)
                 }
+            }
+            .onChange(of: store.isPlaying) { playing in
+                if !playing { currentBeat = 0 }
             }
 
             Divider().frame(height: 28)
 
-            // Project name
-            TextField("Project Name", text: $store.project.name)
+            // Pattern name
+            TextField("Pattern Name", text: $store.project.name)
                 .font(.subheadline.bold())
                 .multilineTextAlignment(.center)
                 .frame(minWidth: 120, maxWidth: 200)
 
             Spacer()
+                .overlay(alignment: .center) {
+                    Label("Saved", systemImage: "checkmark.circle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.green)
+                        .opacity(savedVisible ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.3), value: savedVisible)
+                }
 
-            if savedVisible {
-                Label("Saved", systemImage: "checkmark.circle.fill")
-                    .font(.caption)
-                    .foregroundStyle(.green)
-                    .transition(.opacity)
-            }
-
-            Button {
-                showMixer = true
-            } label: {
+            Button { showMixer = true } label: {
                 Label("Mixer", systemImage: "slider.vertical.3")
             }
             .buttonStyle(.bordered)
@@ -149,19 +170,29 @@ struct TransportBar: View {
         .background(.bar)
         .overlay(alignment: .bottom) { Divider() }
         .sheet(isPresented: $showMixer) {
-            MixerView().environmentObject(store)
+            MixerView()
+                .environmentObject(store)
+                .environmentObject(store.levels)
         }
         .onReceive(store.savedSignal) {
-            withAnimation { savedVisible = true }
+            savedVisible = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                withAnimation { savedVisible = false }
+                savedVisible = false
             }
+        }
+    }
+
+    // Isolates the once-per-bar counter so the whole transport bar doesn't
+    // re-render when other playback telemetry (notes/steps) changes.
+    private struct BarCounter: View {
+        @EnvironmentObject var playback: PlaybackMonitor
+        var body: some View {
+            Text("\(playback.currentBar + 1)")
         }
     }
 
     private func handleTap() {
         let now = Date()
-        // Reset if more than 2 seconds since last tap
         if let last = tapTimes.last, now.timeIntervalSince(last) > 2 {
             tapTimes.removeAll()
         }
