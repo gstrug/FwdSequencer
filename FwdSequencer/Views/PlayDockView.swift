@@ -2,99 +2,83 @@ import SwiftUI
 
 // MARK: - Play Dock
 //
-// A performance panel that docks at the bottom of the song view. It targets one
-// track at a time, exposes that track's instrument + mixer, and gives a wide,
-// scrollable, free-play (chromatic) keyboard that sends live MIDI — independent of
-// the sequencer, so you can play a melody over a running pattern. Fully additive:
-// it touches nothing in the sequencer or the per-track editors.
+// A performance panel that docks at the bottom of the song view. It drives its own
+// dedicated instrument (the song's `performance` SongTrack) — independent of the
+// sequencer tracks — so you pick a plugin just for playing and jam a melody over a
+// running pattern. Fully additive: nothing in the sequencer or the per-track
+// editors changes.
 
 struct PlayDockView: View {
     @EnvironmentObject var songStore: SongStore
-    @Binding var trackID: UUID?
     var onClose: () -> Void
 
     @State private var showPluginEditor = false
+    @State private var showPluginPicker = false
     @State private var activeNotes = Set<UInt8>()
 
-    // Resolve the target track's index (defaults to the first track).
-    private var trackIndex: Int? {
-        if let tid = trackID, let i = songStore.song.tracks.firstIndex(where: { $0.id == tid }) {
-            return i
-        }
-        return songStore.song.tracks.isEmpty ? nil : 0
-    }
+    private var perf: SongTrack? { songStore.song.performance }
 
     var body: some View {
         VStack(spacing: 8) {
-            if let idx = trackIndex {
-                header(idx)
+            header
+            if let p = perf, p.pluginInfo != nil {
                 PlayableKeyboard(
                     onNoteOn: { note in
                         activeNotes.insert(note)
-                        AudioEngineManager.shared.playNote(
-                            trackID: songStore.song.tracks[idx].id, midiNote: note, velocity: 100)
+                        AudioEngineManager.shared.playNote(trackID: p.id, midiNote: note, velocity: 100)
                     },
                     onNoteOff: { note in
                         activeNotes.remove(note)
-                        AudioEngineManager.shared.stopNote(
-                            trackID: songStore.song.tracks[idx].id, midiNote: note)
+                        AudioEngineManager.shared.stopNote(trackID: p.id, midiNote: note)
                     }
                 )
             } else {
-                Text("Add a track to play")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 24)
-                HStack { Spacer(); closeButton }
+                Button { showPluginPicker = true } label: {
+                    Label("Choose an instrument to play", systemImage: "pianokeys")
+                        .font(.subheadline)
+                }
+                .buttonStyle(.bordered)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
             }
         }
         .padding(10)
         .background(.regularMaterial)
         .overlay(alignment: .top) { Divider() }
-        .onDisappear { releaseAll() }        // backstop: kill any held notes if the dock goes away
+        .onDisappear { releaseAll() }
+        .sheet(isPresented: $showPluginPicker) {
+            PluginPickerView(selectedPlugin: pluginBinding)
+        }
         .fullScreenCover(isPresented: $showPluginEditor) {
-            if let idx = trackIndex {
-                let t = songStore.song.tracks[idx]
-                PluginEditorView(trackID: t.id, trackName: t.name,
-                                 onCommitState: { songStore.capturePluginState(for: t.id) })
+            if let p = perf {
+                PluginEditorView(trackID: p.id, trackName: p.name,
+                                 onCommitState: { songStore.capturePerformanceState() })
             }
         }
     }
 
-    // Track picker + instrument + mixer + close.
-    @ViewBuilder
-    private func header(_ idx: Int) -> some View {
+    // Instrument picker + Edit Sound + volume + close.
+    private var header: some View {
         HStack(spacing: 12) {
-            // Which track the keys drive.
-            Menu {
-                ForEach(songStore.song.tracks) { t in
-                    Button(t.name) { switchTrack(to: t.id) }
-                }
-            } label: {
-                Label(songStore.song.tracks[idx].name, systemImage: "pianokeys")
-                    .font(.subheadline.bold())
+            Button { showPluginPicker = true } label: {
+                Label(perf?.pluginInfo?.name ?? "Choose Instrument",
+                      systemImage: "pianokeys")
+                    .font(.subheadline.bold()).lineLimit(1)
             }
+            .buttonStyle(.bordered)
+            .tint(perf?.pluginInfo == nil ? nil : .accentColor)
 
-            if songStore.song.tracks[idx].pluginInfo != nil {
+            if perf?.pluginInfo != nil {
                 Button { showPluginEditor = true } label: {
                     Label("Edit Sound", systemImage: "slider.horizontal.3").font(.caption)
                 }
                 .buttonStyle(.bordered).tint(.purple)
+
+                Divider().frame(height: 20)
+                Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
+                Slider(value: volumeBinding, in: 0...1).frame(width: 120)
+                if let id = perf?.id { SongTrackMeter(trackID: id) }
             }
-
-            Divider().frame(height: 20)
-
-            Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
-            Slider(value: $songStore.song.tracks[idx].mixer.volume, in: 0...1).frame(width: 110)
-            SongTrackMeter(trackID: songStore.song.tracks[idx].id)
-
-            Text("Pan").font(.caption2).foregroundStyle(.secondary)
-            Slider(value: $songStore.song.tracks[idx].mixer.pan, in: -1...1).frame(width: 80)
-
-            Toggle("M", isOn: $songStore.song.tracks[idx].mixer.isMuted)
-                .toggleStyle(.button).tint(.orange).font(.caption2.bold())
-            Toggle("S", isOn: $songStore.song.tracks[idx].mixer.isSoloed)
-                .toggleStyle(.button).tint(.yellow).font(.caption2.bold())
 
             Spacer()
             closeButton
@@ -112,17 +96,19 @@ struct PlayDockView: View {
         .buttonStyle(.plain)
     }
 
-    private func switchTrack(to id: UUID) {
-        releaseAll()   // stop notes ringing on the previous track before switching
-        trackID = id
+    private var pluginBinding: Binding<PluginInfo?> {
+        Binding(get: { songStore.song.performance?.pluginInfo },
+                set: { songStore.setPerformancePlugin($0) })
+    }
+
+    private var volumeBinding: Binding<Float> {
+        Binding(get: { songStore.song.performance?.mixer.volume ?? 0.8 },
+                set: { songStore.setPerformanceVolume($0) })
     }
 
     private func releaseAll() {
-        guard let idx = trackIndex else { activeNotes.removeAll(); return }
-        let tid = songStore.song.tracks[idx].id
-        for note in activeNotes {
-            AudioEngineManager.shared.stopNote(trackID: tid, midiNote: note)
-        }
+        guard let id = perf?.id else { activeNotes.removeAll(); return }
+        for note in activeNotes { AudioEngineManager.shared.stopNote(trackID: id, midiNote: note) }
         activeNotes.removeAll()
     }
 }
@@ -133,20 +119,20 @@ private struct PlayableKeyboard: View {
     let onNoteOn: (UInt8) -> Void
     let onNoteOff: (UInt8) -> Void
 
-    private static let lowMidi = 24    // C1
-    private static let highMidi = 96   // C7
+    private static let lowMidi = 36    // C2
+    private static let highMidi = 84   // C6 (≈4 octaves; ~3 visible at a time)
     private static func isWhite(_ m: Int) -> Bool { [0,2,4,5,7,9,11].contains(m % 12) }
     private static let whiteKeys: [Int] = (lowMidi...highMidi).filter { isWhite($0) }
     private static let blackKeys: [Int] = (lowMidi...highMidi).filter { !isWhite($0) }
     private static let whiteIndex: [Int: Int] =
         Dictionary(uniqueKeysWithValues: whiteKeys.enumerated().map { ($1, $0) })
 
-    private let whiteW: CGFloat = 46
-    private let keyH: CGFloat = 128
+    private let whiteW: CGFloat = 58   // wide, easy to play
+    private let keyH: CGFloat = 132
     private var blackW: CGFloat { whiteW * 0.6 }
     private var blackH: CGFloat { keyH * 0.62 }
 
-    @State private var centerC = 60   // middle C — the octave button target (always a C = white)
+    @State private var centerC = 60   // middle C — octave-button target (always a C = white)
 
     var body: some View {
         VStack(spacing: 4) {
@@ -198,10 +184,10 @@ private struct PlayableKeyboard: View {
 
     @ViewBuilder
     private func octaveLabel(_ m: Int) -> some View {
-        if m % 12 == 0 {   // label each C
+        if m % 12 == 0 {
             Text("C\(m / 12 - 1)")
-                .font(.system(size: 9)).foregroundStyle(.secondary)
-                .padding(.bottom, 4).allowsHitTesting(false)
+                .font(.system(size: 10)).foregroundStyle(.secondary)
+                .padding(.bottom, 5).allowsHitTesting(false)
         }
     }
 

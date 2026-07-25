@@ -44,6 +44,9 @@ struct Song: Codable, Identifiable {
     var masterVolume: Float = 1.0
     var tracks: [SongTrack] = []      // instruments — loaded once when the song opens
     var sections: [SongSection] = []  // arrangement, in play order
+    // A dedicated instrument for the manual Play dock, independent of the sequencer
+    // tracks. Optional, so older saved songs still decode (missing key → nil).
+    var performance: SongTrack? = nil
 }
 
 struct SongTrack: Codable, Identifiable {

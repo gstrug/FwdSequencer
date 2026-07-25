@@ -11,7 +11,6 @@ struct SongView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var collapsedTracks: Set<UUID> = []
     @State private var showPlayDock = false
-    @State private var playTrackID: UUID? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -68,8 +67,7 @@ struct SongView: View {
         .environmentObject(songStore.playback)
         .overlay(alignment: .bottom) {
             if showPlayDock {
-                PlayDockView(trackID: $playTrackID,
-                             onClose: { withAnimation { showPlayDock = false } })
+                PlayDockView(onClose: { withAnimation { showPlayDock = false } })
                     .transition(.move(edge: .bottom))
             }
         }

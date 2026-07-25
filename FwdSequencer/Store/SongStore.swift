@@ -183,6 +183,14 @@ class SongStore: ObservableObject {
             }
         }
 
+        // The manual Play-dock instrument, if this song has one.
+        if let perf = song.performance {
+            audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan)
+            if let plugin = perf.pluginInfo {
+                audioEngine.loadPlugin(plugin, for: perf.id, stateData: perf.pluginStateData)
+            }
+        }
+
         // Instruments instantiate asynchronously and restore state ~1 s later.
         // No per-plugin ready callback yet (Phase 6), so approximate with a short
         // loading window sized to one plugin's load+restore.
@@ -216,6 +224,10 @@ class SongStore: ObservableObject {
                 if let state = audioEngine.getPluginState(for: snapshot.tracks[idx].id) {
                     snapshot.tracks[idx].pluginStateData = state
                 }
+            }
+            if let perfID = snapshot.performance?.id,
+               let state = audioEngine.getPluginState(for: perfID) {
+                snapshot.performance?.pluginStateData = state
             }
         }
         guard SongStorage.save(snapshot) else { return }
@@ -289,6 +301,33 @@ class SongStore: ObservableObject {
     func close() {
         stop()
         for t in song.tracks { audioEngine.removeTrack(id: t.id) }
+        if let perf = song.performance { audioEngine.removeTrack(id: perf.id) }
+    }
+
+    // MARK: - Manual Play-dock instrument
+
+    /// Choose (or change) the instrument the manual keyboard drives. Independent of
+    /// the sequencer tracks — it gets its own engine voice.
+    func setPerformancePlugin(_ info: PluginInfo?) {
+        var perf = song.performance ?? SongTrack(name: "Manual Keys")
+        perf.pluginInfo = info
+        perf.pluginStateData = nil
+        song.performance = perf
+        if !audioEngine.hasInstrument(for: perf.id) {
+            audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan)
+        }
+        audioEngine.loadPlugin(info, for: perf.id)
+    }
+
+    func setPerformanceVolume(_ v: Float) {
+        song.performance?.mixer.volume = v
+        if let id = song.performance?.id { audioEngine.setVolume(v, for: id) }
+    }
+
+    func capturePerformanceState() {
+        guard let id = song.performance?.id,
+              let state = audioEngine.getPluginState(for: id) else { return }
+        song.performance?.pluginStateData = state
     }
 
     // MARK: - Track editing
