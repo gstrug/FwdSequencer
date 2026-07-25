@@ -127,6 +127,10 @@ class SequencerEngine {
         var notePtr: Int = 0
         var lastMidiNotes: [Int] = []   // notes currently ringing (>1 for a chord)
         var repRemaining: Int = 0       // ticks left in a rep burst (0 = not in burst)
+        // Set of pool positions the current chord occupies. nil = single-note mode
+        // (Fwd/Back/Rep walk `notePtr` exactly as before). A Play chord sets it, and
+        // then Fwd/Back slide the whole chord and Rep replays it.
+        var voicing: [Int]? = nil
     }
 
     // MARK: - Lifecycle
@@ -406,23 +410,35 @@ class SequencerEngine {
         switch step.type {
 
         case .fwd:
-            // Play current note FIRST, then advance. This way note[0] is always reachable
-            // and Back (which moves silently) leaves the pointer at the note to play next.
-            let idx = state.notePtr
-            state.notePtr = (state.notePtr + max(1, step.n)) % noteCount
             advanceStepIndex(si, stepCount: stepCount, state: &state)
+            let n = max(1, step.n)
+            if let v = state.voicing {
+                // Chord mode: slide the whole voicing forward, then play it.
+                let moved = v.map { ($0 + n) % noteCount }
+                state.voicing = moved
+                state.notePtr = moved.first ?? 0
+                return (moved, true, step.gate)
+            }
+            // Single-note mode: play current FIRST, then advance (unchanged behaviour).
+            let idx = state.notePtr
+            state.notePtr = (state.notePtr + n) % noteCount
             return ([idx], true, step.gate)
 
         case .back:
-            // Play current note, then move pointer back n positions.
-            let idx = state.notePtr
-            let n = max(1, step.n)
-            state.notePtr = ((state.notePtr - n) % noteCount + noteCount) % noteCount
             advanceStepIndex(si, stepCount: stepCount, state: &state)
+            let n = max(1, step.n)
+            if let v = state.voicing {
+                let moved = v.map { (($0 - n) % noteCount + noteCount) % noteCount }
+                state.voicing = moved
+                state.notePtr = moved.first ?? 0
+                return (moved, true, step.gate)
+            }
+            let idx = state.notePtr
+            state.notePtr = ((state.notePtr - n) % noteCount + noteCount) % noteCount
             return ([idx], true, step.gate)
 
         case .rep:
-            // Play current note n times total. repRemaining tracks ticks remaining after this one.
+            // Replay the current note/chord n times total. repRemaining tracks ticks left.
             let count = max(1, step.n)
             if count == 1 {
                 advanceStepIndex(si, stepCount: stepCount, state: &state)
@@ -435,12 +451,13 @@ class SequencerEngine {
                     advanceStepIndex(si, stepCount: stepCount, state: &state)
                 }
             }
-            return ([state.notePtr], true, step.gate)
+            return (state.voicing ?? [state.notePtr], true, step.gate)
 
         case .play:
-            // Play one or more absolute pool positions (a chord). Pointer lands on the
-            // first so a following Fwd/Back continues sensibly from the chord root.
+            // Absolute pool positions. A chord (>1 note) becomes the moving voicing that
+            // following Fwd/Back/Rep transform; a single note returns to single-note mode.
             let indices = playIndices(for: step, noteCount: noteCount)
+            state.voicing = indices.count > 1 ? indices : nil
             state.notePtr = indices[0]
             advanceStepIndex(si, stepCount: stepCount, state: &state)
             return (indices, true, step.gate)
@@ -450,8 +467,9 @@ class SequencerEngine {
             return ([], false, 1.0)
 
         case .random:
-            // Play a random note from the pool. Leave the pointer just after it (like
-            // Fwd) so a following step carries on from that note rather than repeating it.
+            // Play a random note from the pool; leave the pointer just after it. Returns
+            // to single-note mode (a random chord isn't meaningful here).
+            state.voicing = nil
             let idx = noteCount > 1 ? Int.random(in: 0..<noteCount) : 0
             state.notePtr = (idx + 1) % noteCount
             advanceStepIndex(si, stepCount: stepCount, state: &state)
