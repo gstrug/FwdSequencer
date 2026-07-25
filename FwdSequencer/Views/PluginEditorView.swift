@@ -83,15 +83,34 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         print("[FWD] embed \(audioUnit.audioUnitName ?? "?"): declaredSize=\(declared), viewFrame=\(pv.frame)")
         #endif
 
-        var size = declared
-        if size.width < 100 || size.height < 100 {
-            size = CGSize(width: 800, height: 600)
+        // Large full-UI plugins (or ones with a degenerate declared size) are fitted by
+        // RESIZING via Auto Layout — never by a zoom transform. Out-of-process/hosted
+        // plugin views (e.g. GeoShred) get their scene invalidated when a CGAffineTransform
+        // is applied to them ("Invalid frame dimension"); resizing their bounds is safe.
+        let wantsFill = declared.width < 100 || declared.height < 100
+                     || declared.width >= 900 || declared.height >= 700
+        if wantsFill {
+            scrollView.isHidden = true
+            pv.translatesAutoresizingMaskIntoConstraints = false
+            vc.beginAppearanceTransition(true, animated: false)
+            view.addSubview(pv)
+            NSLayoutConstraint.activate([
+                pv.topAnchor.constraint(equalTo: view.topAnchor),
+                pv.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+                pv.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+                pv.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            ])
+            vc.didMove(toParent: self)
+            vc.endAppearanceTransition()
+            return
         }
+
+        // Small fixed-size plugin: scroll + zoom to fit so its controls stay reachable.
         pv.translatesAutoresizingMaskIntoConstraints = true
-        pv.frame = CGRect(origin: .zero, size: size)
+        pv.frame = CGRect(origin: .zero, size: declared)
         vc.beginAppearanceTransition(true, animated: false)
         scrollView.addSubview(pv)
-        scrollView.contentSize = size
+        scrollView.contentSize = declared
         pluginView = pv
         vc.didMove(toParent: self)
         vc.endAppearanceTransition()

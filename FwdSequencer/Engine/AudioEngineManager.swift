@@ -35,13 +35,8 @@ class AudioEngineManager {
             options: [.defaultToSpeaker, .mixWithOthers, .allowBluetoothHFP]
         )
         try? AVAudioSession.sharedInstance().setActive(true)
-        // TEMP diagnostic: master limiter disabled to test whether it's what stops
-        // GeoShred rendering. If GeoShred works with this off, the limiter is the
-        // cause and we reintroduce clip-prevention in a GeoShred-safe way.
-        if useMasterLimiter { setupMasterChain() }
+        setupMasterChain()
     }
-
-    private let useMasterLimiter = false
 
     // Route mainMixer → limiter → output. Accessing mainMixerNode creates it with a
     // default connection to the output; reconnecting its output inserts the limiter.
