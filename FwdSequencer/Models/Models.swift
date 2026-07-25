@@ -130,22 +130,27 @@ struct Step: Codable, Identifiable {
     /// Play step only: 1-indexed pool positions played simultaneously (a chord).
     /// Empty = single-note behaviour driven by `n`.
     var chordPositions: [Int] = []
+    /// Per-step articulation, 0.05–1.0. Scales how long this step's note(s) sustain
+    /// (multiplies each note's own gate). 1.0 = full note gates (default).
+    var gate: Double = 1.0
 
-    init(type: StepType, n: Int = 1, chordPositions: [Int] = []) {
+    init(type: StepType, n: Int = 1, chordPositions: [Int] = [], gate: Double = 1.0) {
         self.type = type
         self.n = n
         self.chordPositions = chordPositions
+        self.gate = gate
     }
 
-    // Custom decoder so steps saved before `chordPositions` existed still load.
+    // Custom decoder so steps saved before `chordPositions`/`gate` existed still load.
     // (Swift's synthesised decoder throws on a missing key even with a default.)
-    private enum CodingKeys: String, CodingKey { case id, type, n, chordPositions }
+    private enum CodingKeys: String, CodingKey { case id, type, n, chordPositions, gate }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         type = try c.decode(StepType.self, forKey: .type)
         n = try c.decodeIfPresent(Int.self, forKey: .n) ?? 1
         chordPositions = try c.decodeIfPresent([Int].self, forKey: .chordPositions) ?? []
+        gate = try c.decodeIfPresent(Double.self, forKey: .gate) ?? 1.0
     }
 
     /// True when this Play step names more than one note (a chord).

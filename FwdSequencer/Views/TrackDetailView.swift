@@ -365,6 +365,17 @@ struct StepRow: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 34)
+
+            // Per-step gate — scales how long this step's note(s) sustain.
+            if step.type != .skip {
+                HStack(spacing: 8) {
+                    Text("Gate").font(.caption2).foregroundStyle(.secondary)
+                    Slider(value: $step.gate, in: 0.05...1.0)
+                    Text("\(Int(step.gate * 100))%")
+                        .font(.caption2).monospacedDigit().frame(width: 34)
+                }
+                .padding(.leading, 34)
+            }
         }
         .padding(.vertical, 4)
         .onAppear { syncChordText() }

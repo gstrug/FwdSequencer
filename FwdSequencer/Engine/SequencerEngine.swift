@@ -49,7 +49,21 @@ class SequencerEngine {
     private var timer: DispatchSourceTimer?
     private var sequencerQueue: DispatchQueue?
     private var states: [UUID: TrackState] = [:]
-    private var pendingNoteOffs: [UUID: DispatchWorkItem] = [:]
+    // Per-track pending note-offs, keyed by a unique id so each note releases on its
+    // own schedule (a chord's notes can have different gate lengths). Each work item
+    // removes its own entry when it fires, so a non-empty map means notes still ring.
+    private var pendingNoteOffs: [UUID: [Int: DispatchWorkItem]] = [:]
+    private var noteOffSeq = 0
+
+    private func cancelPendingNoteOffs(for trackID: UUID) {
+        pendingNoteOffs[trackID]?.values.forEach { $0.cancel() }
+        pendingNoteOffs.removeValue(forKey: trackID)
+    }
+
+    private func cancelAllPendingNoteOffs() {
+        for items in pendingNoteOffs.values { items.values.forEach { $0.cancel() } }
+        pendingNoteOffs.removeAll()
+    }
     private var globalStep = 0
     private let stepsPerBeat = 8   // ticks per beat = 32nd-note resolution
 
@@ -155,8 +169,7 @@ class SequencerEngine {
         globalStep = 0
         sectionIndex = 0
         for key in states.keys { states[key] = TrackState() }
-        pendingNoteOffs.values.forEach { $0.cancel() }
-        pendingNoteOffs.removeAll()
+        cancelAllPendingNoteOffs()
         audioEngine?.allNotesOff()
         onBarChange?(0)
     }
@@ -176,8 +189,7 @@ class SequencerEngine {
         globalStep = 0
         sectionIndex = 0
         for key in states.keys { states[key] = TrackState() }
-        pendingNoteOffs.values.forEach { $0.cancel() }
-        pendingNoteOffs.removeAll()
+        cancelAllPendingNoteOffs()
         audioEngine?.allNotesOff()
         onBarChange?(0)
         if isSongMode { onSectionChange?(0) }
@@ -272,46 +284,43 @@ class SequencerEngine {
             }
 
             let shouldSound = !track.isMuted && (!anySoloed || track.isSoloed)
-            let (poolIndices, stopPrev) = executeStep(track: track, state: &state)
+            let (poolIndices, stopPrev, stepGate) = executeStep(track: track, state: &state)
 
             let stepDuration = interval * Double(triggerEvery)
 
             if stopPrev {
-                // Cancel pending gate and stop all ringing notes immediately.
-                pendingNoteOffs[track.id]?.cancel()
-                pendingNoteOffs.removeValue(forKey: track.id)
+                // Cancel pending releases and stop all ringing notes immediately.
+                cancelPendingNoteOffs(for: track.id)
                 for last in state.lastMidiNotes {
                     audioEngine?.stopNote(trackID: track.id, midiNote: UInt8(last))
                 }
                 state.lastMidiNotes = []
             } else if pendingNoteOffs[track.id] != nil {
-                // Skip — gate is still pending (notes still ringing): extend by one step.
-                // Both this tick and the gate item run on the same serial queue so
-                // pendingNoteOffs[id] != nil reliably means the gate hasn't fired yet.
-                pendingNoteOffs[track.id]?.cancel()
-                let notes = state.lastMidiNotes.map { UInt8($0) }
-                scheduleNoteOff(trackID: track.id, midiNotes: notes, delay: stepDuration)
+                // Skip — notes still ringing: hold them through the skip by extending
+                // every pending release by one step. (Same serial queue, so a non-empty
+                // map reliably means the notes haven't been released yet.)
+                cancelPendingNoteOffs(for: track.id)
+                for note in state.lastMidiNotes {
+                    scheduleNoteOff(trackID: track.id, midiNote: UInt8(note), delay: stepDuration)
+                }
             }
-            // else: Skip but gate already fired — notes are off, nothing to extend
+            // else: Skip but releases already fired — notes are off, nothing to extend
 
             if shouldSound, !poolIndices.isEmpty {
-                // Play every note in the (possibly chord) step at once, releasing them
-                // together after the longest gate among them.
-                var played: [UInt8] = []
-                var maxGate = 0.0
+                // Play every note in the (possibly chord) step. Each note releases on
+                // its own schedule: its gate × the step's gate. So per-note gates shape
+                // the chord internally, while the step gate scales the whole thing.
+                var notes: [Int] = []
                 for idx in poolIndices {
                     let entry = track.notePool[idx]
                     let midiNote = UInt8(entry.midiNote)
                     audioEngine?.playNote(trackID: track.id, midiNote: midiNote, velocity: UInt8(entry.velocity))
-                    played.append(midiNote)
-                    maxGate = max(maxGate, entry.gateLength)
+                    notes.append(entry.midiNote)
+                    let noteGate = max(0.01, entry.gateLength * stepGate)
+                    scheduleNoteOff(trackID: track.id, midiNote: midiNote, delay: noteGate * stepDuration)
                 }
-                let notes = poolIndices.map { track.notePool[$0].midiNote }
                 state.lastMidiNotes = notes
                 onNotePlayed?(track.id, notes)   // highlight every note in the chord
-
-                pendingNoteOffs[track.id]?.cancel()
-                scheduleNoteOff(trackID: track.id, midiNotes: played, delay: maxGate * stepDuration)
             } else if poolIndices.isEmpty && stopPrev {
                 onNotePlayed?(track.id, [])
             }
@@ -329,22 +338,26 @@ class SequencerEngine {
         globalStep = 0
         sectionIndex = 0
         for key in states.keys { states[key] = TrackState() }
-        pendingNoteOffs.values.forEach { $0.cancel() }
-        pendingNoteOffs.removeAll()
+        cancelAllPendingNoteOffs()
         audioEngine?.allNotesOff()
         onSongFinished?()
     }
 
-    // Schedule a note-off on the sequencer queue so it serialises with ticks.
-    // Self-removes from pendingNoteOffs when it fires, making the nil-check in skip reliable.
-    private func scheduleNoteOff(trackID: UUID, midiNotes: [UInt8], delay: Double) {
+    // Schedule a single note's release on the sequencer queue so it serialises with
+    // ticks. Each work item self-removes from the per-track map when it fires, so the
+    // non-empty check in the skip-extend path reliably means notes still ring.
+    private func scheduleNoteOff(trackID: UUID, midiNote: UInt8, delay: Double) {
+        noteOffSeq += 1
+        let offID = noteOffSeq
+        let noteInt = Int(midiNote)
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            for note in midiNotes { audioEngine?.stopNote(trackID: trackID, midiNote: note) }
-            pendingNoteOffs.removeValue(forKey: trackID)
-            states[trackID]?.lastMidiNotes = []
+            audioEngine?.stopNote(trackID: trackID, midiNote: midiNote)
+            states[trackID]?.lastMidiNotes.removeAll { $0 == noteInt }
+            pendingNoteOffs[trackID]?.removeValue(forKey: offID)
+            if pendingNoteOffs[trackID]?.isEmpty == true { pendingNoteOffs.removeValue(forKey: trackID) }
         }
-        pendingNoteOffs[trackID] = item
+        pendingNoteOffs[trackID, default: [:]][offID] = item
         sequencerQueue?.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
@@ -375,13 +388,14 @@ class SequencerEngine {
         return [min(max(0, step.n - 1), noteCount - 1)]
     }
 
-    private func executeStep(track: PlayTrack, state: inout TrackState) -> ([Int], Bool) {
+    // Returns (poolIndices, stopPreviousNote, stepGate). stepGate scales note lengths.
+    private func executeStep(track: PlayTrack, state: inout TrackState) -> ([Int], Bool, Double) {
         let noteCount = track.notePool.count
         let stepCount = track.steps.count
-        guard noteCount > 0 else { return ([], true) }
+        guard noteCount > 0 else { return ([], true, 1.0) }
 
         guard stepCount > 0 else {
-            return ([state.notePtr % noteCount], true)
+            return ([state.notePtr % noteCount], true, 1.0)
         }
 
         state.notePtr = state.notePtr % noteCount
@@ -397,7 +411,7 @@ class SequencerEngine {
             let idx = state.notePtr
             state.notePtr = (state.notePtr + max(1, step.n)) % noteCount
             advanceStepIndex(si, stepCount: stepCount, state: &state)
-            return ([idx], true)
+            return ([idx], true, step.gate)
 
         case .back:
             // Play current note, then move pointer back n positions.
@@ -405,7 +419,7 @@ class SequencerEngine {
             let n = max(1, step.n)
             state.notePtr = ((state.notePtr - n) % noteCount + noteCount) % noteCount
             advanceStepIndex(si, stepCount: stepCount, state: &state)
-            return ([idx], true)
+            return ([idx], true, step.gate)
 
         case .rep:
             // Play current note n times total. repRemaining tracks ticks remaining after this one.
@@ -421,7 +435,7 @@ class SequencerEngine {
                     advanceStepIndex(si, stepCount: stepCount, state: &state)
                 }
             }
-            return ([state.notePtr], true)
+            return ([state.notePtr], true, step.gate)
 
         case .play:
             // Play one or more absolute pool positions (a chord). Pointer lands on the
@@ -429,11 +443,11 @@ class SequencerEngine {
             let indices = playIndices(for: step, noteCount: noteCount)
             state.notePtr = indices[0]
             advanceStepIndex(si, stepCount: stepCount, state: &state)
-            return (indices, true)
+            return (indices, true, step.gate)
 
         case .skip:
             advanceStepIndex(si, stepCount: stepCount, state: &state)
-            return ([], false)
+            return ([], false, 1.0)
 
         case .random:
             // Jump to a random step, align note pointer, then execute that step's logic
@@ -446,24 +460,24 @@ class SequencerEngine {
             case .fwd:
                 let idx = state.notePtr
                 state.notePtr = (state.notePtr + max(1, target.n)) % noteCount
-                return ([idx], true)
+                return ([idx], true, target.gate)
             case .back:
                 let idx = state.notePtr
                 let n = max(1, target.n)
                 state.notePtr = ((state.notePtr - n) % noteCount + noteCount) % noteCount
-                return ([idx], true)
+                return ([idx], true, target.gate)
             case .play:
                 let indices = playIndices(for: target, noteCount: noteCount)
                 state.notePtr = indices[0]
-                return (indices, true)
+                return (indices, true, target.gate)
             case .rep:
-                return ([state.notePtr], true)
+                return ([state.notePtr], true, target.gate)
             case .skip:
-                return ([], false)
+                return ([], false, 1.0)
             case .random:
                 let idx = state.notePtr
                 state.notePtr = (state.notePtr + 1) % noteCount
-                return ([idx], true)
+                return ([idx], true, target.gate)
             }
         }
     }
