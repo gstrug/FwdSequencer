@@ -3,7 +3,7 @@ import SwiftUI
 struct PianoKeyboardView: View {
     @Binding var notePool: [NoteEntry]
     let scale: MusicalScale
-    var playingNote: Int? = nil
+    var playingNotes: [Int] = []
     var key: Int = 0
     var onPreview: ((Int) -> Void)? = nil
 
@@ -59,14 +59,14 @@ struct PianoKeyboardView: View {
     }
 
     private func whiteColor(_ midi: Int) -> Color {
-        if playingNote == midi { return .yellow }
+        if playingNotes.contains(midi) { return .yellow }
         if isSelected(midi)    { return .blue }
         if !isInScale(midi)    { return Color.gray.opacity(0.25) }
         return .white
     }
 
     private func blackColor(_ midi: Int) -> Color {
-        if playingNote == midi { return .yellow }
+        if playingNotes.contains(midi) { return .yellow }
         if isSelected(midi)    { return .blue }
         if !isInScale(midi)    { return Color(white: 0.45) }
         return .black

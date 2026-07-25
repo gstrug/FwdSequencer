@@ -36,7 +36,7 @@ struct SequencerSection {
 
 class SequencerEngine {
     var audioEngine: AudioEngineManager?
-    var onNotePlayed: ((UUID, Int?) -> Void)?
+    var onNotePlayed: ((UUID, [Int]) -> Void)?   // notes now sounding ([] = none)
     var onBarChange: ((Int) -> Void)?
     var onStepChange: ((UUID, Int) -> Void)?
     /// Fires on every beat. `true` = downbeat (beat 1 of bar), `false` = all other beats.
@@ -306,13 +306,14 @@ class SequencerEngine {
                     played.append(midiNote)
                     maxGate = max(maxGate, entry.gateLength)
                 }
-                state.lastMidiNotes = poolIndices.map { track.notePool[$0].midiNote }
-                onNotePlayed?(track.id, track.notePool[poolIndices[0]].midiNote)   // highlight the root
+                let notes = poolIndices.map { track.notePool[$0].midiNote }
+                state.lastMidiNotes = notes
+                onNotePlayed?(track.id, notes)   // highlight every note in the chord
 
                 pendingNoteOffs[track.id]?.cancel()
                 scheduleNoteOff(trackID: track.id, midiNotes: played, delay: maxGate * stepDuration)
             } else if poolIndices.isEmpty && stopPrev {
-                onNotePlayed?(track.id, nil)
+                onNotePlayed?(track.id, [])
             }
 
             states[track.id] = state

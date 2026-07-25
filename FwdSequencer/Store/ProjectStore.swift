@@ -48,12 +48,12 @@ class ProjectStore: ObservableObject {
     init() {
         sequencer.audioEngine = audioEngine
 
-        sequencer.onNotePlayed = { [weak self] trackID, midiNote in
+        sequencer.onNotePlayed = { [weak self] trackID, notes in
             DispatchQueue.main.async {
-                if let note = midiNote {
-                    self?.playback.playingNotes[trackID] = note
-                } else {
+                if notes.isEmpty {
                     self?.playback.playingNotes.removeValue(forKey: trackID)
+                } else {
+                    self?.playback.playingNotes[trackID] = notes
                 }
             }
         }

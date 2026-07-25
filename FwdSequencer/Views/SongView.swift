@@ -644,7 +644,7 @@ private struct SongKeyboard: View {
         PianoKeyboardView(
             notePool: $notePool,
             scale: scale,
-            playingNote: playback.playingNotes[trackID],
+            playingNotes: playback.playingNotes[trackID] ?? [],
             key: key,
             onPreview: onPreview
         )

@@ -107,7 +107,7 @@ struct TrackDetailView: View {
                 PianoKeyboardView(
                     notePool: $track.notePool,
                     scale: track.scale,
-                    playingNote: store.playback.playingNotes[track.id],
+                    playingNotes: store.playback.playingNotes[track.id] ?? [],
                     key: track.key
                 )
 

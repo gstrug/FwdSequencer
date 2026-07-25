@@ -19,7 +19,7 @@ final class LevelMonitor: ObservableObject {
 /// (much lower than the level meters) and are isolated so that displaying them
 /// doesn't invalidate views that only care about the project data.
 final class PlaybackMonitor: ObservableObject {
-    @Published var playingNotes: [UUID: Int] = [:]
+    @Published var playingNotes: [UUID: [Int]] = [:]   // all notes currently sounding (chord = several)
     @Published var activeSteps: [UUID: Int] = [:]
     @Published var currentBar: Int = 0
 }
