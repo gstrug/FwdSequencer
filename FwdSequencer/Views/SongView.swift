@@ -10,6 +10,8 @@ struct SongView: View {
     @EnvironmentObject var songStore: SongStore
     @Environment(\.dismiss) private var dismiss
     @State private var collapsedTracks: Set<UUID> = []
+    @State private var showPlayDock = false
+    @State private var playTrackID: UUID? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,7 +19,7 @@ struct SongView: View {
                 songStore.saveNow()
                 songStore.close()
                 dismiss()
-            })
+            }, showPlayDock: $showPlayDock)
 
             ArrangementStrip()
 
@@ -64,6 +66,14 @@ struct SongView: View {
         // to the song's monitors, not the pattern store's.
         .environmentObject(songStore.levels)
         .environmentObject(songStore.playback)
+        .overlay(alignment: .bottom) {
+            if showPlayDock {
+                PlayDockView(trackID: $playTrackID,
+                             onClose: { withAnimation { showPlayDock = false } })
+                    .transition(.move(edge: .bottom))
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: showPlayDock)
     }
 
     private var currentSectionKey: Int {
@@ -106,6 +116,7 @@ struct SongView: View {
 private struct SongTransportBar: View {
     @EnvironmentObject var songStore: SongStore
     var onBack: () -> Void
+    @Binding var showPlayDock: Bool
     @State private var currentBeat: Int = 0
     @State private var tapTimes: [Date] = []
     @State private var savedVisible = false
@@ -229,6 +240,12 @@ private struct SongTransportBar: View {
                             .animation(.easeInOut(duration: 0.3), value: savedVisible)
                     }
                 }
+
+            Button { showPlayDock.toggle() } label: {
+                Label("Play", systemImage: "pianokeys")
+            }
+            .buttonStyle(.bordered)
+            .tint(showPlayDock ? .accentColor : nil)
 
             Button { showMixer = true } label: {
                 Label("Mixer", systemImage: "slider.vertical.3")
@@ -696,7 +713,7 @@ private struct SongBarCounter: View {
     }
 }
 
-private struct SongTrackMeter: View {
+struct SongTrackMeter: View {
     let trackID: UUID
     @EnvironmentObject var levels: LevelMonitor
 
