@@ -163,6 +163,14 @@ class SongStore: ObservableObject {
         stop()
         for t in self.song.tracks { audioEngine.removeTrack(id: t.id) }
 
+        // A song must always have at least one section — note data lives in a section's
+        // Part, so with zero sections note edits have nowhere to go and silently fail.
+        // (An older saved song can decode with an empty section list.)
+        var song = song
+        if song.sections.isEmpty {
+            song.addEmptySection(named: "Section 1")
+        }
+
         self.song = song
         selectedSection = 0
         currentSection = 0
