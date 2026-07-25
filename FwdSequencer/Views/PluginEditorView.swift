@@ -66,6 +66,9 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         AUViewControllerHelper.requestViewController(for: audioUnit) { [weak self] vc in
             DispatchQueue.main.async {
                 guard let self else { return }
+                #if DEBUG
+                print("[FWD] requestViewController \(self.audioUnit.audioUnitName ?? "?"): vc=\(vc == nil ? "nil" : "present"), size=\(vc?.preferredContentSize ?? .zero)")
+                #endif
                 guard let vc else { self.onNoUI?(); return }
                 self.embed(vc)
             }
@@ -76,6 +79,9 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         addChild(vc)
         let pv = vc.view!
         let declared = vc.preferredContentSize
+        #if DEBUG
+        print("[FWD] embed \(audioUnit.audioUnitName ?? "?"): declaredSize=\(declared), viewFrame=\(pv.frame)")
+        #endif
 
         var size = declared
         if size.width < 100 || size.height < 100 {

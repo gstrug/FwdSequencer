@@ -450,35 +450,11 @@ class SequencerEngine {
             return ([], false, 1.0)
 
         case .random:
-            // Jump to a random step, align note pointer, then execute that step's logic
-            let r = stepCount > 1 ? Int.random(in: 0..<stepCount) : 0
-            let target = track.steps[r]
-            state.stepIndex = (r + 1) % stepCount
-            state.notePtr = r % noteCount
-
-            switch target.type {
-            case .fwd:
-                let idx = state.notePtr
-                state.notePtr = (state.notePtr + max(1, target.n)) % noteCount
-                return ([idx], true, target.gate)
-            case .back:
-                let idx = state.notePtr
-                let n = max(1, target.n)
-                state.notePtr = ((state.notePtr - n) % noteCount + noteCount) % noteCount
-                return ([idx], true, target.gate)
-            case .play:
-                let indices = playIndices(for: target, noteCount: noteCount)
-                state.notePtr = indices[0]
-                return (indices, true, target.gate)
-            case .rep:
-                return ([state.notePtr], true, target.gate)
-            case .skip:
-                return ([], false, 1.0)
-            case .random:
-                let idx = state.notePtr
-                state.notePtr = (state.notePtr + 1) % noteCount
-                return ([idx], true, target.gate)
-            }
+            // Play a random note from the pool, then advance to the next step.
+            let idx = noteCount > 1 ? Int.random(in: 0..<noteCount) : 0
+            state.notePtr = idx
+            advanceStepIndex(si, stepCount: stepCount, state: &state)
+            return ([idx], true, step.gate)
         }
     }
 }

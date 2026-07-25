@@ -268,7 +268,7 @@ struct StepRow: View {
             }
             return "Jump to pool note \(step.n) and play it" + poolHint
         case .skip:   return "Hold — previous note keeps ringing"
-        case .random: return "Jump to a random step and execute it"
+        case .random: return "Play a random note from the pool"
         }
     }
 
