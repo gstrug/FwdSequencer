@@ -450,9 +450,10 @@ class SequencerEngine {
             return ([], false, 1.0)
 
         case .random:
-            // Play a random note from the pool, then advance to the next step.
+            // Play a random note from the pool. Leave the pointer just after it (like
+            // Fwd) so a following step carries on from that note rather than repeating it.
             let idx = noteCount > 1 ? Int.random(in: 0..<noteCount) : 0
-            state.notePtr = idx
+            state.notePtr = (idx + 1) % noteCount
             advanceStepIndex(si, stepCount: stepCount, state: &state)
             return ([idx], true, step.gate)
         }
