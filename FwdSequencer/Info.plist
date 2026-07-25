@@ -10,5 +10,7 @@
     </array>
     <key>NSMicrophoneUsageDescription</key>
     <string>FWD Sequencer uses the microphone when hosting AUv3 plugins that require audio input.</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
 </dict>
 </plist>
