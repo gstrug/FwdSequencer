@@ -149,9 +149,13 @@ class AudioEngineManager {
         guard let unit = auv3Units[id] else { return nil }
         let au = unit.auAudioUnit
 
-        let fsd    = au.fullStateForDocument
-        let fs     = au.fullState
-        let preset = au.currentPreset
+        // Read the document state first; only fall back to fullState if it's absent.
+        // Reading BOTH (and re-reading currentPreset) on every save makes the host poke
+        // the plugin's state/preset machinery repeatedly, which can crash fragile plugins
+        // (GeoShred's extension drops its connection "while in use"). One read is enough.
+        let fsd = au.fullStateForDocument
+        let isDocument = (fsd != nil)
+        let state = fsd ?? au.fullState
         let params = au.parameterTree?.allParameters ?? []
 
         // Use PropertyListSerialization — handles NSData/NSString/NSNumber/NSDictionary
@@ -159,12 +163,11 @@ class AudioEngineManager {
         var combined: [String: Any] = [:]
 
         let fullStateIsSubstantial: Bool
-        if let state = fsd ?? fs, !state.isEmpty {
+        if let state, !state.isEmpty {
             combined["_fullState"] = state
-            // Record which property the state came from so restore can write back to
-            // the SAME one. Setting both fullStateForDocument and fullState can corrupt
-            // complex synths (e.g. GeoShred) that distinguish document vs. session state.
-            combined["_fullStateIsDocument"] = (fsd != nil)
+            // Record which property the state came from so restore writes back to the
+            // SAME one — setting both can corrupt synths that distinguish document state.
+            combined["_fullStateIsDocument"] = isDocument
             // A fullState with >5 keys contains real sound data (e.g. EG Pulse pad volumes).
             // ≤5 keys is typically just metadata (e.g. AudioKit's AUPresetName/Version).
             fullStateIsSubstantial = state.count > 5
@@ -178,18 +181,13 @@ class AudioEngineManager {
             combined["_parameterTree"] = paramDict
         }
 
-        if let preset = preset {
-            combined["_presetNumber"] = preset.number
-            combined["_presetName"]   = preset.name
-        }
-
         // Tell the restore path whether parameterTree is needed.
         // If fullState is substantial, it is authoritative and parameterTree must not overwrite it.
         combined["_parameterTreeRequired"] = !fullStateIsSubstantial
 
         guard !combined.isEmpty else { return nil }
         #if DEBUG
-        print("[FWD] getPluginState \(au.audioUnitName ?? "?"): fsd=\(fsd?.count ?? -1) keys, fs=\(fs?.count ?? -1) keys, params=\(params.count), substantial=\(fullStateIsSubstantial)")
+        print("[FWD] getPluginState \(au.audioUnitName ?? "?"): state=\(state?.count ?? -1) keys (doc=\(isDocument)), params=\(params.count), substantial=\(fullStateIsSubstantial)")
         #endif
         return try? PropertyListSerialization.data(
             fromPropertyList: combined,

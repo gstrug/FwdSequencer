@@ -270,7 +270,7 @@ struct PluginEditorView: View {
                     } else if let au = auUnit {
                         AUPluginView(
                             audioUnit: au,
-                            onNoUI: { usePresetFallback = true },
+                            onNoUI: { usePresetFallback = true; loadPresets() },
                             onWillDisappear: { onCommitState?() }
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -397,8 +397,14 @@ struct PluginEditorView: View {
 
     private func setup() {
         guard let av = avUnit else { return }
-        let au = av.auAudioUnit
-        auUnit = au
+        // Only grab the audio unit here. Reading preset lists eagerly pokes the plugin's
+        // preset machinery, which can destabilise fragile plugins (GeoShred) — defer it
+        // to loadPresets(), called only when we actually show the preset fallback.
+        auUnit = av.auAudioUnit
+    }
+
+    private func loadPresets() {
+        guard let au = auUnit else { return }
         factoryPresets = au.factoryPresets ?? []
         currentPreset  = au.currentPreset
         if #available(iOS 13, *) {
