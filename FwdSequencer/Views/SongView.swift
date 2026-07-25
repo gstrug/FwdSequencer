@@ -456,7 +456,7 @@ private struct SongTrackRowView: View {
                              onCommitState: { songStore.capturePluginState(for: track.id) })
         }
         .sheet(isPresented: $showSteps) {
-            StepsView(steps: $part.steps)
+            StepsView(steps: $part.steps, noteCount: part.notePool.count)
         }
         .sheet(isPresented: $showNoteParams) {
             NoteParametersView(notePool: $part.notePool)

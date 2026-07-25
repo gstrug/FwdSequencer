@@ -36,7 +36,7 @@ struct TrackRowView: View {
             NoteParametersView(notePool: $track.notePool)
         }
         .sheet(isPresented: $showSteps) {
-            StepsView(steps: $track.steps)
+            StepsView(steps: $track.steps, noteCount: track.notePool.count)
         }
         .sheet(isPresented: $showPluginPicker) {
             PluginPickerView(selectedPlugin: $track.pluginInfo)

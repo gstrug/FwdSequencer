@@ -243,9 +243,13 @@ struct StepTypePickerSheet: View {
 struct StepRow: View {
     @Binding var step: Step
     let index: Int
+    var noteCount: Int = 0     // pool size, for chord validation
     let onDelete: () -> Void
 
     @State private var showTypePicker = false
+    @State private var chordText = ""
+
+    private var poolHint: String { noteCount > 0 ? " (of \(noteCount))" : "" }
 
     private var currentDescription: String {
         switch step.type {
@@ -258,10 +262,33 @@ struct StepRow: View {
         case .rep:
             return step.n == 1 ? "Play current note once"
                                : "Play current note \(step.n) times"
-        case .play:   return "Jump to pool note \(step.n) and play it"
+        case .play:
+            if step.chordPositions.count > 1 {
+                return "Play pool notes \(step.chordPositions.map(String.init).joined(separator: ", ")) together" + poolHint
+            }
+            return "Jump to pool note \(step.n) and play it" + poolHint
         case .skip:   return "Hold — previous note keeps ringing"
         case .random: return "Jump to a random step and execute it"
         }
+    }
+
+    // Parse "1,3,5" → validated, de-duplicated, in-range positions.
+    private func parseChord(_ s: String) -> [Int] {
+        var seen = Set<Int>()
+        var out: [Int] = []
+        for part in s.split(separator: ",") {
+            if let v = Int(part.trimmingCharacters(in: .whitespaces)), v >= 1,
+               (noteCount <= 0 || v <= noteCount), seen.insert(v).inserted {
+                out.append(v)
+            }
+        }
+        return out
+    }
+
+    private func syncChordText() {
+        chordText = step.chordPositions.count > 1
+            ? step.chordPositions.map(String.init).joined(separator: ",")
+            : "\(step.n)"
     }
 
     private var stepperLabel: String? {
@@ -310,7 +337,17 @@ struct StepRow: View {
                     StepTypePickerSheet(selectedType: $step.type)
                 }
 
-                if let label = stepperLabel {
+                if step.type == .play {
+                    TextField("1,3,5", text: $chordText)
+                        .textFieldStyle(.roundedBorder)
+                        .keyboardType(.numbersAndPunctuation)
+                        .frame(maxWidth: 150)
+                        .onChange(of: chordText) { newVal in
+                            let parsed = parseChord(newVal)
+                            step.chordPositions = parsed.count > 1 ? parsed : []
+                            step.n = parsed.first ?? step.n
+                        }
+                } else if let label = stepperLabel {
                     Stepper(label, value: $step.n, in: stepperRange)
                         .frame(maxWidth: 150)
                 }
@@ -330,6 +367,8 @@ struct StepRow: View {
                 .padding(.leading, 34)
         }
         .padding(.vertical, 4)
+        .onAppear { syncChordText() }
+        .onChange(of: step.type) { _ in syncChordText() }
     }
 }
 

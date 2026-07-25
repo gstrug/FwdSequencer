@@ -2,6 +2,7 @@ import SwiftUI
 
 struct StepsView: View {
     @Binding var steps: [Step]
+    var noteCount: Int = 0     // pool size, passed to rows for chord validation
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -16,7 +17,7 @@ struct StepsView: View {
                 } else {
                     List {
                         ForEach(Array(steps.enumerated()), id: \.element.id) { idx, _ in
-                            StepRow(step: $steps[idx], index: idx) {
+                            StepRow(step: $steps[idx], index: idx, noteCount: noteCount) {
                                 steps.remove(at: idx)
                             }
                         }

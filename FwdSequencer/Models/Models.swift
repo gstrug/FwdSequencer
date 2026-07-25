@@ -109,10 +109,17 @@ struct Step: Codable, Identifiable {
     var id: UUID = UUID()
     var type: StepType
     var n: Int = 1
+    /// Play step only: 1-indexed pool positions played simultaneously (a chord).
+    /// Empty = single-note behaviour driven by `n` (backward compatible).
+    var chordPositions: [Int] = []
+
+    /// True when this Play step names more than one note (a chord).
+    var isChord: Bool { type == .play && chordPositions.count > 1 }
 
     var label: String {
         switch type {
-        case .play:            return "P\(n)"
+        case .play:
+            return isChord ? "P" + chordPositions.map(String.init).joined(separator: ",") : "P\(n)"
         case .rep  where n > 1: return "R×\(n)"
         case .fwd  where n > 1: return "F\(n)"
         case .back where n > 1: return "B\(n)"
