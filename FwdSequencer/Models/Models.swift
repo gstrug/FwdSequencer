@@ -61,6 +61,24 @@ struct SongSection: Codable, Identifiable {
     var key: Int = 0                  // section-wide harmonic context (0 = C … 11 = B)
     var scale: MusicalScale = .chromatic
     var parts: [Part] = []            // one per SongTrack, keyed by trackID
+
+    init(id: UUID = UUID(), name: String = "Section", numberOfBars: Int = 4,
+         key: Int = 0, scale: MusicalScale = .chromatic, parts: [Part] = []) {
+        self.id = id; self.name = name; self.numberOfBars = numberOfBars
+        self.key = key; self.scale = scale; self.parts = parts
+    }
+
+    // Tolerant decoder so sections saved before key/scale existed still load.
+    private enum CodingKeys: String, CodingKey { case id, name, numberOfBars, key, scale, parts }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Section"
+        numberOfBars = try c.decodeIfPresent(Int.self, forKey: .numberOfBars) ?? 4
+        key = try c.decodeIfPresent(Int.self, forKey: .key) ?? 0
+        scale = try c.decodeIfPresent(MusicalScale.self, forKey: .scale) ?? .chromatic
+        parts = try c.decodeIfPresent([Part].self, forKey: .parts) ?? []
+    }
 }
 
 // Per-track note data for one section. `trackID` == SongTrack.id, which is also
@@ -110,8 +128,25 @@ struct Step: Codable, Identifiable {
     var type: StepType
     var n: Int = 1
     /// Play step only: 1-indexed pool positions played simultaneously (a chord).
-    /// Empty = single-note behaviour driven by `n` (backward compatible).
+    /// Empty = single-note behaviour driven by `n`.
     var chordPositions: [Int] = []
+
+    init(type: StepType, n: Int = 1, chordPositions: [Int] = []) {
+        self.type = type
+        self.n = n
+        self.chordPositions = chordPositions
+    }
+
+    // Custom decoder so steps saved before `chordPositions` existed still load.
+    // (Swift's synthesised decoder throws on a missing key even with a default.)
+    private enum CodingKeys: String, CodingKey { case id, type, n, chordPositions }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        type = try c.decode(StepType.self, forKey: .type)
+        n = try c.decodeIfPresent(Int.self, forKey: .n) ?? 1
+        chordPositions = try c.decodeIfPresent([Int].self, forKey: .chordPositions) ?? []
+    }
 
     /// True when this Play step names more than one note (a chord).
     var isChord: Bool { type == .play && chordPositions.count > 1 }
