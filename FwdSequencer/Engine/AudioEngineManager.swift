@@ -18,6 +18,16 @@ class AudioEngineManager {
     var onMasterLevelUpdate: ((Float) -> Void)?
     private var masterLevelTimestamp: Double = 0
 
+    // Master-bus peak limiter — a look-ahead safety inserted between the main mixer
+    // and the output so hot plugins (or several tracks summing) can't push the mix
+    // past 0 dBFS and clip. Transparent at normal levels.
+    private let masterLimiter = AVAudioUnitEffect(audioComponentDescription:
+        AudioComponentDescription(
+            componentType: kAudioUnitType_Effect,
+            componentSubType: kAudioUnitSubType_PeakLimiter,
+            componentManufacturer: kAudioUnitManufacturer_Apple,
+            componentFlags: 0, componentFlagsMask: 0))
+
     init() {
         try? AVAudioSession.sharedInstance().setCategory(
             .playAndRecord,
@@ -25,6 +35,16 @@ class AudioEngineManager {
             options: [.defaultToSpeaker, .mixWithOthers, .allowBluetoothHFP]
         )
         try? AVAudioSession.sharedInstance().setActive(true)
+        setupMasterChain()
+    }
+
+    // Route mainMixer → limiter → output. Accessing mainMixerNode creates it with a
+    // default connection to the output; reconnecting its output inserts the limiter.
+    private func setupMasterChain() {
+        let main = engine.mainMixerNode
+        engine.attach(masterLimiter)
+        engine.connect(main, to: masterLimiter, format: nil)
+        engine.connect(masterLimiter, to: engine.outputNode, format: nil)
     }
 
     func setMasterVolume(_ volume: Float) {
