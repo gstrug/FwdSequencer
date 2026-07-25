@@ -7,41 +7,49 @@ struct StepsView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                if steps.isEmpty {
-                    Spacer()
-                    Text("No steps — notes play in order by default")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                    Spacer()
-                } else {
-                    List {
-                        ForEach(Array(steps.enumerated()), id: \.element.id) { idx, _ in
-                            StepRow(step: $steps[idx], index: idx, noteCount: noteCount) {
-                                steps.remove(at: idx)
+            ScrollViewReader { proxy in
+                VStack(spacing: 0) {
+                    if steps.isEmpty {
+                        Spacer()
+                        Text("No steps — notes play in order by default")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                        Spacer()
+                    } else {
+                        List {
+                            ForEach(Array(steps.enumerated()), id: \.element.id) { idx, _ in
+                                StepRow(step: $steps[idx], index: idx, noteCount: noteCount) {
+                                    steps.remove(at: idx)
+                                }
                             }
+                            .onMove { from, to in steps.move(fromOffsets: from, toOffset: to) }
                         }
-                        .onMove { from, to in steps.move(fromOffsets: from, toOffset: to) }
+                        .environment(\.editMode, .constant(.active))
                     }
-                    .environment(\.editMode, .constant(.active))
-                }
 
-                HStack {
-                    Button {
-                        steps.append(Step(type: .fwd))
-                    } label: {
-                        Label("Add Step", systemImage: "plus")
-                    }
-                    .buttonStyle(.bordered)
-                    Spacer()
-                    if !steps.isEmpty {
-                        Button("Clear All", role: .destructive) {
-                            steps.removeAll()
+                    HStack {
+                        Button {
+                            steps.append(Step(type: .fwd))
+                            // Scroll the newly added step into view.
+                            if let newID = steps.last?.id {
+                                DispatchQueue.main.async {
+                                    withAnimation { proxy.scrollTo(newID, anchor: .bottom) }
+                                }
+                            }
+                        } label: {
+                            Label("Add Step", systemImage: "plus")
                         }
-                        .font(.caption)
+                        .buttonStyle(.bordered)
+                        Spacer()
+                        if !steps.isEmpty {
+                            Button("Clear All", role: .destructive) {
+                                steps.removeAll()
+                            }
+                            .font(.caption)
+                        }
                     }
+                    .padding()
                 }
-                .padding()
             }
             .navigationTitle("Step Sequence")
             .navigationBarTitleDisplayMode(.inline)
