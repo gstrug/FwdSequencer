@@ -127,7 +127,7 @@ private struct PlayableKeyboard: View {
     private static let whiteIndex: [Int: Int] =
         Dictionary(uniqueKeysWithValues: whiteKeys.enumerated().map { ($1, $0) })
 
-    private let whiteW: CGFloat = 58   // wide, easy to play
+    private let whiteW: CGFloat = 70   // wide, easy to play
     private let keyH: CGFloat = 132
     private var blackW: CGFloat { whiteW * 0.6 }
     private var blackH: CGFloat { keyH * 0.62 }
