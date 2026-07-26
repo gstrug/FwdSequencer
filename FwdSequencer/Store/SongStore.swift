@@ -196,13 +196,16 @@ class SongStore: ObservableObject {
         // loading window sized to one plugin's load+restore.
         let hasPlugins = song.tracks.contains { $0.pluginInfo != nil }
             || song.performance?.pluginInfo != nil
-        if hasPlugins {
-            isLoading = true
-            // Must comfortably outlast the 1.0 s state-restore in loadPlugin so input
-            // is blocked until every plugin (incl. slow ones like GeoShred) has restored.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
-                self?.isLoading = false
-            }
+        if hasPlugins { beginLoadingWindow() }
+    }
+
+    /// Block interaction for ~2 s while a plugin instantiates/restores, so user input
+    /// can't interrupt a fragile plugin (GeoShred) mid-load and corrupt it. Used by
+    /// open() AND by live plugin changes (adding/switching a track's instrument).
+    private func beginLoadingWindow() {
+        isLoading = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            self?.isLoading = false
         }
     }
 
@@ -319,6 +322,7 @@ class SongStore: ObservableObject {
             audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan)
         }
         audioEngine.loadPlugin(info, for: perf.id)
+        if info != nil { beginLoadingWindow() }
     }
 
     func setPerformanceVolume(_ v: Float) {
@@ -389,6 +393,9 @@ class SongStore: ObservableObject {
             song.tracks[idx].pluginInfo = info
             song.tracks[idx].pluginStateData = nil
         }
+        // Protect the instantiation the same way song-open does, so adding/switching a
+        // plugin live can't be interrupted mid-load (this is what corrupted GeoShred).
+        if info != nil { beginLoadingWindow() }
     }
 
     func capturePluginState(for trackID: UUID) {
