@@ -209,57 +209,6 @@ class SongStore: ObservableObject {
         }
     }
 
-    /// Tear down and re-instantiate every instrument cleanly, from the current model
-    /// (like reopening the song). Some fragile plugins (GeoShred) break when a second
-    /// instance is added to a *running* graph, but rebuilding all of them together
-    /// works — which is why a manual reload fixed it.
-    func reloadInstruments() {
-        for t in song.tracks { audioEngine.removeTrack(id: t.id) }
-        if let p = song.performance { audioEngine.removeTrack(id: p.id) }
-        for track in song.tracks {
-            audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
-            if let plugin = track.pluginInfo {
-                audioEngine.loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
-            }
-        }
-        if let perf = song.performance {
-            audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan)
-            if let plugin = perf.pluginInfo {
-                audioEngine.loadPlugin(plugin, for: perf.id, stateData: perf.pluginStateData)
-            }
-        }
-        beginLoadingWindow()
-    }
-
-    /// Capture every loaded instrument's current state into the model (so a rebuild
-    /// preserves un-saved tweaks).
-    private func captureAllPluginStates() {
-        for idx in song.tracks.indices {
-            if let s = audioEngine.getPluginState(for: song.tracks[idx].id) {
-                song.tracks[idx].pluginStateData = s
-            }
-        }
-        if let pid = song.performance?.id, let s = audioEngine.getPluginState(for: pid) {
-            song.performance?.pluginStateData = s
-        }
-    }
-
-    private func componentMatches(_ a: PluginInfo, _ b: PluginInfo) -> Bool {
-        a.componentType == b.componentType
-            && a.componentSubType == b.componentSubType
-            && a.componentManufacturer == b.componentManufacturer
-    }
-
-    /// True if some other instrument already uses the same plugin component.
-    private func hasOtherInstance(of info: PluginInfo, excludingTrack id: UUID?) -> Bool {
-        if song.tracks.contains(where: { $0.id != id && ($0.pluginInfo.map { componentMatches($0, info) } ?? false) }) {
-            return true
-        }
-        if let p = song.performance, p.id != id, let pi = p.pluginInfo, componentMatches(pi, info) {
-            return true
-        }
-        return false
-    }
 
     private func scheduleSave() {
         saveWorkItem?.cancel()
@@ -373,13 +322,8 @@ class SongStore: ObservableObject {
         if !audioEngine.hasInstrument(for: perf.id) {
             audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan)
         }
-        let duplicate = info.map { hasOtherInstance(of: $0, excludingTrack: perf.id) } ?? false
-        if duplicate {
-            reloadInstruments()
-        } else {
-            audioEngine.loadPlugin(info, for: perf.id)
-            if info != nil { beginLoadingWindow() }
-        }
+        audioEngine.loadPlugin(info, for: perf.id)
+        if info != nil { beginLoadingWindow() }
     }
 
     func setPerformanceVolume(_ v: Float) {
@@ -445,22 +389,12 @@ class SongStore: ObservableObject {
     }
 
     func setPlugin(_ info: PluginInfo?, for trackID: UUID) {
-        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        // Adding a second instance of a plugin to a running graph breaks fragile ones
-        // (GeoShred). If another instrument already uses this plugin, rebuild all
-        // instruments cleanly (mirrors a reload); otherwise just load this one.
-        let duplicate = info.map { hasOtherInstance(of: $0, excludingTrack: trackID) } ?? false
-        if duplicate {
-            captureAllPluginStates()          // preserve others' live tweaks (this track still old)
-            song.tracks[idx].pluginInfo = info
-            song.tracks[idx].pluginStateData = nil   // this track starts fresh, after the capture
-            reloadInstruments()
-        } else {
+        audioEngine.loadPlugin(info, for: trackID)
+        if let idx = song.tracks.firstIndex(where: { $0.id == trackID }) {
             song.tracks[idx].pluginInfo = info
             song.tracks[idx].pluginStateData = nil
-            audioEngine.loadPlugin(info, for: trackID)
-            if info != nil { beginLoadingWindow() }
         }
+        if info != nil { beginLoadingWindow() }
     }
 
     func capturePluginState(for trackID: UUID) {
