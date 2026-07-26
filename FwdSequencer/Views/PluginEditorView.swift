@@ -66,9 +66,6 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         AUViewControllerHelper.requestViewController(for: audioUnit) { [weak self] vc in
             DispatchQueue.main.async {
                 guard let self else { return }
-                #if DEBUG
-                print("[FWD] requestViewController \(self.audioUnit.audioUnitName ?? "?"): vc=\(vc == nil ? "nil" : "present"), size=\(vc?.preferredContentSize ?? .zero)")
-                #endif
                 guard let vc else { self.onNoUI?(); return }
                 self.embed(vc)
             }
@@ -79,9 +76,6 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         addChild(vc)
         let pv = vc.view!
         let declared = vc.preferredContentSize
-        #if DEBUG
-        print("[FWD] embed \(audioUnit.audioUnitName ?? "?"): declaredSize=\(declared), viewFrame=\(pv.frame)")
-        #endif
 
         // Large full-UI plugins (or ones with a degenerate declared size) are fitted by
         // RESIZING via Auto Layout — never by a zoom transform. Out-of-process/hosted

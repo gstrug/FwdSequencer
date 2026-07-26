@@ -186,9 +186,6 @@ class AudioEngineManager {
         combined["_parameterTreeRequired"] = !fullStateIsSubstantial
 
         guard !combined.isEmpty else { return nil }
-        #if DEBUG
-        print("[FWD] getPluginState \(au.audioUnitName ?? "?"): state=\(state?.count ?? -1) keys (doc=\(isDocument)), params=\(params.count), substantial=\(fullStateIsSubstantial)")
-        #endif
         return try? PropertyListSerialization.data(
             fromPropertyList: combined,
             format: .binary,
@@ -229,9 +226,6 @@ class AudioEngineManager {
                 au.fullStateForDocument = state
                 au.fullState = state
             }
-            #if DEBUG
-            print("[FWD] applyPluginState \(au.audioUnitName ?? "?"): restored \(state.count) keys, document=\(outer["_fullStateIsDocument"] as? Bool ?? true)")
-            #endif
         }
 
         // Only apply parameterTree when flagged as required (AudioKit-style plugins
