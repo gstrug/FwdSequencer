@@ -137,7 +137,6 @@ private struct SongTransportBar: View {
     @State private var tapTimes: [Date] = []
     @State private var savedVisible = false
     @State private var showMixer = false
-    @State private var showSettings = false
 
     private var beatCount: Int { songStore.song.timeSignature.numerator }
     private var currentSectionBars: Int {
@@ -146,114 +145,137 @@ private struct SongTransportBar: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left").font(.title3.weight(.semibold))
-            }
-            .buttonStyle(.plain)
-
-            Divider().frame(height: 28)
-
-            Button { songStore.rewind() } label: {
-                Image(systemName: "backward.end.fill").font(.body)
-                    .foregroundStyle(songStore.isPlaying || songStore.isPaused ? .primary : .secondary)
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                if songStore.isPlaying      { songStore.pause() }
-                else if songStore.isPaused  { songStore.resume() }
-                else                        { songStore.play() }
-            } label: {
-                Image(systemName: songStore.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.title2).foregroundColor(.green).frame(width: 32)
-            }
-            .buttonStyle(.plain)
-
-            Button { songStore.stop() } label: {
-                Image(systemName: "stop.fill").font(.body)
-                    .foregroundStyle(songStore.isPlaying || songStore.isPaused ? .red : .secondary)
-            }
-            .buttonStyle(.plain)
-
-            Button { songStore.midiPanic() } label: {
-                Text("!").font(.body.bold()).foregroundStyle(.red).frame(width: 20)
-            }
-            .buttonStyle(.plain)
-
-            // Loop toggle — off = play once to the end, on = loop the song.
-            Button { songStore.loopEnabled.toggle() } label: {
-                Image(systemName: "repeat")
-                    .font(.body)
-                    .foregroundStyle(songStore.loopEnabled ? Color.accentColor : .secondary)
-            }
-            .buttonStyle(.plain)
-            .help("Loop song")
-
-            Divider().frame(height: 28)
-
-            HStack(spacing: 6) {
-                Text("BPM").font(.caption).foregroundStyle(.secondary)
-                Text("\(Int(songStore.song.tempo))")
-                    .font(.caption.monospacedDigit()).frame(width: 36, alignment: .trailing)
-                Stepper("", value: $songStore.song.tempo, in: 40...240, step: 1).labelsHidden()
-            }
-
-            Divider().frame(height: 28)
-
-            // Metronome beat lights — red on beat 1, green on the rest.
-            HStack(spacing: 4) {
-                ForEach(0..<beatCount, id: \.self) { beat in
-                    let isActive = songStore.isPlaying && beat == currentBeat
-                    Circle()
-                        .fill(isActive ? (beat == 0 ? Color.red : Color.green) : Color.gray.opacity(0.25))
-                        .frame(width: 10, height: 10)
-                        .animation(.easeOut(duration: 0.08), value: isActive)
+        VStack(spacing: 6) {
+            // ── Row 1: playback ──────────────────────────────────────────
+            HStack(spacing: 14) {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left").font(.title3.weight(.semibold))
                 }
-            }
+                .buttonStyle(.plain)
 
-            Divider().frame(height: 28)
+                Divider().frame(height: 26)
 
-            // Bar counter — current bar within the playing section.
-            SongBarCounter(totalBars: currentSectionBars)
+                Button { songStore.rewind() } label: {
+                    Image(systemName: "backward.end.fill").font(.body)
+                        .foregroundStyle(songStore.isPlaying || songStore.isPaused ? .primary : .secondary)
+                }
+                .buttonStyle(.plain)
 
-            Spacer()
-                .overlay(alignment: .center) {
-                    Label("Saved", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.bold()).foregroundStyle(.green)
-                        .opacity(savedVisible ? 1 : 0)
-                        .animation(.easeInOut(duration: 0.3), value: savedVisible)
+                Button {
+                    if songStore.isPlaying      { songStore.pause() }
+                    else if songStore.isPaused  { songStore.resume() }
+                    else                        { songStore.play() }
+                } label: {
+                    Image(systemName: songStore.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.title2).foregroundColor(.green).frame(width: 32)
+                }
+                .buttonStyle(.plain)
+
+                Button { songStore.stop() } label: {
+                    Image(systemName: "stop.fill").font(.body)
+                        .foregroundStyle(songStore.isPlaying || songStore.isPaused ? .red : .secondary)
+                }
+                .buttonStyle(.plain)
+
+                Button { songStore.midiPanic() } label: {
+                    Text("!").font(.body.bold()).foregroundStyle(.red).frame(width: 20)
+                }
+                .buttonStyle(.plain)
+
+                Button { songStore.loopEnabled.toggle() } label: {
+                    Image(systemName: "repeat").font(.body)
+                        .foregroundStyle(songStore.loopEnabled ? Color.accentColor : .secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Loop song")
+
+                Divider().frame(height: 26)
+
+                HStack(spacing: 6) {
+                    Text("BPM").font(.caption).foregroundStyle(.secondary)
+                    Text("\(Int(songStore.song.tempo))")
+                        .font(.caption.monospacedDigit()).frame(width: 36, alignment: .trailing)
+                    Stepper("", value: $songStore.song.tempo, in: 40...240, step: 1).labelsHidden()
+                    Button { handleTap() } label: {
+                        Label("Tap", systemImage: "hand.tap.fill").font(.caption)
+                    }
+                    .buttonStyle(.borderedProminent).controlSize(.small)
                 }
 
-            Button { showSettings = true } label: {
-                Image(systemName: "ellipsis.circle").font(.title3)
-            }
-            .buttonStyle(.plain)
-            .help("Song settings")
+                Divider().frame(height: 26)
 
-            Button { showPlayDock.toggle() } label: {
-                Label("Play", systemImage: "pianokeys")
-            }
-            .buttonStyle(.bordered)
-            .tint(showPlayDock ? .accentColor : nil)
+                // Metronome beat lights — red on beat 1, green on the rest.
+                HStack(spacing: 4) {
+                    ForEach(0..<beatCount, id: \.self) { beat in
+                        let isActive = songStore.isPlaying && beat == currentBeat
+                        Circle()
+                            .fill(isActive ? (beat == 0 ? Color.red : Color.green) : Color.gray.opacity(0.25))
+                            .frame(width: 10, height: 10)
+                            .animation(.easeOut(duration: 0.08), value: isActive)
+                    }
+                }
 
-            Button { showMixer = true } label: {
-                Label("Mixer", systemImage: "slider.vertical.3")
+                Divider().frame(height: 26)
+
+                SongBarCounter(totalBars: currentSectionBars)
+
+                Spacer()
+                    .overlay(alignment: .trailing) {
+                        Label("Saved", systemImage: "checkmark.circle.fill")
+                            .font(.subheadline.bold()).foregroundStyle(.green)
+                            .opacity(savedVisible ? 1 : 0)
+                            .animation(.easeInOut(duration: 0.3), value: savedVisible)
+                    }
             }
-            .buttonStyle(.bordered)
+
+            // ── Row 2: song settings + panels ────────────────────────────
+            HStack(spacing: 14) {
+                HStack(spacing: 4) {
+                    Text("Time").font(.caption).foregroundStyle(.secondary)
+                    Picker("", selection: $songStore.song.timeSignature.numerator) {
+                        ForEach([2,3,4,5,6,7,8], id: \.self) { Text("\($0)").tag($0) }
+                    }.pickerStyle(.menu).fixedSize()
+                    Text("/").font(.body.bold()).foregroundStyle(.secondary)
+                    Picker("", selection: $songStore.song.timeSignature.denominator) {
+                        ForEach([2,4,8], id: \.self) { Text("\($0)").tag($0) }
+                    }.pickerStyle(.menu).fixedSize()
+                }
+
+                Divider().frame(height: 26)
+
+                HStack(spacing: 6) {
+                    Image(systemName: "speaker.wave.2.fill").font(.caption2).foregroundStyle(.secondary)
+                    Slider(value: $songStore.song.masterVolume, in: 0...1).frame(width: 130)
+                }
+
+                Divider().frame(height: 26)
+
+                TextField("Song Name", text: $songStore.song.name)
+                    .font(.subheadline.bold())
+                    .frame(minWidth: 120, maxWidth: 240)
+
+                Spacer()
+
+                Button { showPlayDock.toggle() } label: {
+                    Label("Play", systemImage: "pianokeys")
+                }
+                .buttonStyle(.bordered)
+                .tint(showPlayDock ? .accentColor : nil)
+
+                Button { showMixer = true } label: {
+                    Label("Mixer", systemImage: "slider.vertical.3")
+                }
+                .buttonStyle(.bordered)
+            }
         }
         .padding(.horizontal, 20)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .background(.bar)
         .overlay(alignment: .bottom) { Divider() }
         .sheet(isPresented: $showMixer) {
             SongMixerView()
                 .environmentObject(songStore)
                 .environmentObject(songStore.levels)
-        }
-        .sheet(isPresented: $showSettings) {
-            SongSettingsSheet(onTapTempo: { handleTap() })
-                .environmentObject(songStore)
         }
         .onReceive(songStore.savedSignal) {
             savedVisible = true
@@ -280,52 +302,12 @@ private struct SongTransportBar: View {
     }
 }
 
-// MARK: - Song settings sheet (the less-frequent controls, off the transport)
-
-private struct SongSettingsSheet: View {
-    @EnvironmentObject var songStore: SongStore
-    @Environment(\.dismiss) private var dismiss
-    var onTapTempo: () -> Void
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("Song") {
-                    TextField("Song Name", text: $songStore.song.name)
-                }
-                Section("Tempo") {
-                    Stepper("Tempo: \(Int(songStore.song.tempo)) BPM",
-                            value: $songStore.song.tempo, in: 40...240, step: 1)
-                    Button { onTapTempo() } label: {
-                        Label("Tap Tempo", systemImage: "hand.tap.fill")
-                    }
-                }
-                Section("Time Signature") {
-                    Picker("Beats", selection: $songStore.song.timeSignature.numerator) {
-                        ForEach([2,3,4,5,6,7,8], id: \.self) { Text("\($0)").tag($0) }
-                    }
-                    Picker("Note value", selection: $songStore.song.timeSignature.denominator) {
-                        ForEach([2,4,8], id: \.self) { Text("\($0)").tag($0) }
-                    }
-                }
-                Section("Master") {
-                    HStack {
-                        Image(systemName: "speaker.wave.2").foregroundStyle(.secondary)
-                        Slider(value: $songStore.song.masterVolume, in: 0...1)
-                        Text("\(Int(songStore.song.masterVolume * 100))")
-                            .font(.caption.monospacedDigit()).frame(width: 34)
-                    }
-                }
-            }
-            .navigationTitle("Song Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
-        }
-        .presentationDetents([.medium, .large])
+// Enlarge a small icon button's tap target (and glyph) for easier touch use.
+private extension View {
+    func iconHitTarget(_ size: CGFloat = 36) -> some View {
+        self.font(.title3)
+            .frame(width: size, height: size)
+            .contentShape(Rectangle())
     }
 }
 
@@ -353,30 +335,30 @@ private struct ArrangementStrip: View {
             // Section controls act on the selected section.
             let sel = songStore.selectedSection
             Button { songStore.addSection() } label: {
-                Image(systemName: "plus")
+                Image(systemName: "plus").iconHitTarget(40)
             }
             .help("Add section")
 
             Button { songStore.duplicateSection(at: sel) } label: {
-                Image(systemName: "plus.square.on.square")
+                Image(systemName: "plus.square.on.square").iconHitTarget(40)
             }
             .help("Duplicate section")
 
             Button { songStore.moveSection(from: sel, to: sel - 1) } label: {
-                Image(systemName: "chevron.left")
+                Image(systemName: "chevron.left").iconHitTarget(40)
             }
             .disabled(sel <= 0)
 
             Button { songStore.moveSection(from: sel, to: sel + 1) } label: {
-                Image(systemName: "chevron.right")
+                Image(systemName: "chevron.right").iconHitTarget(40)
             }
             .disabled(sel >= songStore.song.sections.count - 1)
 
             Button(role: .destructive) { songStore.deleteSection(at: sel) } label: {
-                Image(systemName: "trash")
+                Image(systemName: "trash").iconHitTarget(40)
             }
             .disabled(songStore.song.sections.count <= 1)
-            .padding(.trailing, 12)
+            .padding(.trailing, 8)
         }
         .background(.regularMaterial)
         .alert("Rename Section", isPresented: Binding(
@@ -535,7 +517,7 @@ private struct SongTrackRowView: View {
             Button {
                 withAnimation(.easeInOut(duration: 0.2)) { isCollapsed = false }
             } label: {
-                Image(systemName: "chevron.right").font(.caption.weight(.semibold))
+                Image(systemName: "chevron.right").iconHitTarget(34)
             }
             .buttonStyle(.plain).foregroundStyle(.secondary)
 
@@ -577,11 +559,11 @@ private struct SongTrackRowView: View {
     // Left rail — track-level: instrument + mixer + meter (constant across sections).
     private var trackHeader: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
+            HStack(spacing: 2) {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) { isCollapsed = true }
                 } label: {
-                    Image(systemName: "chevron.down").font(.caption.weight(.semibold))
+                    Image(systemName: "chevron.down").iconHitTarget(34)
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
 
@@ -589,22 +571,22 @@ private struct SongTrackRowView: View {
                 Spacer()
 
                 Button { songStore.moveTrackUp(track.id) } label: {
-                    Image(systemName: "chevron.up").font(.caption)
+                    Image(systemName: "chevron.up").iconHitTarget(34)
                 }
                 .buttonStyle(.plain).disabled(index == 0)
 
                 Button { songStore.moveTrackDown(track.id) } label: {
-                    Image(systemName: "chevron.down").font(.caption)
+                    Image(systemName: "chevron.down").iconHitTarget(34)
                 }
                 .buttonStyle(.plain).disabled(index == trackCount - 1)
 
                 Button { songStore.duplicateTrack(track.id) } label: {
-                    Image(systemName: "plus.square.on.square").font(.caption)
+                    Image(systemName: "plus.square.on.square").iconHitTarget(34)
                 }
                 .buttonStyle(.plain)
 
                 Button(role: .destructive) { showDeleteAlert = true } label: {
-                    Image(systemName: "trash").font(.caption).foregroundColor(.red)
+                    Image(systemName: "trash").foregroundColor(.red).iconHitTarget(34)
                 }
                 .buttonStyle(.plain)
             }
