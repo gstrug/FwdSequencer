@@ -55,6 +55,7 @@ struct SongTrack: Codable, Identifiable {
     var pluginInfo: PluginInfo? = nil
     var pluginStateData: Data? = nil  // song-level sound (see AudioEngineManager.getPluginState)
     var mixer: MixerState = MixerState()
+    var collapsed: Bool? = nil        // persisted minimized state (Optional → old songs decode)
 }
 
 struct SongSection: Codable, Identifiable {

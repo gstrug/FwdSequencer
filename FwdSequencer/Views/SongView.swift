@@ -9,7 +9,6 @@ import SwiftUI
 struct SongView: View {
     @EnvironmentObject var songStore: SongStore
     @Environment(\.dismiss) private var dismiss
-    @State private var collapsedTracks: Set<UUID> = []
     @State private var showPlayDock = false
 
     var body: some View {
@@ -38,11 +37,8 @@ struct SongView: View {
                             index: ti,
                             trackCount: songStore.song.tracks.count,
                             isCollapsed: Binding(
-                                get: { collapsedTracks.contains(trackID) },
-                                set: { collapsed in
-                                    if collapsed { collapsedTracks.insert(trackID) }
-                                    else { collapsedTracks.remove(trackID) }
-                                }
+                                get: { songStore.song.tracks[ti].collapsed ?? false },
+                                set: { songStore.song.tracks[ti].collapsed = $0 }
                             )
                         )
                     }
