@@ -43,7 +43,9 @@ struct PlayDockView: View {
             }
         }
         .padding(10)
+        .frame(maxWidth: .infinity)          // span the screen, never wider
         .background(.regularMaterial)
+        .clipped()                           // keep the wide keyboard from spilling past the edges
         .overlay(alignment: .top) { Divider() }
         .onDisappear { releaseAll() }
         .sheet(isPresented: $showPluginPicker) {
@@ -175,7 +177,9 @@ private struct PlayableKeyboard: View {
                     }
                     .frame(width: CGFloat(Self.whiteKeys.count) * whiteW, height: keyH, alignment: .topLeading)
                 }
+                .frame(maxWidth: .infinity)
                 .frame(height: keyH)
+                .clipped()
                 .onAppear { proxy.scrollTo(centerC, anchor: .center) }
                 .onChange(of: centerC) { c in withAnimation { proxy.scrollTo(c, anchor: .center) } }
             }

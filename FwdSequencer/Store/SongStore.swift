@@ -194,11 +194,13 @@ class SongStore: ObservableObject {
         // Instruments instantiate asynchronously and restore state ~1 s later.
         // No per-plugin ready callback yet (Phase 6), so approximate with a short
         // loading window sized to one plugin's load+restore.
-        if song.tracks.contains(where: { $0.pluginInfo != nil }) {
+        let hasPlugins = song.tracks.contains { $0.pluginInfo != nil }
+            || song.performance?.pluginInfo != nil
+        if hasPlugins {
             isLoading = true
-            // Must outlast the 1.0 s state-restore in loadPlugin so a save during the
-            // window can't capture a plugin before it has restored.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            // Must comfortably outlast the 1.0 s state-restore in loadPlugin so input
+            // is blocked until every plugin (incl. slow ones like GeoShred) has restored.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
                 self?.isLoading = false
             }
         }

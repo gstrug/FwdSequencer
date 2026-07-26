@@ -72,6 +72,24 @@ struct SongView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: showPlayDock)
+        // Block interaction while instruments load/restore, so user input can't
+        // interrupt a plugin (e.g. GeoShred) mid-restore and corrupt its state.
+        .overlay {
+            if songStore.isLoading {
+                ZStack {
+                    Color.black.opacity(0.55).ignoresSafeArea()
+                    VStack(spacing: 14) {
+                        ProgressView().controlSize(.large).tint(.white)
+                        Text("Loading instruments…").font(.title3.bold()).foregroundStyle(.white)
+                        Text("Please wait — don't tap yet").font(.callout).foregroundStyle(.white.opacity(0.85))
+                    }
+                    .padding(36)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: songStore.isLoading)
     }
 
     private var currentSectionKey: Int {
@@ -119,6 +137,7 @@ private struct SongTransportBar: View {
     @State private var tapTimes: [Date] = []
     @State private var savedVisible = false
     @State private var showMixer = false
+    @State private var showSettings = false
 
     private var beatCount: Int { songStore.song.timeSignature.numerator }
     private var currentSectionBars: Int {
@@ -178,26 +197,6 @@ private struct SongTransportBar: View {
                 Text("\(Int(songStore.song.tempo))")
                     .font(.caption.monospacedDigit()).frame(width: 36, alignment: .trailing)
                 Stepper("", value: $songStore.song.tempo, in: 40...240, step: 1).labelsHidden()
-                Button { handleTap() } label: {
-                    Label("Tap", systemImage: "hand.tap.fill").font(.caption)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            }
-
-            Divider().frame(height: 28)
-
-            // Time signature (song-level)
-            HStack(spacing: 2) {
-                Picker("", selection: $songStore.song.timeSignature.numerator) {
-                    ForEach([2,3,4,5,6,7,8], id: \.self) { Text("\($0)").tag($0) }
-                }
-                .pickerStyle(.menu).fixedSize()
-                Text("/").font(.body.bold()).foregroundStyle(.secondary)
-                Picker("", selection: $songStore.song.timeSignature.denominator) {
-                    ForEach([2,4,8], id: \.self) { Text("\($0)").tag($0) }
-                }
-                .pickerStyle(.menu).fixedSize()
             }
 
             Divider().frame(height: 28)
@@ -218,26 +217,19 @@ private struct SongTransportBar: View {
             // Bar counter — current bar within the playing section.
             SongBarCounter(totalBars: currentSectionBars)
 
-            Divider().frame(height: 28)
-
-            TextField("Song Name", text: $songStore.song.name)
-                .font(.subheadline.bold())
-                .frame(minWidth: 100, maxWidth: 180)
-
             Spacer()
                 .overlay(alignment: .center) {
-                    if songStore.isLoading {
-                        HStack(spacing: 6) {
-                            ProgressView().controlSize(.small)
-                            Text("Loading…").font(.caption).foregroundStyle(.secondary)
-                        }
-                    } else {
-                        Label("Saved", systemImage: "checkmark.circle.fill")
-                            .font(.caption).foregroundStyle(.green)
-                            .opacity(savedVisible ? 1 : 0)
-                            .animation(.easeInOut(duration: 0.3), value: savedVisible)
-                    }
+                    Label("Saved", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.bold()).foregroundStyle(.green)
+                        .opacity(savedVisible ? 1 : 0)
+                        .animation(.easeInOut(duration: 0.3), value: savedVisible)
                 }
+
+            Button { showSettings = true } label: {
+                Image(systemName: "ellipsis.circle").font(.title3)
+            }
+            .buttonStyle(.plain)
+            .help("Song settings")
 
             Button { showPlayDock.toggle() } label: {
                 Label("Play", systemImage: "pianokeys")
@@ -258,6 +250,10 @@ private struct SongTransportBar: View {
             SongMixerView()
                 .environmentObject(songStore)
                 .environmentObject(songStore.levels)
+        }
+        .sheet(isPresented: $showSettings) {
+            SongSettingsSheet(onTapTempo: { handleTap() })
+                .environmentObject(songStore)
         }
         .onReceive(songStore.savedSignal) {
             savedVisible = true
@@ -281,6 +277,55 @@ private struct SongTransportBar: View {
         let intervals = zip(tapTimes.dropLast(), tapTimes.dropFirst()).map { $1.timeIntervalSince($0) }
         let avg = intervals.reduce(0, +) / Double(intervals.count)
         songStore.song.tempo = min(240, max(40, (60.0 / avg).rounded()))
+    }
+}
+
+// MARK: - Song settings sheet (the less-frequent controls, off the transport)
+
+private struct SongSettingsSheet: View {
+    @EnvironmentObject var songStore: SongStore
+    @Environment(\.dismiss) private var dismiss
+    var onTapTempo: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Song") {
+                    TextField("Song Name", text: $songStore.song.name)
+                }
+                Section("Tempo") {
+                    Stepper("Tempo: \(Int(songStore.song.tempo)) BPM",
+                            value: $songStore.song.tempo, in: 40...240, step: 1)
+                    Button { onTapTempo() } label: {
+                        Label("Tap Tempo", systemImage: "hand.tap.fill")
+                    }
+                }
+                Section("Time Signature") {
+                    Picker("Beats", selection: $songStore.song.timeSignature.numerator) {
+                        ForEach([2,3,4,5,6,7,8], id: \.self) { Text("\($0)").tag($0) }
+                    }
+                    Picker("Note value", selection: $songStore.song.timeSignature.denominator) {
+                        ForEach([2,4,8], id: \.self) { Text("\($0)").tag($0) }
+                    }
+                }
+                Section("Master") {
+                    HStack {
+                        Image(systemName: "speaker.wave.2").foregroundStyle(.secondary)
+                        Slider(value: $songStore.song.masterVolume, in: 0...1)
+                        Text("\(Int(songStore.song.masterVolume * 100))")
+                            .font(.caption.monospacedDigit()).frame(width: 34)
+                    }
+                }
+            }
+            .navigationTitle("Song Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 
