@@ -29,12 +29,18 @@ class AudioEngineManager {
             componentFlags: 0, componentFlagsMask: 0))
 
     init() {
-        try? AVAudioSession.sharedInstance().setCategory(
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(
             .playAndRecord,
             mode: .default,
             options: [.defaultToSpeaker, .mixWithOthers, .allowBluetoothHFP]
         )
-        try? AVAudioSession.sharedInstance().setActive(true)
+        // Give the render callback more time per buffer. The device default is small,
+        // and hosting several AUv3 synths can overrun it — producing crackle/dropouts
+        // even at low levels (distinct from clipping). ~11 ms is a good stability vs.
+        // latency balance for a host.
+        try? session.setPreferredIOBufferDuration(0.011)
+        try? session.setActive(true)
         setupMasterChain()
     }
 
