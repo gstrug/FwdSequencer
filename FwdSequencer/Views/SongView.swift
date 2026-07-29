@@ -27,18 +27,20 @@ struct SongView: View {
 
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(spacing: 12) {
-                    ForEach(songStore.song.tracks.indices, id: \.self) { ti in
-                        let trackID = songStore.song.tracks[ti].id
+                    // Identity-based binding ForEach — safe to delete from (an index-based
+                    // ForEach crashes when the array shrinks and a stale index binding is
+                    // still evaluated).
+                    ForEach($songStore.song.tracks) { $track in
                         SongTrackRowView(
-                            track: $songStore.song.tracks[ti],
-                            part: partBinding(trackID: trackID),
+                            track: $track,
+                            part: partBinding(trackID: track.id),
                             sectionKey: currentSectionKey,
                             sectionScale: currentSectionScale,
-                            index: ti,
+                            index: songStore.song.tracks.firstIndex(where: { $0.id == track.id }) ?? 0,
                             trackCount: songStore.song.tracks.count,
                             isCollapsed: Binding(
-                                get: { songStore.song.tracks[ti].collapsed ?? false },
-                                set: { songStore.song.tracks[ti].collapsed = $0 }
+                                get: { track.collapsed ?? false },
+                                set: { $track.wrappedValue.collapsed = $0 }
                             )
                         )
                     }
@@ -318,8 +320,9 @@ private struct ArrangementStrip: View {
         HStack(spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(songStore.song.sections.indices, id: \.self) { idx in
-                        chip(idx)
+                    // Identity-based so deleting a section can't crash on a stale index.
+                    ForEach(Array(songStore.song.sections.enumerated()), id: \.element.id) { idx, section in
+                        chip(idx, section)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -372,8 +375,7 @@ private struct ArrangementStrip: View {
     }
 
     @ViewBuilder
-    private func chip(_ idx: Int) -> some View {
-        let section = songStore.song.sections[idx]
+    private func chip(_ idx: Int, _ section: SongSection) -> some View {
         let isSelected = songStore.selectedSection == idx
         let isPlaying  = songStore.isPlaying && songStore.currentSection == idx
 
