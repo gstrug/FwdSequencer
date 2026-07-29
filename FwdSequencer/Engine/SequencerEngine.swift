@@ -127,10 +127,12 @@ class SequencerEngine {
         var notePtr: Int = 0
         var lastMidiNotes: [Int] = []   // notes currently ringing (>1 for a chord)
         var repRemaining: Int = 0       // ticks left in a rep burst (0 = not in burst)
-        // Set of pool positions the current chord occupies. nil = single-note mode
-        // (Fwd/Back/Rep walk `notePtr` exactly as before). A Play chord sets it, and
-        // then Fwd/Back slide the whole chord and Rep replays it.
+        // Set of pool positions the current chord occupies. nil = single-note mode.
         var voicing: [Int]? = nil
+        // False until the first note is played. The first Fwd/Back plays the starting
+        // note in place (so a plain Fwd,Fwd,… run begins on note 1); every step after
+        // moves the pointer first, then plays — so Play→Rep→Fwd/Back doesn't replay.
+        var hasPlayed: Bool = false
     }
 
     // MARK: - Lifecycle
@@ -417,11 +419,13 @@ class SequencerEngine {
                 let moved = v.map { ($0 + n) % noteCount }
                 state.voicing = moved
                 state.notePtr = moved.first ?? 0
+                state.hasPlayed = true
                 return (moved, true, step.gate)
             }
-            // Single-note mode: move forward n, THEN play — so a step after a Play/Rep
-            // continues from the note just played rather than replaying it.
-            state.notePtr = (state.notePtr + n) % noteCount
+            // First step plays the starting note in place; afterwards move forward THEN
+            // play — so a plain Fwd run walks 0,1,2… while Play→Rep→Fwd doesn't replay.
+            if state.hasPlayed { state.notePtr = (state.notePtr + n) % noteCount }
+            state.hasPlayed = true
             return ([state.notePtr], true, step.gate)
 
         case .back:
@@ -431,10 +435,11 @@ class SequencerEngine {
                 let moved = v.map { (($0 - n) % noteCount + noteCount) % noteCount }
                 state.voicing = moved
                 state.notePtr = moved.first ?? 0
+                state.hasPlayed = true
                 return (moved, true, step.gate)
             }
-            // Move back n, THEN play (mirror of Fwd) so descending runs don't replay.
-            state.notePtr = ((state.notePtr - n) % noteCount + noteCount) % noteCount
+            if state.hasPlayed { state.notePtr = ((state.notePtr - n) % noteCount + noteCount) % noteCount }
+            state.hasPlayed = true
             return ([state.notePtr], true, step.gate)
 
         case .rep:
@@ -451,6 +456,7 @@ class SequencerEngine {
                     advanceStepIndex(si, stepCount: stepCount, state: &state)
                 }
             }
+            state.hasPlayed = true
             return (state.voicing ?? [state.notePtr], true, step.gate)
 
         case .play:
@@ -459,6 +465,7 @@ class SequencerEngine {
             let indices = playIndices(for: step, noteCount: noteCount)
             state.voicing = indices.count > 1 ? indices : nil
             state.notePtr = indices[0]
+            state.hasPlayed = true
             advanceStepIndex(si, stepCount: stepCount, state: &state)
             return (indices, true, step.gate)
 
@@ -472,6 +479,7 @@ class SequencerEngine {
             state.voicing = nil
             let idx = noteCount > 1 ? Int.random(in: 0..<noteCount) : 0
             state.notePtr = (idx + 1) % noteCount
+            state.hasPlayed = true
             advanceStepIndex(si, stepCount: stepCount, state: &state)
             return ([idx], true, step.gate)
         }
