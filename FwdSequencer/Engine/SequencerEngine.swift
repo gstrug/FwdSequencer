@@ -419,10 +419,10 @@ class SequencerEngine {
                 state.notePtr = moved.first ?? 0
                 return (moved, true, step.gate)
             }
-            // Single-note mode: play current FIRST, then advance (unchanged behaviour).
-            let idx = state.notePtr
+            // Single-note mode: move forward n, THEN play — so a step after a Play/Rep
+            // continues from the note just played rather than replaying it.
             state.notePtr = (state.notePtr + n) % noteCount
-            return ([idx], true, step.gate)
+            return ([state.notePtr], true, step.gate)
 
         case .back:
             advanceStepIndex(si, stepCount: stepCount, state: &state)
@@ -433,9 +433,9 @@ class SequencerEngine {
                 state.notePtr = moved.first ?? 0
                 return (moved, true, step.gate)
             }
-            let idx = state.notePtr
+            // Move back n, THEN play (mirror of Fwd) so descending runs don't replay.
             state.notePtr = ((state.notePtr - n) % noteCount + noteCount) % noteCount
-            return ([idx], true, step.gate)
+            return ([state.notePtr], true, step.gate)
 
         case .rep:
             // Replay the current note/chord n times total. repRemaining tracks ticks left.

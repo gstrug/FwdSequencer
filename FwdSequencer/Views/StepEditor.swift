@@ -72,11 +72,11 @@ struct StepRow: View {
     private var currentDescription: String {
         switch step.type {
         case .fwd:
-            return step.n == 1 ? "Play current, move forward 1"
-                               : "Play current, move forward \(step.n)"
+            return step.n == 1 ? "Move forward 1 and play"
+                               : "Move forward \(step.n) and play"
         case .back:
-            return step.n == 1 ? "Play current, move back 1"
-                               : "Play current, move back \(step.n)"
+            return step.n == 1 ? "Move back 1 and play"
+                               : "Move back \(step.n) and play"
         case .rep:
             return step.n == 1 ? "Play current note once"
                                : "Play current note \(step.n) times"
