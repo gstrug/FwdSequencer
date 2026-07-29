@@ -8,12 +8,12 @@ struct StepTypePickerSheet: View {
 
     private func description(for type: StepType) -> String {
         switch type {
-        case .fwd:    return "Play the current note, then move the pointer forward"
-        case .back:   return "Play the current note, then move the pointer backward"
-        case .rep:    return "Play the current note N times without moving"
+        case .fwd:    return "Move the pointer forward N, then play that note"
+        case .back:   return "Move the pointer back N, then play that note"
+        case .rep:    return "Replay the current note N times without moving"
         case .play:   return "Jump to note N in the pool and play it"
         case .skip:   return "Hold — keep the previous note ringing, don't play a new one"
-        case .random: return "Jump to a random step and execute it"
+        case .random: return "Play a random note from the pool"
         }
     }
 
@@ -52,7 +52,7 @@ struct StepTypePickerSheet: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
     }
 }
 
