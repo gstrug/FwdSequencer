@@ -20,15 +20,16 @@ class AudioEngineManager {
 
     init() {
         let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(
-            .playAndRecord,
-            mode: .default,
-            options: [.defaultToSpeaker, .mixWithOthers, .allowBluetoothHFP]
-        )
-        // Give the render callback more time per buffer. The device default is small,
-        // and hosting CPU-heavy sampled instruments (e.g. Ravenscroft piano) can overrun
-        // it — producing crackle/dropouts even at low levels (distinct from clipping).
-        try? session.setPreferredIOBufferDuration(0.011)
+        // Instrument plugins (MIDI in, audio out) never need audio input, so use the
+        // lighter, higher-quality .playback category instead of .playAndRecord — the
+        // record path adds overhead and a more glitch-prone route, and .playback gets
+        // full-quality Bluetooth (A2DP) rather than call-grade HFP.
+        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        // Give the render callback more time per buffer. Hosting a CPU-heavy, disk-
+        // streaming sampled instrument (e.g. Ravenscroft piano) overruns a small buffer,
+        // producing crackle even at low levels (distinct from clipping). ~23 ms is a
+        // stable size; latency is still fine for sequenced playback and live keys.
+        try? session.setPreferredIOBufferDuration(0.023)
         try? session.setActive(true)
     }
 
