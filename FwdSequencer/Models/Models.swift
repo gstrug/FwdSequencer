@@ -164,31 +164,51 @@ struct Step: Codable, Identifiable {
         switch type {
         case .play:
             return isChord ? "P" + chordPositions.map(String.init).joined(separator: ",") : "P\(n)"
-        case .rep  where n > 1: return "R×\(n)"
-        case .fwd  where n > 1: return "F\(n)"
-        case .back where n > 1: return "B\(n)"
+        case .rep   where n > 1: return "R×\(n)"
+        case .fwd   where n > 1: return "F\(n)"
+        case .back  where n > 1: return "B\(n)"
+        case .hold  where n > 1: return "H×\(n)"
+        case .pause where n > 1: return "—×\(n)"
+        case .hold:  return "Hold"
+        case .pause: return "—"
         default: return type.abbreviation
         }
     }
 }
 
-enum StepType: String, Codable, CaseIterable {
+enum StepType: String, CaseIterable {
     case fwd    = "Fwd"
     case back   = "Back"
-    case skip   = "Skip"
     case rep    = "Repeat"
     case play   = "Play"
     case random = "Random"
+    case hold   = "Hold"     // was "Skip": keep the previous note ringing, play nothing
+    case pause  = "Pause"    // rest: note-off the previous note, play nothing
 
     var abbreviation: String {
         switch self {
         case .fwd:    return "Fwd"
         case .back:   return "Back"
-        case .skip:   return "Skip"
         case .rep:    return "Rep"
         case .play:   return "Play"
         case .random: return "Rnd"
+        case .hold:   return "Hold"
+        case .pause:  return "Rest"
         }
+    }
+}
+
+// Custom Codable so songs saved with the old "Skip" name still decode as .hold, and
+// any unknown future value falls back safely rather than failing the whole song.
+extension StepType: Codable {
+    init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        if raw == "Skip" { self = .hold }
+        else { self = StepType(rawValue: raw) ?? .fwd }
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        try c.encode(rawValue)
     }
 }
 

@@ -126,7 +126,8 @@ class SequencerEngine {
         var stepIndex: Int = 0
         var notePtr: Int = 0
         var lastMidiNotes: [Int] = []   // notes currently ringing (>1 for a chord)
-        var repRemaining: Int = 0       // ticks left in a rep burst (0 = not in burst)
+        var dwellRemaining: Int = 0     // triggers left dwelling on the current step
+                                        // (Rep replays, Hold holds, Pause rests) — 0 = not dwelling
         // Set of pool positions the current chord occupies. nil = single-note mode.
         var voicing: [Int]? = nil
         // False until the first note is played. The first Fwd/Back plays the starting
@@ -237,6 +238,14 @@ class SequencerEngine {
 
         // Loop point: end of the current pattern/section.
         if globalStep >= totalSteps {
+            // Hard restart: release every ringing note and drop its pending note-off
+            // BEFORE wiping the track states. Otherwise a note from the end of this
+            // section keeps sounding into the next one (its own scheduled note-off
+            // fires late) and the fresh state can't stop it — the "extra"/muddy
+            // artifact heard at boundaries. A clean restart makes the next section
+            // begin at its own first beat, exactly as each step expects.
+            cancelAllPendingNoteOffs()
+            audioEngine?.allNotesOff()
             for key in states.keys { states[key] = TrackState() }
             globalStep = 0
             if isSongMode {
@@ -377,6 +386,21 @@ class SequencerEngine {
         // pointer continuing to evolve across step-list loops.
     }
 
+    // Stay on the current step for `count` triggers, then advance. Shared by Rep (which
+    // replays), Hold (holds the note) and Pause (rests) — a track dwells on one step at
+    // a time, so a single counter suffices.
+    private func dwell(_ count: Int, si: Int, stepCount: Int, state: inout TrackState) {
+        if count <= 1 {
+            advanceStepIndex(si, stepCount: stepCount, state: &state)
+            state.dwellRemaining = 0
+        } else if state.dwellRemaining == 0 {
+            state.dwellRemaining = count - 1   // first trigger: start the dwell
+        } else {
+            state.dwellRemaining -= 1
+            if state.dwellRemaining == 0 { advanceStepIndex(si, stepCount: stepCount, state: &state) }
+        }
+    }
+
     // Resolve a Play step to the 0-indexed pool positions it triggers. A chord
     // (chordPositions with >1 valid entry) returns several; otherwise a single note
     // from `n`. Positions are clamped/filtered to the pool and de-duplicated, so an
@@ -443,19 +467,8 @@ class SequencerEngine {
             return ([state.notePtr], true, step.gate)
 
         case .rep:
-            // Replay the current note/chord n times total. repRemaining tracks ticks left.
-            let count = max(1, step.n)
-            if count == 1 {
-                advanceStepIndex(si, stepCount: stepCount, state: &state)
-                state.repRemaining = 0
-            } else if state.repRemaining == 0 {
-                state.repRemaining = count - 1   // first hit: start burst
-            } else {
-                state.repRemaining -= 1
-                if state.repRemaining == 0 {
-                    advanceStepIndex(si, stepCount: stepCount, state: &state)
-                }
-            }
+            // Replay the current note/chord for n triggers.
+            dwell(max(1, step.n), si: si, stepCount: stepCount, state: &state)
             state.hasPlayed = true
             return (state.voicing ?? [state.notePtr], true, step.gate)
 
@@ -469,9 +482,15 @@ class SequencerEngine {
             advanceStepIndex(si, stepCount: stepCount, state: &state)
             return (indices, true, step.gate)
 
-        case .skip:
-            advanceStepIndex(si, stepCount: stepCount, state: &state)
+        case .hold:
+            // Keep the previous note ringing (no new note, don't stop it) for n triggers.
+            dwell(max(1, step.n), si: si, stepCount: stepCount, state: &state)
             return ([], false, 1.0)
+
+        case .pause:
+            // Rest: note-off the previous note and stay silent for n triggers.
+            dwell(max(1, step.n), si: si, stepCount: stepCount, state: &state)
+            return ([], true, 1.0)
 
         case .random:
             // Play a random note from the pool; leave the pointer just after it. Returns

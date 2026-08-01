@@ -8,12 +8,13 @@ struct StepTypePickerSheet: View {
 
     private func description(for type: StepType) -> String {
         switch type {
-        case .fwd:    return "Move the pointer forward N, then play that note"
-        case .back:   return "Move the pointer back N, then play that note"
-        case .rep:    return "Replay the current note N times without moving"
-        case .play:   return "Jump to note N in the pool and play it"
-        case .skip:   return "Hold — keep the previous note ringing, don't play a new one"
+        case .fwd:    return "Move forward N and play — a plain run walks the pool"
+        case .back:   return "Move back N and play"
+        case .rep:    return "Replay the current note N times"
+        case .play:   return "Jump to note N (or a chord) and play it"
         case .random: return "Play a random note from the pool"
+        case .hold:   return "Keep the previous note ringing for N steps"
+        case .pause:  return "Rest — note-off, silence for N steps"
         }
     }
 
@@ -85,8 +86,13 @@ struct StepRow: View {
                 return "Play pool notes \(step.chordPositions.map(String.init).joined(separator: ", ")) together" + poolHint
             }
             return "Jump to pool note \(step.n) and play it" + poolHint
-        case .skip:   return "Hold — previous note keeps ringing"
         case .random: return "Play a random note from the pool"
+        case .hold:
+            return step.n == 1 ? "Hold — previous note keeps ringing"
+                               : "Hold the previous note for \(step.n) steps"
+        case .pause:
+            return step.n == 1 ? "Rest — silence (note off)"
+                               : "Rest (note off) for \(step.n) steps"
         }
     }
 
@@ -111,11 +117,13 @@ struct StepRow: View {
 
     private var stepperLabel: String? {
         switch step.type {
-        case .fwd:  return "Advance: \(step.n)"
-        case .back: return "Retreat: \(step.n)"
-        case .rep:  return "×\(step.n)"
-        case .play: return "Note: \(step.n)"
-        default:    return nil
+        case .fwd:   return "Advance: \(step.n)"
+        case .back:  return "Retreat: \(step.n)"
+        case .rep:   return "×\(step.n)"
+        case .play:  return "Note: \(step.n)"
+        case .hold:  return "Hold: \(step.n)"
+        case .pause: return "Rest: \(step.n)"
+        default:     return nil
         }
     }
 
@@ -185,7 +193,8 @@ struct StepRow: View {
                 .padding(.leading, 34)
 
             // Per-step gate — scales how long this step's note(s) sustain.
-            if step.type != .skip {
+            // Hidden for Hold/Pause, which don't play a note.
+            if step.type != .hold && step.type != .pause {
                 HStack(spacing: 8) {
                     Text("Gate").font(.caption2).foregroundStyle(.secondary)
                     Slider(value: $step.gate, in: 0.05...1.0)
