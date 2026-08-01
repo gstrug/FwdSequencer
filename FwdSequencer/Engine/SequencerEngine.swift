@@ -134,6 +134,10 @@ class SequencerEngine {
         // note in place (so a plain Fwd,Fwd,… run begins on note 1); every step after
         // moves the pointer first, then plays — so Play→Rep→Fwd/Back doesn't replay.
         var hasPlayed: Bool = false
+        // A Hold/Pause dwell carried over from the previous section. While set, the
+        // track ignores the new section's steps and keeps holding/resting until the
+        // dwell finishes — so a Hold on the last beat spans into the next section.
+        var carry: StepType? = nil
     }
 
     // MARK: - Lifecycle
@@ -238,15 +242,42 @@ class SequencerEngine {
 
         // Loop point: end of the current pattern/section.
         if globalStep >= totalSteps {
-            // Hard restart: release every ringing note and drop its pending note-off
-            // BEFORE wiping the track states. Otherwise a note from the end of this
-            // section keeps sounding into the next one (its own scheduled note-off
-            // fires late) and the fresh state can't stop it — the "extra"/muddy
-            // artifact heard at boundaries. A clean restart makes the next section
-            // begin at its own first beat, exactly as each step expects.
-            cancelAllPendingNoteOffs()
-            audioEngine?.allNotesOff()
-            for key in states.keys { states[key] = TrackState() }
+            // A Hold/Pause still dwelling at the boundary carries into the next
+            // section: a two-beat Hold on the last beat keeps holding through beat 1
+            // of the next section. Detect those tracks (from the OLD section's steps,
+            // frame is still the old section here) and preserve their dwell.
+            var carries: [UUID: TrackState] = [:]
+            for track in frame.tracks {
+                guard let st = states[track.id], st.dwellRemaining > 0 else { continue }
+                let carryType: StepType?
+                if let existing = st.carry {
+                    carryType = existing                       // already carrying — keep going
+                } else if !track.steps.isEmpty {
+                    let type = track.steps[st.stepIndex % track.steps.count].type
+                    carryType = (type == .hold || type == .pause) ? type : nil
+                } else {
+                    carryType = nil
+                }
+                guard let ct = carryType else { continue }
+                var carried = TrackState()
+                carried.carry = ct
+                carried.dwellRemaining = st.dwellRemaining
+                carried.notePtr = st.notePtr
+                carried.lastMidiNotes = ct == .hold ? st.lastMidiNotes : []  // Hold keeps ringing
+                carries[track.id] = carried
+            }
+
+            // Every other track hard-restarts: release its ringing notes and drop
+            // pending note-offs so nothing bleeds into the next section (the "extra"/
+            // muddy artifact). A carrying Hold is left untouched so it keeps sounding.
+            for key in states.keys {
+                if carries[key]?.carry == .hold { continue }
+                cancelPendingNoteOffs(for: key)
+                for note in states[key]?.lastMidiNotes ?? [] {
+                    audioEngine?.stopNote(trackID: key, midiNote: UInt8(note))
+                }
+            }
+            for key in states.keys { states[key] = carries[key] ?? TrackState() }
             globalStep = 0
             if isSongMode {
                 let count = songSectionCount()
@@ -430,6 +461,18 @@ class SequencerEngine {
 
         state.notePtr = state.notePtr % noteCount
 
+        // Finish a Hold/Pause carried over from the previous section before running
+        // any of this section's steps. Each trigger consumes one of the remaining
+        // dwell counts; when it runs out, hand off to step 0 on the next trigger.
+        if let carryType = state.carry {
+            state.dwellRemaining -= 1
+            if state.dwellRemaining <= 0 {
+                state.carry = nil
+                state.stepIndex = 0
+            }
+            return carryType == .hold ? ([], false, 1.0) : ([], true, 1.0)
+        }
+
         let si = state.stepIndex % stepCount
         let step = track.steps[si]
 
@@ -493,11 +536,12 @@ class SequencerEngine {
             return ([], true, 1.0)
 
         case .random:
-            // Play a random note from the pool; leave the pointer just after it. Returns
-            // to single-note mode (a random chord isn't meaningful here).
+            // Play a random note; leave the pointer ON it so subsequent steps
+            // (Fwd/Back/Hold…) calculate from the random note itself. Returns to
+            // single-note mode (a random chord isn't meaningful here).
             state.voicing = nil
             let idx = noteCount > 1 ? Int.random(in: 0..<noteCount) : 0
-            state.notePtr = (idx + 1) % noteCount
+            state.notePtr = idx
             state.hasPlayed = true
             advanceStepIndex(si, stepCount: stepCount, state: &state)
             return ([idx], true, step.gate)
