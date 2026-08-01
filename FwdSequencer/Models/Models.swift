@@ -62,26 +62,39 @@ struct SongSection: Codable, Identifiable {
     var id: UUID = UUID()
     var name: String = "Section"      // "Verse", "Chorus", …
     var numberOfBars: Int = 4         // per-section length
-    var key: Int = 0                  // section-wide harmonic context (0 = C … 11 = B)
-    var scale: MusicalScale = .chromatic
-    var parts: [Part] = []            // one per SongTrack, keyed by trackID
+    var parts: [Part] = []            // one per SongTrack, keyed by trackID (key/scale live here now)
 
-    init(id: UUID = UUID(), name: String = "Section", numberOfBars: Int = 4,
-         key: Int = 0, scale: MusicalScale = .chromatic, parts: [Part] = []) {
-        self.id = id; self.name = name; self.numberOfBars = numberOfBars
-        self.key = key; self.scale = scale; self.parts = parts
+    init(id: UUID = UUID(), name: String = "Section", numberOfBars: Int = 4, parts: [Part] = []) {
+        self.id = id; self.name = name; self.numberOfBars = numberOfBars; self.parts = parts
     }
 
-    // Tolerant decoder so sections saved before key/scale existed still load.
+    // key/scale used to live on the section; they're now per-Part. `key`/`scale` remain
+    // as decode-only keys so older songs migrate: any legacy section-level value is
+    // back-filled onto that section's parts that don't already carry their own.
     private enum CodingKeys: String, CodingKey { case id, name, numberOfBars, key, scale, parts }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Section"
         numberOfBars = try c.decodeIfPresent(Int.self, forKey: .numberOfBars) ?? 4
-        key = try c.decodeIfPresent(Int.self, forKey: .key) ?? 0
-        scale = try c.decodeIfPresent(MusicalScale.self, forKey: .scale) ?? .chromatic
         parts = try c.decodeIfPresent([Part].self, forKey: .parts) ?? []
+        // Legacy migration: sections written before this change stored key/scale.
+        // If present, stamp them onto the parts (old parts had no key/scale of their own).
+        if let legacyKey = try c.decodeIfPresent(Int.self, forKey: .key) {
+            for i in parts.indices { parts[i].key = legacyKey }
+        }
+        if let legacyScale = try c.decodeIfPresent(MusicalScale.self, forKey: .scale) {
+            for i in parts.indices { parts[i].scale = legacyScale }
+        }
+    }
+
+    // Custom encoder: never writes key/scale (they moved to Part).
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(numberOfBars, forKey: .numberOfBars)
+        try c.encode(parts, forKey: .parts)
     }
 }
 
@@ -94,6 +107,29 @@ struct Part: Codable {
     var notePool: [NoteEntry] = []
     var steps: [Step] = []
     var tempoDivision: TempoDivision = .quarter
+    var key: Int = 0                        // 0 = C … 11 = B — per-track harmonic context
+    var scale: MusicalScale = .chromatic    // note-selection constraint for this track
+
+    init(trackID: UUID, notePool: [NoteEntry] = [], steps: [Step] = [],
+         tempoDivision: TempoDivision = .quarter, key: Int = 0,
+         scale: MusicalScale = .chromatic) {
+        self.trackID = trackID; self.notePool = notePool; self.steps = steps
+        self.tempoDivision = tempoDivision; self.key = key; self.scale = scale
+    }
+
+    // Tolerant decoder so parts saved before key/scale existed still load. Where key/
+    // scale are missing, SongSection.init back-fills them from the old section-level
+    // values (see below), so pre-existing songs keep the key/scale they had.
+    private enum CodingKeys: String, CodingKey { case trackID, notePool, steps, tempoDivision, key, scale }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        trackID = try c.decode(UUID.self, forKey: .trackID)
+        notePool = try c.decodeIfPresent([NoteEntry].self, forKey: .notePool) ?? []
+        steps = try c.decodeIfPresent([Step].self, forKey: .steps) ?? []
+        tempoDivision = try c.decodeIfPresent(TempoDivision.self, forKey: .tempoDivision) ?? .quarter
+        key = try c.decodeIfPresent(Int.self, forKey: .key) ?? 0
+        scale = try c.decodeIfPresent(MusicalScale.self, forKey: .scale) ?? .chromatic
+    }
 }
 
 // MARK: - Track

@@ -34,8 +34,6 @@ struct SongView: View {
                         SongTrackRowView(
                             track: $track,
                             part: partBinding(trackID: track.id),
-                            sectionKey: currentSectionKey,
-                            sectionScale: currentSectionScale,
                             index: songStore.song.tracks.firstIndex(where: { $0.id == track.id }) ?? 0,
                             trackCount: songStore.song.tracks.count,
                             isCollapsed: Binding(
@@ -88,16 +86,6 @@ struct SongView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: songStore.isLoading)
-    }
-
-    private var currentSectionKey: Int {
-        let sel = songStore.selectedSection
-        return songStore.song.sections.indices.contains(sel) ? songStore.song.sections[sel].key : 0
-    }
-
-    private var currentSectionScale: MusicalScale {
-        let sel = songStore.selectedSection
-        return songStore.song.sections.indices.contains(sel) ? songStore.song.sections[sel].scale : .chromatic
     }
 
     /// Binding to a track's Part in the currently selected section. Falls back to
@@ -408,8 +396,6 @@ private struct ArrangementStrip: View {
 
 private struct SectionSettingsBar: View {
     @EnvironmentObject var songStore: SongStore
-    @State private var showScalePicker = false
-    private let noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
 
     var body: some View {
         let sel = songStore.selectedSection
@@ -426,30 +412,12 @@ private struct SectionSettingsBar: View {
                         .font(.caption.monospacedDigit()).frame(minWidth: 18)
                 }
                 .fixedSize()
-
-                Divider().frame(height: 20)
-
-                Text("Key").font(.caption).foregroundStyle(.secondary)
-                Picker("", selection: $songStore.song.sections[sel].key) {
-                    ForEach(0..<12, id: \.self) { Text(noteNames[$0]).tag($0) }
-                }
-                .pickerStyle(.menu).fixedSize()
-
-                Button { showScalePicker = true } label: {
-                    Text(songStore.song.sections[sel].scale.rawValue).font(.caption).lineLimit(1)
-                }
-                .buttonStyle(.bordered)
             }
             Spacer()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 6)
         .background(.regularMaterial)
-        .sheet(isPresented: $showScalePicker) {
-            if songStore.song.sections.indices.contains(sel) {
-                ScalePickerView(selectedScale: $songStore.song.sections[sel].scale)
-            }
-        }
     }
 }
 
@@ -458,8 +426,6 @@ private struct SectionSettingsBar: View {
 private struct SongTrackRowView: View {
     @Binding var track: SongTrack
     @Binding var part: Part
-    let sectionKey: Int
-    let sectionScale: MusicalScale
     let index: Int
     let trackCount: Int
     @Binding var isCollapsed: Bool
@@ -469,7 +435,10 @@ private struct SongTrackRowView: View {
     @State private var showPluginEditor = false
     @State private var showSteps = false
     @State private var showNoteParams = false
+    @State private var showScalePicker = false
     @State private var showDeleteAlert = false
+
+    private let noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
 
     var body: some View {
         Group {
@@ -500,6 +469,9 @@ private struct SongTrackRowView: View {
         }
         .sheet(isPresented: $showNoteParams) {
             NoteParametersView(notePool: $part.notePool)
+        }
+        .sheet(isPresented: $showScalePicker) {
+            ScalePickerView(selectedScale: $part.scale)
         }
         .alert("Delete \"\(track.name)\"?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) { songStore.deleteTrack(track.id) }
@@ -630,6 +602,19 @@ private struct SongTrackRowView: View {
                 }
                 .pickerStyle(.menu).fixedSize()
 
+                Divider().frame(height: 16)
+
+                Text("Key").font(.caption2).foregroundStyle(.secondary)
+                Picker("", selection: $part.key) {
+                    ForEach(0..<12, id: \.self) { Text(noteNames[$0]).tag($0) }
+                }
+                .pickerStyle(.menu).fixedSize()
+
+                Button { showScalePicker = true } label: {
+                    Text(part.scale.rawValue).font(.caption2).lineLimit(1)
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+
                 Spacer()
 
                 Text("\(part.notePool.count) notes").font(.caption2).foregroundStyle(.secondary)
@@ -642,8 +627,8 @@ private struct SongTrackRowView: View {
             SongKeyboard(
                 trackID: track.id,
                 notePool: $part.notePool,
-                scale: sectionScale,
-                key: sectionKey,
+                scale: part.scale,
+                key: part.key,
                 onPreview: { midi in
                     let n = UInt8(midi)
                     AudioEngineManager.shared.playNote(trackID: track.id, midiNote: n, velocity: 100)
