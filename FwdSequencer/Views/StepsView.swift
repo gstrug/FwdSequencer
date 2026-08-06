@@ -4,6 +4,9 @@ struct StepsView: View {
     @Binding var steps: [Step]
     var noteCount: Int = 0     // pool size, passed to rows for chord validation
     @Environment(\.dismiss) private var dismiss
+    // Set when a step is appended; the List's onChange scrolls to it once the row
+    // actually exists (scrolling in the same runloop as append is unreliable).
+    @State private var scrollTarget: UUID?
 
     var body: some View {
         NavigationStack {
@@ -25,17 +28,21 @@ struct StepsView: View {
                             .onMove { from, to in steps.move(fromOffsets: from, toOffset: to) }
                         }
                         .environment(\.editMode, .constant(.active))
+                        // Scroll to a freshly-added step once its row has been inserted.
+                        .onChange(of: steps.count) { _ in
+                            guard let target = scrollTarget else { return }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                                withAnimation { proxy.scrollTo(target, anchor: .bottom) }
+                                scrollTarget = nil
+                            }
+                        }
                     }
 
                     HStack {
                         Button {
-                            steps.append(Step(type: .fwd))
-                            // Scroll the newly added step into view.
-                            if let newID = steps.last?.id {
-                                DispatchQueue.main.async {
-                                    withAnimation { proxy.scrollTo(newID, anchor: .bottom) }
-                                }
-                            }
+                            let new = Step(type: .fwd)
+                            steps.append(new)
+                            scrollTarget = new.id   // onChange(of: steps.count) scrolls once inserted
                         } label: {
                             Label("Add Step", systemImage: "plus")
                         }

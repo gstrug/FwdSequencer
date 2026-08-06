@@ -437,6 +437,7 @@ private struct SongTrackRowView: View {
     @State private var showNoteParams = false
     @State private var showScalePicker = false
     @State private var showDeleteAlert = false
+    @State private var selectAllName = false
 
     private let noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
 
@@ -537,7 +538,14 @@ private struct SongTrackRowView: View {
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
 
-                TextField("Name", text: $track.name).font(.subheadline.bold())
+                SelectAllTextField(
+                    text: $track.name,
+                    placeholder: "Name",
+                    font: .preferredBold(.subheadline),
+                    selectAllTrigger: $selectAllName
+                )
+                // Long-press the name to highlight it and type over the default.
+                .onLongPressGesture { selectAllName = true }
                 Spacer()
 
                 Button { songStore.moveTrackUp(track.id) } label: {

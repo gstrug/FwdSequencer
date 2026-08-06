@@ -5,6 +5,8 @@ struct ProjectBrowserView: View {
     @State private var songs: [Song] = []
     @State private var showingSong = false
     @State private var songDeleteTarget: Song? = nil
+    @State private var songRenameTarget: Song? = nil
+    @State private var renameText = ""
 
     var body: some View {
         NavigationStack {
@@ -42,6 +44,31 @@ struct ProjectBrowserView: View {
         } message: {
             Text("\"\(songDeleteTarget?.name ?? "")\" will be permanently deleted.")
         }
+        .alert("Rename Song", isPresented: Binding(
+            get: { songRenameTarget != nil },
+            set: { if !$0 { songRenameTarget = nil } }
+        )) {
+            TextField("Name", text: $renameText)
+            Button("Save") {
+                if var s = songRenameTarget {
+                    s.name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !s.name.isEmpty { SongStorage.save(s) }
+                }
+                songRenameTarget = nil
+                reload()
+            }
+            Button("Cancel", role: .cancel) { songRenameTarget = nil }
+        }
+    }
+
+    private func duplicateSong(_ song: Song) {
+        SongStorage.duplicate(song)
+        reload()
+    }
+
+    private func beginRename(_ song: Song) {
+        renameText = song.name
+        songRenameTarget = song
     }
 
     // MARK: - List
@@ -58,6 +85,17 @@ struct ProjectBrowserView: View {
                         .contentShape(Rectangle())
                         .onTapGesture { openSong(song) }
                         .swipeActions(edge: .trailing) {
+                            Button(role: .destructive) { songDeleteTarget = song } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        // Long-press menu mirrors the swipe action for people who
+                        // don't discover the swipe, and adds rename/duplicate.
+                        .contextMenu {
+                            Button { openSong(song) } label: { Label("Open", systemImage: "play.fill") }
+                            Button { beginRename(song) } label: { Label("Rename", systemImage: "pencil") }
+                            Button { duplicateSong(song) } label: { Label("Duplicate", systemImage: "doc.on.doc") }
+                            Divider()
                             Button(role: .destructive) { songDeleteTarget = song } label: {
                                 Label("Delete", systemImage: "trash")
                             }

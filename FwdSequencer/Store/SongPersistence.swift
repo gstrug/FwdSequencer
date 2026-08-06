@@ -55,6 +55,18 @@ enum SongStorage {
     static func delete(_ song: Song) {
         try? FileManager.default.removeItem(at: url(for: song.id))
     }
+
+    /// Save a copy of `song` under a new file id and name, and return it. Internal
+    /// track/section ids are kept (they're only meaningful inside one open song, and
+    /// parts reference tracks by id) — only the file-level Song.id changes.
+    @discardableResult
+    static func duplicate(_ song: Song) -> Song {
+        var copy = song
+        copy.id = UUID()
+        copy.name = song.name + " copy"
+        save(copy)
+        return copy
+    }
 }
 
 extension Song {
