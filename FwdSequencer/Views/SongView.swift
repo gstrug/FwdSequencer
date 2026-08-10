@@ -473,6 +473,45 @@ private struct SongTrackRowView: View {
         part.notePool.map(\.midiNote).filter { !inScale($0, key: key, scale: scale) }
     }
 
+    /// Apply a key/scale change AND drop the out-of-key notes, remapping this track's
+    /// steps: surviving pool references shift so they keep pointing at the same notes,
+    /// and any Play step that referenced a removed note is pruned (chord positions for
+    /// removed notes are dropped; a single-note Play of a removed note is deleted).
+    /// Only Play steps carry pool positions — other step types are left untouched.
+    private func applyKeyScaleDroppingNotes(key: Int, scale: MusicalScale) {
+        let old = part.notePool
+        // old 0-based index → new 0-based index among survivors (nil = note removed).
+        var oldToNew: [Int: Int] = [:]
+        var next = 0
+        for (i, entry) in old.enumerated() where inScale(entry.midiNote, key: key, scale: scale) {
+            oldToNew[i] = next
+            next += 1
+        }
+
+        var newSteps: [Step] = []
+        for var step in part.steps {
+            guard step.type == .play else { newSteps.append(step); continue }
+            if step.chordPositions.count > 1 {
+                let remapped = step.chordPositions.compactMap { pos -> Int? in
+                    oldToNew[pos - 1].map { $0 + 1 }
+                }
+                if remapped.isEmpty { continue }          // every chord note gone → drop step
+                step.chordPositions = remapped.count > 1 ? remapped : []
+                step.n = remapped[0]                       // count==1 falls back to single-note
+                newSteps.append(step)
+            } else {
+                guard let n = oldToNew[step.n - 1] else { continue }  // note gone → drop step
+                step.n = n + 1
+                newSteps.append(step)
+            }
+        }
+
+        part.key = key
+        part.scale = scale
+        part.notePool = old.filter { inScale($0.midiNote, key: key, scale: scale) }
+        part.steps = newSteps
+    }
+
     /// Apply a key/scale change immediately if no selected note falls outside it;
     /// otherwise stash it and raise a confirmation (removing those notes is destructive).
     private func proposeKeyScale(key: Int, scale: MusicalScale) {
@@ -536,16 +575,14 @@ private struct SongTrackRowView: View {
         .alert("Notes outside new key", isPresented: $showKeyConflict) {
             Button("Remove \(conflictCount) note\(conflictCount == 1 ? "" : "s")", role: .destructive) {
                 if let p = pendingKeyScale {
-                    part.key = p.key
-                    part.scale = p.scale
-                    part.notePool.removeAll { !inScale($0.midiNote, key: p.key, scale: p.scale) }
+                    applyKeyScaleDroppingNotes(key: p.key, scale: p.scale)
                 }
                 pendingKeyScale = nil
             }
             Button("Cancel", role: .cancel) { pendingKeyScale = nil }
         } message: {
             if let p = pendingKeyScale {
-                Text("\(conflictCount) selected note\(conflictCount == 1 ? " is" : "s are") not in \(noteNames[p.key]) \(p.scale.rawValue). Remove \(conflictCount == 1 ? "it" : "them") from this track, or cancel the change?")
+                Text("\(conflictCount) selected note\(conflictCount == 1 ? " is" : "s are") not in \(noteNames[p.key]) \(p.scale.rawValue). \(conflictCount == 1 ? "It" : "They") will be removed from this track, along with any Play steps that played \(conflictCount == 1 ? "it" : "them"). Cancel to keep the current key.")
             }
         }
         .alert("Delete \"\(track.name)\"?", isPresented: $showDeleteAlert) {
