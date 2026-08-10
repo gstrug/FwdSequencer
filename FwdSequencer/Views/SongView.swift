@@ -473,14 +473,51 @@ private struct SongTrackRowView: View {
         part.notePool.map(\.midiNote).filter { !inScale($0, key: key, scale: scale) }
     }
 
-    /// Apply a key/scale change and drop the out-of-key notes from the pool. The step
-    /// list is left completely untouched — steps keep running against the smaller pool,
-    /// so the notes they resolve to simply shift along. Nothing is deleted from the
-    /// sequence.
+    /// Apply a key/scale change and drop the out-of-key notes from the pool. No step is
+    /// ever deleted. Play steps have the removed notes pruned from their positions and
+    /// the surviving positions remapped to the new (renumbered) pool, so the same notes
+    /// keep playing — e.g. Play 1,2,3,4 with note 2 removed becomes Play 1,2,3 (the old
+    /// notes 1,3,4). A Play that referenced only removed notes stays as a step but plays
+    /// nothing. Other step types carry no pool positions and are untouched.
     private func applyKeyScaleDroppingNotes(key: Int, scale: MusicalScale) {
+        let old = part.notePool
+        // old 0-based index → new 0-based index among survivors (nil = note removed).
+        var oldToNew: [Int: Int] = [:]
+        var next = 0
+        for (i, entry) in old.enumerated() where inScale(entry.midiNote, key: key, scale: scale) {
+            oldToNew[i] = next
+            next += 1
+        }
+        let newCount = next
+
+        for i in part.steps.indices where part.steps[i].type == .play {
+            var step = part.steps[i]
+            // Positions this Play references (chord list, else the single-note n).
+            let refs = step.chordPositions.count > 1 ? step.chordPositions : [step.n]
+            // Keep surviving references, remapped to new 1-based positions; drop removed.
+            var seen = Set<Int>()
+            var mapped: [Int] = []
+            for pos in refs {
+                if let n = oldToNew[pos - 1], seen.insert(n).inserted { mapped.append(n + 1) }
+            }
+            if mapped.count > 1 {
+                step.chordPositions = mapped
+                step.n = mapped[0]
+            } else if mapped.count == 1 {
+                step.chordPositions = []
+                step.n = mapped[0]
+            } else {
+                // Every referenced note is gone — keep the step but make it a no-op
+                // (position past the pool → playIndices returns empty → skipped).
+                step.chordPositions = []
+                step.n = newCount + 1
+            }
+            part.steps[i] = step
+        }
+
         part.key = key
         part.scale = scale
-        part.notePool.removeAll { !inScale($0.midiNote, key: key, scale: scale) }
+        part.notePool = old.filter { inScale($0.midiNote, key: key, scale: scale) }
     }
 
     /// Apply a key/scale change immediately if no selected note falls outside it;
@@ -553,7 +590,7 @@ private struct SongTrackRowView: View {
             Button("Cancel", role: .cancel) { pendingKeyScale = nil }
         } message: {
             if let p = pendingKeyScale {
-                Text("\(conflictCount) selected note\(conflictCount == 1 ? " is" : "s are") not in \(noteNames[p.key]) \(p.scale.rawValue). \(conflictCount == 1 ? "It" : "They") will be removed from this track. Your steps keep running, so the notes they play shift along the smaller pool. Cancel to keep the current key.")
+                Text("\(conflictCount) selected note\(conflictCount == 1 ? " is" : "s are") not in \(noteNames[p.key]) \(p.scale.rawValue). \(conflictCount == 1 ? "It" : "They") will be removed from this track. Steps keep running, and Play chords drop just the removed note\(conflictCount == 1 ? "" : "s") while their other notes keep playing. Cancel to keep the current key.")
             }
         }
         .alert("Delete \"\(track.name)\"?", isPresented: $showDeleteAlert) {
