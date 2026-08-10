@@ -19,6 +19,10 @@ struct SelectAllTextField: UIViewRepresentable {
         tf.returnKeyType = .done
         tf.clearButtonMode = .whileEditing
         tf.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        // Hold the font-derived height so SwiftUI can't stretch the field vertically to
+        // fill the proposed space (which blew the settings bar up to half the screen).
+        tf.setContentHuggingPriority(.required, for: .vertical)
+        tf.setContentCompressionResistancePriority(.required, for: .vertical)
         tf.addTarget(context.coordinator,
                      action: #selector(Coordinator.editingChanged(_:)),
                      for: .editingChanged)
@@ -34,6 +38,14 @@ struct SelectAllTextField: UIViewRepresentable {
                 selectAllTrigger = false
             }
         }
+    }
+
+    // Pin the field to its font-derived height; let width follow the proposal. Without
+    // this a representable fills the proposed height and stretches the row.
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextField, context: Context) -> CGSize? {
+        let h = uiView.intrinsicContentSize.height
+        let w = proposal.width ?? uiView.intrinsicContentSize.width
+        return CGSize(width: w, height: h)
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
