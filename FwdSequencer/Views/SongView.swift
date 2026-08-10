@@ -437,8 +437,49 @@ private struct SongTrackRowView: View {
     @State private var showScalePicker = false
     @State private var showDeleteAlert = false
     @State private var selectAllName = false
+    // A proposed key/scale change waiting on confirmation because it would drop notes.
+    @State private var pendingKeyScale: (key: Int, scale: MusicalScale)?
+    @State private var conflictCount = 0
+    @State private var showKeyConflict = false
 
     private let noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
+
+    private func inScale(_ midi: Int, key: Int, scale: MusicalScale) -> Bool {
+        let semitone = ((midi % 12) - key + 12) % 12
+        return scale.intervals.contains(semitone)
+    }
+
+    /// Notes in the pool that would fall outside the given key/scale.
+    private func offendingNotes(key: Int, scale: MusicalScale) -> [Int] {
+        part.notePool.map(\.midiNote).filter { !inScale($0, key: key, scale: scale) }
+    }
+
+    /// Apply a key/scale change immediately if no selected note falls outside it;
+    /// otherwise stash it and raise a confirmation (removing those notes is destructive).
+    private func proposeKeyScale(key: Int, scale: MusicalScale) {
+        let bad = offendingNotes(key: key, scale: scale)
+        if bad.isEmpty {
+            part.key = key
+            part.scale = scale
+        } else {
+            pendingKeyScale = (key, scale)
+            conflictCount = bad.count
+            // Defer so the alert reliably appears after the scale sheet finishes
+            // dismissing (presenting both in the same runloop can drop the alert).
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showKeyConflict = true }
+        }
+    }
+
+    // Proxy bindings so the pickers route through proposeKeyScale. On cancel the
+    // change is simply never applied, so the picker snaps back to the current value.
+    private var keyBinding: Binding<Int> {
+        Binding(get: { part.key },
+                set: { proposeKeyScale(key: $0, scale: part.scale) })
+    }
+    private var scaleBinding: Binding<MusicalScale> {
+        Binding(get: { part.scale },
+                set: { proposeKeyScale(key: part.key, scale: $0) })
+    }
 
     var body: some View {
         Group {
@@ -471,7 +512,22 @@ private struct SongTrackRowView: View {
             NoteParametersView(notePool: $part.notePool)
         }
         .sheet(isPresented: $showScalePicker) {
-            ScalePickerView(selectedScale: $part.scale)
+            ScalePickerView(selectedScale: scaleBinding)
+        }
+        .alert("Notes outside new key", isPresented: $showKeyConflict) {
+            Button("Remove \(conflictCount) note\(conflictCount == 1 ? "" : "s")", role: .destructive) {
+                if let p = pendingKeyScale {
+                    part.key = p.key
+                    part.scale = p.scale
+                    part.notePool.removeAll { !inScale($0.midiNote, key: p.key, scale: p.scale) }
+                }
+                pendingKeyScale = nil
+            }
+            Button("Cancel", role: .cancel) { pendingKeyScale = nil }
+        } message: {
+            if let p = pendingKeyScale {
+                Text("\(conflictCount) selected note\(conflictCount == 1 ? " is" : "s are") not in \(noteNames[p.key]) \(p.scale.rawValue). Remove \(conflictCount == 1 ? "it" : "them") from this track, or cancel the change?")
+            }
         }
         .alert("Delete \"\(track.name)\"?", isPresented: $showDeleteAlert) {
             Button("Delete", role: .destructive) { songStore.deleteTrack(track.id) }
@@ -612,7 +668,7 @@ private struct SongTrackRowView: View {
                 Divider().frame(height: 16)
 
                 Text("Key").font(.caption2).foregroundStyle(.secondary)
-                Picker("", selection: $part.key) {
+                Picker("", selection: keyBinding) {
                     ForEach(0..<12, id: \.self) { Text(noteNames[$0]).tag($0) }
                 }
                 .pickerStyle(.menu).fixedSize()
