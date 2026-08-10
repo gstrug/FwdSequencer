@@ -122,6 +122,7 @@ private struct SongTransportBar: View {
     @State private var tapTimes: [Date] = []
     @State private var savedVisible = false
     @State private var showMixer = false
+    @State private var selectAllSongName = false
 
     private var beatCount: Int { songStore.song.timeSignature.numerator }
     private var currentSectionBars: Int {
@@ -235,9 +236,15 @@ private struct SongTransportBar: View {
 
                 Divider().frame(height: 26)
 
-                TextField("Song Name", text: $songStore.song.name)
-                    .font(.subheadline.bold())
-                    .frame(minWidth: 120, maxWidth: 240)
+                SelectAllTextField(
+                    text: $songStore.song.name,
+                    placeholder: "Song Name",
+                    font: .preferredBold(.subheadline),
+                    selectAllTrigger: $selectAllSongName
+                )
+                .frame(minWidth: 120, maxWidth: 240)
+                // Long-press the name to highlight it and type over.
+                .onLongPressGesture { selectAllSongName = true }
 
                 Spacer()
 
