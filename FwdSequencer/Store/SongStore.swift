@@ -217,27 +217,40 @@ class SongStore: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: item)
     }
 
+    /// Persist the model only — notes, arrangement, and whatever plugin-state blobs are
+    /// already in the model. It deliberately does NOT read live plugin state: doing that
+    /// on every debounced save pokes every plugin's state machinery ~1×/sec, which can
+    /// destabilise a fragile AUv3 the user is actively editing. Live state is captured
+    /// separately, only at safe moments (see captureAllPluginStates).
     func saveNow() {
-        // Snapshot copy with current AUv3 states — never mutate self.song here or
-        // didSet → scheduleSave would loop (see ProjectStore.saveNow).
-        var snapshot = song
-        // Do NOT re-capture plugin state while instruments are still loading/restoring:
-        // getPluginState could read a half-initialised plugin (e.g. GeoShred mid-restore)
-        // and clobber the good state we just loaded. Keep the model's existing state
-        // during that window; normal capture resumes once loading finishes.
-        if !isLoading {
-            for idx in snapshot.tracks.indices {
-                if let state = audioEngine.getPluginState(for: snapshot.tracks[idx].id) {
-                    snapshot.tracks[idx].pluginStateData = state
-                }
-            }
-            if let perfID = snapshot.performance?.id,
-               let state = audioEngine.getPluginState(for: perfID) {
-                snapshot.performance?.pluginStateData = state
-            }
-        }
+        // Snapshot copy — never mutate self.song here or didSet → scheduleSave would loop.
+        let snapshot = song
         guard SongStorage.save(snapshot) else { return }
         DispatchQueue.main.async { self.savedSignal.send() }
+    }
+
+    /// Read every instrument's live AUv3 state into the model. Only call at safe points
+    /// (editor close, pause, leaving the song, backgrounding) — never on a timer while a
+    /// plugin UI is open. Skipped while instruments are still loading/restoring, so it
+    /// can't read a half-initialised plugin and clobber good state.
+    func captureAllPluginStates() {
+        guard !isLoading else { return }
+        for idx in song.tracks.indices {
+            if let state = audioEngine.captureState(for: song.tracks[idx].id) {
+                song.tracks[idx].pluginStateData = state
+            }
+        }
+        if let perfID = song.performance?.id,
+           let state = audioEngine.captureState(for: perfID) {
+            song.performance?.pluginStateData = state
+        }
+    }
+
+    /// Capture live plugin state and persist immediately. For safe-point saves
+    /// (backgrounding, leaving the song) where the debounced timer isn't guaranteed to fire.
+    func captureAndSave() {
+        captureAllPluginStates()
+        saveNow()
     }
 
     // MARK: - Playback
@@ -268,6 +281,8 @@ class SongStore: ObservableObject {
         isPaused = true
         playback.playingNotes.removeAll()
         playback.activeSteps.removeAll()
+        // Paused = a safe moment (no MIDI flowing) to snapshot live plugin sounds.
+        captureAllPluginStates()
     }
 
     func resume() {
@@ -303,9 +318,13 @@ class SongStore: ObservableObject {
         playback.activeSteps.removeAll()
     }
 
-    /// Release this song's instruments (call when leaving the song view).
+    /// Release this song's instruments (call when leaving the song view). Captures live
+    /// plugin state and persists BEFORE tearing the instruments down (they must still be
+    /// loaded to read their state), so the sounds you were editing are saved.
     func close() {
         stop()
+        captureAllPluginStates()
+        saveNow()
         for t in song.tracks { audioEngine.removeTrack(id: t.id) }
         if let perf = song.performance { audioEngine.removeTrack(id: perf.id) }
     }
@@ -333,7 +352,7 @@ class SongStore: ObservableObject {
 
     func capturePerformanceState() {
         guard let id = song.performance?.id,
-              let state = audioEngine.getPluginState(for: id) else { return }
+              let state = audioEngine.captureState(for: id) else { return }
         song.performance?.pluginStateData = state
     }
 
@@ -399,7 +418,7 @@ class SongStore: ObservableObject {
 
     func capturePluginState(for trackID: UUID) {
         guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        if let state = audioEngine.getPluginState(for: trackID) {
+        if let state = audioEngine.captureState(for: trackID) {
             song.tracks[idx].pluginStateData = state
         }
     }

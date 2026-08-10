@@ -164,12 +164,36 @@ On save: `_parameterTreeRequired = (fullState is NOT substantial)`, where
 
 ### When state is captured
 
+Reading AUv3 state is a *poke* — it walks `fullStateForDocument` and the parameter
+tree, which can destabilise a fragile plugin the user is mid-edit. So capture is
+**decoupled from the auto-save timer** and happens only at safe moments:
+
 - On the plugin editor closing: `AUPluginHostController.viewWillDisappear` → the
   `onCommitState` closure → `SongStore.capturePluginState` (matches how AUM captures,
   after UI interaction settles).
-- On debounced auto-save: `SongStore.saveNow` captures every instrument's state — but
-  **skips capture while `isLoading`**, so it can't read a plugin mid-restore (which
-  would clobber good state, or block the main thread on a hung plugin).
+- On **pause**, on **leaving the song** (`close()`), and on **backgrounding**
+  (`captureAndSave`) — points where no MIDI is flowing.
+
+`SongStore.saveNow` now persists the **model only** (notes/arrangement + whatever
+state blob is already in the model); it never re-reads live plugins. `scheduleSave`
+(1 s debounce) can therefore fire freely without poking anything. All capture is
+skipped while `isLoading`, so it can't read a plugin mid-restore.
+
+Every capture goes through `AudioEngineManager.captureState(for:)`, which **suspends
+the track** (gates its MIDI + flushes ringing notes) for the moment of the read, so
+the read can't race an in-flight note-on.
+
+### Thread safety (the crash class)
+
+The sequencer tick sends MIDI from a **background queue** while the **main thread**
+loads/swaps/removes instruments and reads/writes plugin state. Those touch the same
+`auv3Units`/`samplers`/`trackMixers` dictionaries and the same `auAudioUnit`. A
+dictionary mutated during a concurrent read — or MIDI sent to a node mid-swap — is a
+hard crash. `AudioEngineManager` serialises **all** of it behind one `NSRecursiveLock`
+(`withLock`). Additionally, a `suspended` set gates MIDI per track: `loadPlugin`
+suspends the track for the whole swap+restore window (and `captureState` for the read),
+so the tick can't hit a half-attached node or a not-yet-restored preset. Note-offs are
+still allowed while suspended, so nothing hangs.
 
 ---
 

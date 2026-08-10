@@ -14,8 +14,7 @@ struct SongView: View {
     var body: some View {
         VStack(spacing: 0) {
             SongTransportBar(onBack: {
-                songStore.saveNow()
-                songStore.close()
+                songStore.close()   // captures live plugin state + saves, then tears down
                 dismiss()
             }, showPlayDock: $showPlayDock)
 

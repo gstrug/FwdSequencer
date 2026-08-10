@@ -18,6 +18,42 @@ class AudioEngineManager {
     var onMasterLevelUpdate: ((Float) -> Void)?
     private var masterLevelTimestamp: Double = 0
 
+    // All access to the node dictionaries and to a hosted AU's state/MIDI is serialised
+    // through this lock. The sequencer tick sends MIDI from a background queue while the
+    // main thread loads/swaps/removes instruments and reads plugin state — without it, a
+    // dictionary mutated during a concurrent read (or MIDI sent to a node mid-swap) is a
+    // hard crash. Recursive so a locked method can safely call another.
+    private let auLock = NSRecursiveLock()
+    private func withLock<T>(_ body: () -> T) -> T {
+        auLock.lock(); defer { auLock.unlock() }; return body()
+    }
+    // Tracks whose instrument is mid-load/swap/restore. MIDI to a suspended track is
+    // dropped so the tick can't hit a half-attached node or a not-yet-restored preset.
+    private var suspended: Set<UUID> = []
+
+    /// Gate MIDI to a track and silence anything ringing on it. Call around a plugin
+    /// swap/restore; balance with `resumeTrack`.
+    func suspendTrack(_ id: UUID) {
+        withLock {
+            suspended.insert(id)
+            stopAllNotesLocked(on: id)
+        }
+    }
+
+    func resumeTrack(_ id: UUID) {
+        withLock { _ = suspended.remove(id) }
+    }
+
+    // Caller must hold auLock.
+    private func stopAllNotesLocked(on id: UUID) {
+        if let unit = auv3Units[id] {
+            for n in 0...127 { sendMIDI(to: unit, bytes: [0x80, UInt8(n), 0]) }
+            sendMIDI(to: unit, bytes: [0xB0, 123, 0])
+        } else if let sampler = samplers[id] {
+            for n in 0...127 { sampler.stopNote(UInt8(n), onChannel: 0) }
+        }
+    }
+
     init() {
         let session = AVAudioSession.sharedInstance()
         // Instrument plugins (MIDI in, audio out) never need audio input, so use the
@@ -51,46 +87,56 @@ class AudioEngineManager {
     }
 
     func addTrack(id: UUID, volume: Float = 0.8, pan: Float = 0.0) {
-        guard samplers[id] == nil, auv3Units[id] == nil else { return }
-        let sampler = AVAudioUnitSampler()
-        let mixerNode = AVAudioMixerNode()
-        engine.attach(sampler)
-        engine.attach(mixerNode)
-        // Set volume/pan BEFORE connecting so the node enters the mix at the correct level
-        mixerNode.volume = volume
-        mixerNode.pan = pan
-        engine.connect(sampler, to: mixerNode, format: nil)
-        engine.connect(mixerNode, to: engine.mainMixerNode, format: nil)
-        loadGMBank(sampler)
-        samplers[id] = sampler
-        trackMixers[id] = mixerNode
-        if !engine.isRunning {
-            try? engine.start()
-            installMasterTap()
+        withLock {
+            guard samplers[id] == nil, auv3Units[id] == nil else { return }
+            let sampler = AVAudioUnitSampler()
+            let mixerNode = AVAudioMixerNode()
+            engine.attach(sampler)
+            engine.attach(mixerNode)
+            // Set volume/pan BEFORE connecting so the node enters the mix at the correct level
+            mixerNode.volume = volume
+            mixerNode.pan = pan
+            engine.connect(sampler, to: mixerNode, format: nil)
+            engine.connect(mixerNode, to: engine.mainMixerNode, format: nil)
+            loadGMBank(sampler)
+            samplers[id] = sampler
+            trackMixers[id] = mixerNode
+            if !engine.isRunning {
+                try? engine.start()
+                installMasterTap()
+            }
+            installLevelTap(id: id, node: mixerNode)
         }
-        installLevelTap(id: id, node: mixerNode)
     }
 
     func hasInstrument(for id: UUID) -> Bool {
-        auv3Units[id] != nil || samplers[id] != nil
+        withLock { auv3Units[id] != nil || samplers[id] != nil }
     }
 
     func removeTrack(id: UUID) {
-        if let mixer = trackMixers.removeValue(forKey: id) {
-            mixer.removeTap(onBus: 0)
-            engine.detach(mixer)
-        }
-        if let auv3 = auv3Units.removeValue(forKey: id) {
-            engine.detach(auv3)
-        }
-        if let sampler = samplers.removeValue(forKey: id) {
-            engine.detach(sampler)
+        withLock {
+            suspended.remove(id)
+            if let mixer = trackMixers.removeValue(forKey: id) {
+                mixer.removeTap(onBus: 0)
+                engine.detach(mixer)
+            }
+            if let auv3 = auv3Units.removeValue(forKey: id) {
+                engine.detach(auv3)
+            }
+            if let sampler = samplers.removeValue(forKey: id) {
+                engine.detach(sampler)
+            }
         }
     }
 
     // Swap the instrument on a track. Pass saved stateData to restore a preset.
     func loadPlugin(_ pluginInfo: PluginInfo?, for trackID: UUID, stateData: Data? = nil) {
-        guard let mixer = trackMixers[trackID] else { return }
+        let mixer: AVAudioMixerNode? = withLock { trackMixers[trackID] }
+        guard let mixer else { return }
+
+        // Gate MIDI to this track until the new instrument is attached (and its state
+        // restored). Prevents the tick from hitting a half-attached node mid-swap.
+        suspendTrack(trackID)
 
         if let pluginInfo {
             let desc = AudioComponentDescription(
@@ -110,21 +156,28 @@ class AudioEngineManager {
                         if let data = stateData {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                                 self.applyPluginState(data, for: trackID)
+                                self.resumeTrack(trackID)
                             }
+                        } else {
+                            self.resumeTrack(trackID)
                         }
                     }
                 } else {
                     print("[FWD] Plugin failed to load: \(pluginInfo.name) error: \(String(describing: error))")
-                    DispatchQueue.main.async { self.attachSampler(for: trackID, mixer: mixer) }
+                    DispatchQueue.main.async {
+                        self.attachSampler(for: trackID, mixer: mixer)
+                        self.resumeTrack(trackID)
+                    }
                 }
             }
         } else {
             attachSampler(for: trackID, mixer: mixer)
+            resumeTrack(trackID)
         }
     }
 
     // Return the live AVAudioUnit for a track (nil if using GM sampler).
-    func auv3Unit(for id: UUID) -> AVAudioUnit? { auv3Units[id] }
+    func auv3Unit(for id: UUID) -> AVAudioUnit? { withLock { auv3Units[id] } }
 
     // Serialise the plugin's current full state (preset + parameters) to Data.
     // Strategy:
@@ -132,6 +185,19 @@ class AudioEngineManager {
     //   2. parameterTree values + currentPreset — AudioKit and other plugins that
     //      return nil or an empty dict from fullState
     func getPluginState(for id: UUID) -> Data? {
+        withLock { getPluginStateLocked(for: id) }
+    }
+
+    /// Read plugin state with the track briefly quiesced — MIDI gated and ringing notes
+    /// flushed — so the read can't race an in-flight note-on. Use this for capture.
+    /// (Do not call during a plugin load; the load already owns the suspend for that track.)
+    func captureState(for id: UUID) -> Data? {
+        suspendTrack(id)
+        defer { resumeTrack(id) }
+        return getPluginState(for: id)
+    }
+
+    private func getPluginStateLocked(for id: UUID) -> Data? {
         guard let unit = auv3Units[id] else { return nil }
         let au = unit.auAudioUnit
 
@@ -181,6 +247,10 @@ class AudioEngineManager {
 
     // Restore a previously serialised plugin state.
     func applyPluginState(_ data: Data, for id: UUID) {
+        withLock { applyPluginStateLocked(data, for: id) }
+    }
+
+    private func applyPluginStateLocked(_ data: Data, for id: UUID) {
         guard let unit = auv3Units[id] else { return }
         let au = unit.auAudioUnit
 
@@ -229,33 +299,37 @@ class AudioEngineManager {
     }
 
     private func swapInstrument(_ newUnit: AVAudioUnit, for trackID: UUID, mixer: AVAudioMixerNode) {
-        if let auv3 = auv3Units.removeValue(forKey: trackID) {
-            engine.disconnectNodeInput(mixer)
-            engine.detach(auv3)
-        } else if let sampler = samplers.removeValue(forKey: trackID) {
-            engine.disconnectNodeInput(mixer)
-            engine.detach(sampler)
+        withLock {
+            if let auv3 = auv3Units.removeValue(forKey: trackID) {
+                engine.disconnectNodeInput(mixer)
+                engine.detach(auv3)
+            } else if let sampler = samplers.removeValue(forKey: trackID) {
+                engine.disconnectNodeInput(mixer)
+                engine.detach(sampler)
+            }
+            engine.attach(newUnit)
+            engine.connect(newUnit, to: mixer, format: nil)
+            auv3Units[trackID] = newUnit
+            if !engine.isRunning { try? engine.start() }
         }
-        engine.attach(newUnit)
-        engine.connect(newUnit, to: mixer, format: nil)
-        auv3Units[trackID] = newUnit
-        if !engine.isRunning { try? engine.start() }
     }
 
     private func attachSampler(for trackID: UUID, mixer: AVAudioMixerNode) {
-        if let auv3 = auv3Units.removeValue(forKey: trackID) {
-            engine.disconnectNodeInput(mixer)
-            engine.detach(auv3)
-        } else if let sampler = samplers.removeValue(forKey: trackID) {
-            engine.disconnectNodeInput(mixer)
-            engine.detach(sampler)
+        withLock {
+            if let auv3 = auv3Units.removeValue(forKey: trackID) {
+                engine.disconnectNodeInput(mixer)
+                engine.detach(auv3)
+            } else if let sampler = samplers.removeValue(forKey: trackID) {
+                engine.disconnectNodeInput(mixer)
+                engine.detach(sampler)
+            }
+            let sampler = AVAudioUnitSampler()
+            engine.attach(sampler)
+            engine.connect(sampler, to: mixer, format: nil)
+            loadGMBank(sampler)
+            samplers[trackID] = sampler
+            if !engine.isRunning { try? engine.start() }
         }
-        let sampler = AVAudioUnitSampler()
-        engine.attach(sampler)
-        engine.connect(sampler, to: mixer, format: nil)
-        loadGMBank(sampler)
-        samplers[trackID] = sampler
-        if !engine.isRunning { try? engine.start() }
     }
 
     private func installLevelTap(id: UUID, node: AVAudioMixerNode) {
@@ -289,18 +363,24 @@ class AudioEngineManager {
     }
 
     func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8) {
-        if let unit = auv3Units[trackID] {
-            sendMIDI(to: unit, bytes: [0x90, midiNote, velocity])
-        } else {
-            samplers[trackID]?.startNote(midiNote, withVelocity: velocity, onChannel: 0)
+        withLock {
+            guard !suspended.contains(trackID) else { return }
+            if let unit = auv3Units[trackID] {
+                sendMIDI(to: unit, bytes: [0x90, midiNote, velocity])
+            } else {
+                samplers[trackID]?.startNote(midiNote, withVelocity: velocity, onChannel: 0)
+            }
         }
     }
 
     func stopNote(trackID: UUID, midiNote: UInt8) {
-        if let unit = auv3Units[trackID] {
-            sendMIDI(to: unit, bytes: [0x80, midiNote, 0])
-        } else {
-            samplers[trackID]?.stopNote(midiNote, onChannel: 0)
+        withLock {
+            // Note-offs are allowed even when suspended, so nothing hangs.
+            if let unit = auv3Units[trackID] {
+                sendMIDI(to: unit, bytes: [0x80, midiNote, 0])
+            } else {
+                samplers[trackID]?.stopNote(midiNote, onChannel: 0)
+            }
         }
     }
 
@@ -337,26 +417,28 @@ class AudioEngineManager {
     }
 
     func allNotesOff() {
-        for note in 0...127 {
-            let midi = UInt8(note)
-            for (id, _) in samplers {
-                samplers[id]?.stopNote(midi, onChannel: 0)
+        withLock {
+            for note in 0...127 {
+                let midi = UInt8(note)
+                for (id, _) in samplers {
+                    samplers[id]?.stopNote(midi, onChannel: 0)
+                }
+                for (_, unit) in auv3Units {
+                    sendMIDI(to: unit, bytes: [0x80, midi, 0])
+                }
             }
+            // Also send All Notes Off CC (123) to AUv3 units
             for (_, unit) in auv3Units {
-                sendMIDI(to: unit, bytes: [0x80, midi, 0])
+                sendMIDI(to: unit, bytes: [0xB0, 123, 0])
             }
-        }
-        // Also send All Notes Off CC (123) to AUv3 units
-        for (_, unit) in auv3Units {
-            sendMIDI(to: unit, bytes: [0xB0, 123, 0])
         }
     }
 
     func setVolume(_ volume: Float, for id: UUID) {
-        trackMixers[id]?.volume = volume
+        withLock { trackMixers[id]?.volume = volume }
     }
 
     func setPan(_ pan: Float, for id: UUID) {
-        trackMixers[id]?.pan = pan
+        withLock { trackMixers[id]?.pan = pan }
     }
 }

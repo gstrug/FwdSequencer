@@ -22,7 +22,8 @@ struct ProjectBrowserView: View {
         }
         .onAppear { reload() }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
-            songStore.saveNow()
+            // Backgrounding is a safe point to snapshot live plugin sounds and persist.
+            songStore.captureAndSave()
         }
         .fullScreenCover(isPresented: $showingSong, onDismiss: {
             songStore.saveNow()
