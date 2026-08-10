@@ -444,9 +444,14 @@ class SequencerEngine {
                 let idx = pos - 1
                 if idx >= 0, idx < noteCount, seen.insert(idx).inserted { result.append(idx) }
             }
-            if !result.isEmpty { return result }
+            // Out-of-range chord positions are dropped; if every one is gone the result
+            // is empty → the hit is skipped (matches single-note Play below).
+            return result
         }
-        return [min(max(0, step.n - 1), noteCount - 1)]
+        // Single-note Play: if the position no longer exists in the pool (e.g. a note was
+        // removed on a key change), skip the hit rather than clamping to a different note.
+        let idx = step.n - 1
+        return (idx >= 0 && idx < noteCount) ? [idx] : []
     }
 
     // Returns (poolIndices, stopPreviousNote, stepGate). stepGate scales note lengths.
@@ -519,10 +524,16 @@ class SequencerEngine {
             // Absolute pool positions. A chord (>1 note) becomes the moving voicing that
             // following Fwd/Back/Rep transform; a single note returns to single-note mode.
             let indices = playIndices(for: step, noteCount: noteCount)
+            advanceStepIndex(si, stepCount: stepCount, state: &state)
+            // No valid position (e.g. Play 4 after the pool shrank to 3) → skip the hit:
+            // advance the step but play nothing, leaving the pointer where it was.
+            guard !indices.isEmpty else {
+                state.voicing = nil
+                return ([], true, step.gate)
+            }
             state.voicing = indices.count > 1 ? indices : nil
             state.notePtr = indices[0]
             state.hasPlayed = true
-            advanceStepIndex(si, stepCount: stepCount, state: &state)
             return (indices, true, step.gate)
 
         case .hold:
