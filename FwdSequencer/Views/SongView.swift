@@ -395,13 +395,22 @@ private struct ArrangementStrip: View {
 
 private struct SectionSettingsBar: View {
     @EnvironmentObject var songStore: SongStore
+    @State private var selectAllName = false
 
     var body: some View {
         let sel = songStore.selectedSection
         HStack(spacing: 12) {
             if songStore.song.sections.indices.contains(sel) {
                 Image(systemName: "square.stack").foregroundStyle(.secondary)
-                Text(songStore.song.sections[sel].name).font(.caption.bold()).lineLimit(1)
+                // Inline, editable name — same as track naming: long-press to select all.
+                SelectAllTextField(
+                    text: $songStore.song.sections[sel].name,
+                    placeholder: "Section",
+                    font: .preferredBold(.caption1),
+                    selectAllTrigger: $selectAllName
+                )
+                .frame(maxWidth: 160)
+                .onLongPressGesture { selectAllName = true }
 
                 Divider().frame(height: 20)
 
