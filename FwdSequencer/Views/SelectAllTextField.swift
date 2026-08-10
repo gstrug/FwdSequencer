@@ -30,6 +30,11 @@ struct SelectAllTextField: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: UITextField, context: Context) {
+        // Refresh the coordinator's captured binding — the view struct (and its
+        // bindings) is recreated on each update, but the coordinator is not, so
+        // without this a reused field writes to a stale binding (e.g. the wrong
+        // section after switching selection).
+        context.coordinator.parent = self
         if uiView.text != text { uiView.text = text }
         if selectAllTrigger {
             DispatchQueue.main.async {
@@ -48,13 +53,13 @@ struct SelectAllTextField: UIViewRepresentable {
         return CGSize(width: w, height: h)
     }
 
-    func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
 
     final class Coordinator: NSObject, UITextFieldDelegate {
-        private let text: Binding<String>
-        init(text: Binding<String>) { self.text = text }
+        var parent: SelectAllTextField
+        init(_ parent: SelectAllTextField) { self.parent = parent }
 
-        @objc func editingChanged(_ tf: UITextField) { text.wrappedValue = tf.text ?? "" }
+        @objc func editingChanged(_ tf: UITextField) { parent.text = tf.text ?? "" }
 
         func textFieldShouldReturn(_ tf: UITextField) -> Bool {
             tf.resignFirstResponder()

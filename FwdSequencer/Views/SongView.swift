@@ -411,6 +411,9 @@ private struct SectionSettingsBar: View {
                 )
                 .frame(maxWidth: 160)
                 .onLongPressGesture { selectAllName = true }
+                // Rebuild the field when the selected section changes, so the reused
+                // UITextField can't carry a stale cursor/text between sections.
+                .id(songStore.song.sections[sel].id)
 
                 Divider().frame(height: 20)
 
