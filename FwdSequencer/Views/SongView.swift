@@ -76,7 +76,7 @@ struct SongView: View {
                     VStack(spacing: 14) {
                         ProgressView().controlSize(.large).tint(.white)
                         Text("Loading instruments…").font(.title3.bold()).foregroundStyle(.white)
-                        Text("Please wait — don't tap yet").font(.callout).foregroundStyle(.white.opacity(0.85))
+                        Text("Restoring each sound safely").font(.callout).foregroundStyle(.white.opacity(0.85))
                     }
                     .padding(36)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
@@ -85,6 +85,14 @@ struct SongView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: songStore.isLoading)
+        .alert("FWD Sequencer", isPresented: Binding(
+            get: { songStore.notice != nil },
+            set: { if !$0 { songStore.notice = nil } }
+        )) {
+            Button("OK") { songStore.notice = nil }
+        } message: {
+            Text(songStore.notice ?? "")
+        }
     }
 
     /// Binding to a track's Part in the currently selected section. Falls back to
@@ -138,6 +146,23 @@ private struct SongTransportBar: View {
                     Image(systemName: "chevron.left").font(.title3.weight(.semibold))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Back to songs")
+
+                Divider().frame(height: 26)
+
+                Button { songStore.undo() } label: {
+                    Image(systemName: "arrow.uturn.backward")
+                }
+                .buttonStyle(.plain)
+                .disabled(!songStore.canUndo)
+                .accessibilityLabel("Undo")
+
+                Button { songStore.redo() } label: {
+                    Image(systemName: "arrow.uturn.forward")
+                }
+                .buttonStyle(.plain)
+                .disabled(!songStore.canRedo)
+                .accessibilityLabel("Redo")
 
                 Divider().frame(height: 26)
 
@@ -146,6 +171,7 @@ private struct SongTransportBar: View {
                         .foregroundStyle(songStore.isPlaying || songStore.isPaused ? .primary : .secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Rewind song")
 
                 Button {
                     if songStore.isPlaying      { songStore.pause() }
@@ -156,17 +182,20 @@ private struct SongTransportBar: View {
                         .font(.title2).foregroundColor(.green).frame(width: 32)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(songStore.isPlaying ? "Pause song" : "Play song")
 
                 Button { songStore.stop() } label: {
                     Image(systemName: "stop.fill").font(.body)
                         .foregroundStyle(songStore.isPlaying || songStore.isPaused ? .red : .secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Stop song")
 
                 Button { songStore.midiPanic() } label: {
                     Text("!").font(.body.bold()).foregroundStyle(.red).frame(width: 20)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Stop all MIDI notes")
 
                 Button { songStore.loopEnabled.toggle() } label: {
                     Image(systemName: "repeat").font(.body)
@@ -174,6 +203,8 @@ private struct SongTransportBar: View {
                 }
                 .buttonStyle(.plain)
                 .help("Loop song")
+                .accessibilityLabel("Loop song")
+                .accessibilityValue(songStore.loopEnabled ? "On" : "Off")
 
                 Divider().frame(height: 26)
 
@@ -298,7 +329,7 @@ private struct SongTransportBar: View {
 private extension View {
     func iconHitTarget(_ size: CGFloat = 36) -> some View {
         self.font(.title3)
-            .frame(width: size, height: size)
+            .frame(width: max(44, size), height: max(44, size))
             .contentShape(Rectangle())
     }
 }
@@ -430,6 +461,20 @@ private struct SectionSettingsBar: View {
                         .font(.caption.monospacedDigit()).frame(minWidth: 18)
                 }
                 .fixedSize()
+
+                Divider().frame(height: 20)
+
+                Menu {
+                    ForEach(SectionTransform.allCases) { transform in
+                        Button { songStore.transformSelectedSection(transform) } label: {
+                            Label(transform.rawValue, systemImage: transform.systemImage)
+                        }
+                    }
+                } label: {
+                    Label("Transform", systemImage: "wand.and.stars")
+                }
+                .buttonStyle(.bordered)
+                .help("Create an undoable variation of this section")
             }
             Spacer()
         }
@@ -480,6 +525,7 @@ private struct SongTrackRowView: View {
     /// notes 1,3,4). A Play that referenced only removed notes stays as a step but plays
     /// nothing. Other step types carry no pool positions and are untouched.
     private func applyKeyScaleDroppingNotes(key: Int, scale: MusicalScale) {
+        songStore.checkpointForUndo()
         let old = part.notePool
         // old 0-based index → new 0-based index among survivors (nil = note removed).
         var oldToNew: [Int: Int] = [:]
@@ -696,6 +742,20 @@ private struct SongTrackRowView: View {
             .buttonStyle(.bordered)
             .tint(track.pluginInfo == nil ? nil : .accentColor)
 
+            if let status = songStore.pluginStatuses[track.id] {
+                switch status {
+                case .loading(let name):
+                    Label("Loading \(name)…", systemImage: "hourglass")
+                        .font(.caption2).foregroundStyle(.secondary)
+                case .ready:
+                    Label("Instrument ready", systemImage: "checkmark.circle.fill")
+                        .font(.caption2).foregroundStyle(.green)
+                case .failed(let message):
+                    Label(message, systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption2).foregroundStyle(.orange).lineLimit(2)
+                }
+            }
+
             if track.pluginInfo != nil {
                 Button { showPluginEditor = true } label: {
                     Label("Edit Sound", systemImage: "slider.horizontal.3")
@@ -713,8 +773,12 @@ private struct SongTrackRowView: View {
             HStack(spacing: 6) {
                 Text("Pan").font(.caption2).foregroundStyle(.secondary)
                 Slider(value: $track.mixer.pan, in: -1...1)
-                Toggle("M", isOn: $track.mixer.isMuted).toggleStyle(.button).tint(.orange).font(.caption2.bold())
-                Toggle("S", isOn: $track.mixer.isSoloed).toggleStyle(.button).tint(.yellow).font(.caption2.bold())
+                Toggle("M", isOn: $track.mixer.isMuted)
+                    .toggleStyle(.button).tint(.orange).font(.caption2.bold())
+                    .accessibilityLabel("Mute \(track.name)")
+                Toggle("S", isOn: $track.mixer.isSoloed)
+                    .toggleStyle(.button).tint(.yellow).font(.caption2.bold())
+                    .accessibilityLabel("Solo \(track.name)")
             }
         }
     }

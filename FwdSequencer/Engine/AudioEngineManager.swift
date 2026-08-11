@@ -3,12 +3,38 @@ import AVFoundation
 import AudioToolbox
 import CoreMIDI
 
+enum AudioEngineStatus: Equatable {
+    case ready
+    case interrupted
+    case recovering
+    case failed(String)
+}
+
+enum PluginLoadError: LocalizedError {
+    case trackUnavailable
+    case timedOut(String)
+    case instantiationFailed(String, String)
+
+    var errorDescription: String? {
+        switch self {
+        case .trackUnavailable:
+            return "The track is no longer available."
+        case .timedOut(let name):
+            return "\(name) took too long to load. The GM instrument is active instead."
+        case .instantiationFailed(let name, let detail):
+            return "\(name) could not be loaded. \(detail)"
+        }
+    }
+}
+
 class AudioEngineManager {
     // One shared audio engine / session for the whole app. Pattern playback and
     // song playback both route through it (only one document plays at a time).
     static let shared = AudioEngineManager()
 
-    private let engine = AVAudioEngine()
+    private var engine = AVAudioEngine()
+    private var masterLimiter: AVAudioUnitEffect?
+    private var masterTapInstalled = false
     private var samplers: [UUID: AVAudioUnitSampler] = [:]
     private var auv3Units: [UUID: AVAudioUnit] = [:]
     private var trackMixers: [UUID: AVAudioMixerNode] = [:]
@@ -16,7 +42,14 @@ class AudioEngineManager {
 
     var onLevelUpdate: ((UUID, Float) -> Void)?
     var onMasterLevelUpdate: ((Float) -> Void)?
+    var onStatusChange: ((AudioEngineStatus) -> Void)?
+    var onPlaybackInterrupted: ((String) -> Void)?
+    var onRecoveryRequired: (() -> Void)?
     private var masterLevelTimestamp: Double = 0
+    private var status: AudioEngineStatus = .recovering
+    var currentStatus: AudioEngineStatus { status }
+    private var sessionObservers: [NSObjectProtocol] = []
+    private var loadRequests: [UUID: UUID] = [:]
 
     // All access to the node dictionaries and to a hosted AU's state/MIDI is serialised
     // through this lock. The sequencer tick sends MIDI from a background queue while the
@@ -55,18 +88,154 @@ class AudioEngineManager {
     }
 
     init() {
+        registerForAudioSessionEvents()
+        do {
+            try configureAudioSession()
+            configureMasterGraph()
+            setStatus(.ready)
+        } catch {
+            setStatus(.failed(error.localizedDescription))
+        }
+    }
+
+    deinit {
+        for observer in sessionObservers { NotificationCenter.default.removeObserver(observer) }
+    }
+
+    private func configureAudioSession() throws {
         let session = AVAudioSession.sharedInstance()
         // Instrument plugins (MIDI in, audio out) never need audio input, so use the
         // lighter, higher-quality .playback category instead of .playAndRecord — the
         // record path adds overhead and a more glitch-prone route, and .playback gets
         // full-quality Bluetooth (A2DP) rather than call-grade HFP.
-        try? session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+        try session.setCategory(.playback, mode: .default, options: [.mixWithOthers])
         // Give the render callback more time per buffer. Hosting a CPU-heavy, disk-
         // streaming sampled instrument (e.g. Ravenscroft piano) overruns a small buffer,
         // producing crackle even at low levels (distinct from clipping). ~23 ms is a
         // stable size; latency is still fine for sequenced playback and live keys.
-        try? session.setPreferredIOBufferDuration(0.023)
-        try? session.setActive(true)
+        try session.setPreferredIOBufferDuration(0.023)
+        try session.setActive(true)
+    }
+
+    private func configureMasterGraph() {
+        let description = AudioComponentDescription(
+            componentType: kAudioUnitType_Effect,
+            componentSubType: kAudioUnitSubType_PeakLimiter,
+            componentManufacturer: kAudioUnitManufacturer_Apple,
+            componentFlags: 0,
+            componentFlagsMask: 0
+        )
+        let limiter = AVAudioUnitEffect(audioComponentDescription: description)
+        engine.attach(limiter)
+        engine.disconnectNodeOutput(engine.mainMixerNode)
+        engine.connect(engine.mainMixerNode, to: limiter, format: nil)
+        engine.connect(limiter, to: engine.outputNode, format: nil)
+        masterLimiter = limiter
+    }
+
+    private func setStatus(_ newStatus: AudioEngineStatus) {
+        status = newStatus
+        DispatchQueue.main.async { [weak self] in self?.onStatusChange?(newStatus) }
+    }
+
+    private func startEngineIfNeeded() -> Bool {
+        guard !engine.isRunning else { return true }
+        do {
+            try engine.start()
+            setStatus(.ready)
+            return true
+        } catch {
+            setStatus(.failed(error.localizedDescription))
+            return false
+        }
+    }
+
+    private func registerForAudioSessionEvents() {
+        let center = NotificationCenter.default
+        let session = AVAudioSession.sharedInstance()
+
+        sessionObservers.append(center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: session,
+            queue: .main
+        ) { [weak self] note in
+            self?.handleInterruption(note)
+        })
+        sessionObservers.append(center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: session,
+            queue: .main
+        ) { [weak self] note in
+            self?.handleRouteChange(note)
+        })
+        sessionObservers.append(center.addObserver(
+            forName: AVAudioSession.mediaServicesWereResetNotification,
+            object: session,
+            queue: .main
+        ) { [weak self] _ in
+            self?.rebuildAfterMediaServicesReset()
+        })
+    }
+
+    private func handleInterruption(_ notification: Notification) {
+        guard let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
+
+        switch type {
+        case .began:
+            allNotesOff()
+            engine.pause()
+            setStatus(.interrupted)
+            onPlaybackInterrupted?("Playback paused because audio was interrupted.")
+        case .ended:
+            let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
+            guard options.contains(.shouldResume) else {
+                setStatus(.interrupted)
+                return
+            }
+            do {
+                try configureAudioSession()
+                _ = startEngineIfNeeded()
+            } catch {
+                setStatus(.failed(error.localizedDescription))
+            }
+        @unknown default:
+            setStatus(.interrupted)
+        }
+    }
+
+    private func handleRouteChange(_ notification: Notification) {
+        guard let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: raw),
+              reason == .oldDeviceUnavailable else { return }
+        allNotesOff()
+        onPlaybackInterrupted?("Playback paused because the audio output changed.")
+    }
+
+    private func rebuildAfterMediaServicesReset() {
+        setStatus(.recovering)
+        withLock {
+            engine.stop()
+            samplers.removeAll()
+            auv3Units.removeAll()
+            trackMixers.removeAll()
+            suspended.removeAll()
+            loadRequests.removeAll()
+            levelTimestamps.removeAll()
+            engine = AVAudioEngine()
+            masterLimiter = nil
+            masterTapInstalled = false
+        }
+
+        do {
+            try configureAudioSession()
+            configureMasterGraph()
+            setStatus(.ready)
+            onRecoveryRequired?()
+        } catch {
+            setStatus(.failed(error.localizedDescription))
+        }
     }
 
     func setMasterVolume(_ volume: Float) {
@@ -74,6 +243,7 @@ class AudioEngineManager {
     }
 
     private func installMasterTap() {
+        guard !masterTapInstalled else { return }
         let main = engine.mainMixerNode
         guard main.numberOfInputs > 0 else { return }
         main.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
@@ -84,6 +254,7 @@ class AudioEngineManager {
             self.masterLevelTimestamp = now
             self.onMasterLevelUpdate?(level)
         }
+        masterTapInstalled = true
     }
 
     func addTrack(id: UUID, volume: Float = 0.8, pan: Float = 0.0) {
@@ -102,7 +273,7 @@ class AudioEngineManager {
             samplers[id] = sampler
             trackMixers[id] = mixerNode
             if !engine.isRunning {
-                try? engine.start()
+                _ = startEngineIfNeeded()
                 installMasterTap()
             }
             installLevelTap(id: id, node: mixerNode)
@@ -116,6 +287,7 @@ class AudioEngineManager {
     func removeTrack(id: UUID) {
         withLock {
             suspended.remove(id)
+            loadRequests.removeValue(forKey: id)
             if let mixer = trackMixers.removeValue(forKey: id) {
                 mixer.removeTap(onBus: 0)
                 engine.detach(mixer)
@@ -129,10 +301,19 @@ class AudioEngineManager {
         }
     }
 
-    // Swap the instrument on a track. Pass saved stateData to restore a preset.
-    func loadPlugin(_ pluginInfo: PluginInfo?, for trackID: UUID, stateData: Data? = nil) {
-        let mixer: AVAudioMixerNode? = withLock { trackMixers[trackID] }
-        guard let mixer else { return }
+    // Swap the instrument on a track. Completion fires only after state restoration or
+    // fallback, allowing the UI to reflect real readiness instead of a fixed delay.
+    func loadPlugin(_ pluginInfo: PluginInfo?, for trackID: UUID, stateData: Data? = nil,
+                    completion: @escaping (Result<Void, PluginLoadError>) -> Void = { _ in }) {
+        let requestID = UUID()
+        let mixer: AVAudioMixerNode? = withLock {
+            loadRequests[trackID] = requestID
+            return trackMixers[trackID]
+        }
+        guard let mixer else {
+            DispatchQueue.main.async { completion(.failure(.trackUnavailable)) }
+            return
+        }
 
         // Gate MIDI to this track until the new instrument is attached (and its state
         // restored). Prevents the tick from hitting a half-attached node mid-swap.
@@ -148,32 +329,63 @@ class AudioEngineManager {
             )
             AVAudioUnit.instantiate(with: desc, options: []) { [weak self] avAudioUnit, error in
                 guard let self else { return }
-                if let unit = avAudioUnit {
-                    DispatchQueue.main.async {
+                DispatchQueue.main.async {
+                    guard self.isCurrentLoad(requestID, for: trackID) else { return }
+                    if let unit = avAudioUnit {
                         self.swapInstrument(unit, for: trackID, mixer: mixer)
                         // Delay state restore slightly — many AUv3 plugins need a run-loop
                         // cycle to finish initialising before they accept fullState/fullStateForDocument.
                         if let data = stateData {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                                guard self.isCurrentLoad(requestID, for: trackID) else { return }
                                 self.applyPluginState(data, for: trackID)
-                                self.resumeTrack(trackID)
+                                self.finishPluginLoad(requestID, for: trackID,
+                                                      result: .success(()), completion: completion)
                             }
                         } else {
-                            self.resumeTrack(trackID)
+                            self.finishPluginLoad(requestID, for: trackID,
+                                                  result: .success(()), completion: completion)
                         }
-                    }
-                } else {
-                    print("[FWD] Plugin failed to load: \(pluginInfo.name) error: \(String(describing: error))")
-                    DispatchQueue.main.async {
+                    } else {
+                        let detail = error?.localizedDescription ?? "The Audio Unit returned no instrument."
                         self.attachSampler(for: trackID, mixer: mixer)
-                        self.resumeTrack(trackID)
+                        self.finishPluginLoad(
+                            requestID, for: trackID,
+                            result: .failure(.instantiationFailed(pluginInfo.name, detail)),
+                            completion: completion
+                        )
                     }
                 }
             }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+                guard let self, isCurrentLoad(requestID, for: trackID) else { return }
+                attachSampler(for: trackID, mixer: mixer)
+                finishPluginLoad(requestID, for: trackID,
+                                 result: .failure(.timedOut(pluginInfo.name)),
+                                 completion: completion)
+            }
         } else {
             attachSampler(for: trackID, mixer: mixer)
-            resumeTrack(trackID)
+            finishPluginLoad(requestID, for: trackID, result: .success(()), completion: completion)
         }
+    }
+
+    private func isCurrentLoad(_ requestID: UUID, for trackID: UUID) -> Bool {
+        withLock { loadRequests[trackID] == requestID && trackMixers[trackID] != nil }
+    }
+
+    private func finishPluginLoad(_ requestID: UUID, for trackID: UUID,
+                                  result: Result<Void, PluginLoadError>,
+                                  completion: @escaping (Result<Void, PluginLoadError>) -> Void) {
+        let shouldFinish = withLock { () -> Bool in
+            guard loadRequests[trackID] == requestID else { return false }
+            loadRequests.removeValue(forKey: trackID)
+            return true
+        }
+        guard shouldFinish else { return }
+        resumeTrack(trackID)
+        completion(result)
     }
 
     // Return the live AVAudioUnit for a track (nil if using GM sampler).
@@ -310,7 +522,7 @@ class AudioEngineManager {
             engine.attach(newUnit)
             engine.connect(newUnit, to: mixer, format: nil)
             auv3Units[trackID] = newUnit
-            if !engine.isRunning { try? engine.start() }
+            _ = startEngineIfNeeded()
         }
     }
 
@@ -328,7 +540,7 @@ class AudioEngineManager {
             engine.connect(sampler, to: mixer, format: nil)
             loadGMBank(sampler)
             samplers[trackID] = sampler
-            if !engine.isRunning { try? engine.start() }
+            _ = startEngineIfNeeded()
         }
     }
 
@@ -348,8 +560,11 @@ class AudioEngineManager {
         let count = Int(buffer.frameLength)
         guard count > 0 else { return 0 }
         var sum: Float = 0
-        for i in 0..<count { sum += data[0][i] * data[0][i] }
-        return min(1.0, sqrt(sum / Float(count)) * 8)
+        let channels = max(1, Int(buffer.format.channelCount))
+        for channel in 0..<channels {
+            for i in 0..<count { sum += data[channel][i] * data[channel][i] }
+        }
+        return min(1.0, sqrt(sum / Float(count * channels)) * 8)
     }
 
     private func loadGMBank(_ sampler: AVAudioUnitSampler) {

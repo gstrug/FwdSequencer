@@ -1,8 +1,9 @@
-# Song Mode — Implementation Plan
+# Song Mode — Architecture History
 
-Feature: arrange a song from ordered sections over a shared, load-once instrument
-set. Sits **alongside** the existing standalone-pattern flow (patterns keep working
-exactly as today). Parameter automation is explicitly deferred.
+This document records the design that introduced ordered sections over a shared,
+load-once instrument set. The shipped app is now song-only; references below to a
+parallel standalone-pattern browser are historical. Parameter automation remains
+deferred.
 
 ## Settled design
 

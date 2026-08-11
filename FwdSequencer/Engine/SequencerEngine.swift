@@ -30,6 +30,7 @@ struct PlayTrack {
 
 /// One section of a song, flattened for playback.
 struct SequencerSection {
+    let id: UUID
     let numberOfBars: Int
     let tracks: [PlayTrack]
 }
@@ -46,8 +47,10 @@ class SequencerEngine {
     /// Song mode only: fires when a non-looping song plays past its last section.
     var onSongFinished: (() -> Void)?
 
+    /// Owns every mutable scheduler field below. Public commands enqueue work here;
+    /// timer ticks and note-offs already execute here, eliminating UI/timer races.
+    private let sequencerQueue = DispatchQueue(label: "com.fwd.sequencer", qos: .userInteractive)
     private var timer: DispatchSourceTimer?
-    private var sequencerQueue: DispatchQueue?
     private var states: [UUID: TrackState] = [:]
     // Per-track pending note-offs, keyed by a unique id so each note releases on its
     // own schedule (a chord's notes can have different gate lengths). Each work item
@@ -67,19 +70,19 @@ class SequencerEngine {
     private var globalStep = 0
     private let stepsPerBeat = 8   // ticks per beat = 32nd-note resolution
 
-    // Thread-safe live project — updated from main thread, read on sequencer thread
-    private let projectQueue = DispatchQueue(label: "com.fwd.project")
+    // Live playback snapshots. All access is sequencerQueue-only.
     private var _project: Project = Project()
 
-    // Song mode — additive playback path. Guarded by projectQueue like _project.
-    // `isSongMode` selects which source the tick loop reads; `sectionIndex` is
-    // sequencer-thread-only state (like globalStep).
+    // Song mode — additive playback path. `isSongMode` selects which source the tick
+    // loop reads; `sectionIndex` is queue-owned state (like globalStep).
     private var isSongMode = false
     private var songLoops = true
     private var sectionIndex = 0
     private var _songSections: [SequencerSection] = []
     private var _songTempo: Double = 120
     private var _songTimeSignature = TimeSignature()
+    private var initialRandomSeed: UInt64 = 0x465744
+    private var random = SeededRandomGenerator(seed: 0x465744)
 
     // A resolved snapshot the tick loop plays against, from either source.
     private struct Frame {
@@ -90,36 +93,30 @@ class SequencerEngine {
     }
 
     func updateProject(_ project: Project) {
-        projectQueue.async { self._project = project }
-    }
-
-    private var liveProject: Project {
-        projectQueue.sync { _project }
+        sequencerQueue.async { [weak self] in self?._project = project }
     }
 
     // Resolve the snapshot the tick loop plays against: the live project (pattern
     // mode) or the current section (song mode).
     private func currentFrame() -> Frame {
         if isSongMode {
-            return projectQueue.sync {
-                guard !_songSections.isEmpty else {
-                    return Frame(tempo: _songTempo, timeSignature: _songTimeSignature,
-                                 numberOfBars: 1, tracks: [])
-                }
-                let idx = min(max(0, sectionIndex), _songSections.count - 1)
-                let s = _songSections[idx]
+            guard !_songSections.isEmpty else {
                 return Frame(tempo: _songTempo, timeSignature: _songTimeSignature,
-                             numberOfBars: s.numberOfBars, tracks: s.tracks)
+                             numberOfBars: 1, tracks: [])
             }
+            let idx = min(max(0, sectionIndex), _songSections.count - 1)
+            let s = _songSections[idx]
+            return Frame(tempo: _songTempo, timeSignature: _songTimeSignature,
+                         numberOfBars: s.numberOfBars, tracks: s.tracks)
         } else {
-            let p = liveProject
+            let p = _project
             return Frame(tempo: p.tempo, timeSignature: p.timeSignature,
                          numberOfBars: p.numberOfBars, tracks: p.tracks.map(PlayTrack.init(from:)))
         }
     }
 
     private func songSectionCount() -> Int {
-        projectQueue.sync { _songSections.count }
+        _songSections.count
     }
 
     private struct TrackState {
@@ -143,85 +140,188 @@ class SequencerEngine {
     // MARK: - Lifecycle
 
     func start(project: Project) {
-        globalStep = 0
-        isSongMode = false
-        updateProject(project)
-        states = Dictionary(uniqueKeysWithValues: project.tracks.map { ($0.id, TrackState()) })
-        startTimer(tempo: project.tempo)
+        sequencerQueue.async { [weak self] in
+            guard let self else { return }
+            stopTimer()
+            globalStep = 0
+            sectionIndex = 0
+            isSongMode = false
+            _project = project
+            initialRandomSeed = Self.seed(from: project.id)
+            random = SeededRandomGenerator(seed: initialRandomSeed)
+            cancelAllPendingNoteOffs()
+            audioEngine?.allNotesOff()
+            states = Dictionary(uniqueKeysWithValues: project.tracks.map { ($0.id, TrackState()) })
+            startTimer(tempo: project.tempo, immediate: true)
+        }
     }
 
     /// Start song playback: play `sections` in order, looping back to the first.
     /// `trackIDs` are the stable SongTrack ids (instrument keys) so per-track state
     /// carries across sections. Additive — does not disturb the pattern path.
     func startSong(sections: [SequencerSection], tempo: Double,
-                   timeSignature: TimeSignature, trackIDs: [UUID], loop: Bool) {
-        globalStep = 0
-        sectionIndex = 0
-        isSongMode = true
-        songLoops = loop
-        projectQueue.sync {
+                   timeSignature: TimeSignature, trackIDs: [UUID], loop: Bool,
+                   randomSeed: UInt64 = 0x465744) {
+        sequencerQueue.async { [weak self] in
+            guard let self else { return }
+            stopTimer()
+            globalStep = 0
+            sectionIndex = 0
+            isSongMode = true
+            songLoops = loop
             _songSections = sections
             _songTempo = tempo
             _songTimeSignature = timeSignature
+            initialRandomSeed = randomSeed
+            random = SeededRandomGenerator(seed: randomSeed)
+            cancelAllPendingNoteOffs()
+            audioEngine?.allNotesOff()
+            states = Dictionary(uniqueKeysWithValues: trackIDs.map { ($0, TrackState()) })
+            onSectionChange?(0)
+            startTimer(tempo: tempo, immediate: true)
         }
-        states = Dictionary(uniqueKeysWithValues: trackIDs.map { ($0, TrackState()) })
-        onSectionChange?(0)
-        startTimer(tempo: tempo)
     }
 
-    /// Push edited section data during song playback (main thread → sequencer thread).
-    func updateSongSections(_ sections: [SequencerSection]) {
-        projectQueue.async { self._songSections = sections }
+    /// Atomically push the complete live song configuration. Current section identity
+    /// survives reordering, new tracks gain state immediately, and removed tracks are
+    /// silenced before their state is discarded.
+    func updateSong(sections: [SequencerSection], tempo: Double,
+                    timeSignature: TimeSignature, trackIDs: [UUID], loop: Bool) {
+        sequencerQueue.async { [weak self] in
+            guard let self else { return }
+
+            let currentID = _songSections.indices.contains(sectionIndex)
+                ? _songSections[sectionIndex].id : nil
+            let oldTempo = _songTempo
+
+            _songSections = sections
+            _songTempo = tempo
+            _songTimeSignature = timeSignature
+            songLoops = loop
+
+            if let currentID, let newIndex = sections.firstIndex(where: { $0.id == currentID }) {
+                sectionIndex = newIndex
+            } else {
+                sectionIndex = min(sectionIndex, max(0, sections.count - 1))
+            }
+
+            reconcileTrackStates(trackIDs: trackIDs)
+            silenceInaudibleTracks()
+
+            if timer != nil, oldTempo != tempo {
+                stopTimer()
+                startTimer(tempo: tempo, immediate: false)
+            }
+        }
     }
 
     func stop() {
-        timer?.cancel()
-        timer = nil
-        globalStep = 0
-        sectionIndex = 0
-        for key in states.keys { states[key] = TrackState() }
+        sequencerQueue.async { [weak self] in self?.stopInternal(resetPosition: true) }
+    }
+
+    private func stopInternal(resetPosition: Bool) {
+        stopTimer()
+        if resetPosition {
+            globalStep = 0
+            sectionIndex = 0
+            random = SeededRandomGenerator(seed: initialRandomSeed)
+        }
+        for key in Array(states.keys) { states[key] = TrackState() }
         cancelAllPendingNoteOffs()
         audioEngine?.allNotesOff()
-        onBarChange?(0)
+        if resetPosition { onBarChange?(0) }
+    }
+
+    private func stopTimer() {
+        timer?.setEventHandler {}
+        timer?.cancel()
+        timer = nil
     }
 
     func pause() {
-        timer?.cancel()
-        timer = nil
-        // globalStep and states intentionally preserved
+        sequencerQueue.async { [weak self] in self?.stopTimer() }
     }
 
     func resume(tempo: Double) {
-        guard timer == nil else { return }
-        startTimer(tempo: tempo)
+        sequencerQueue.async { [weak self] in
+            guard let self, timer == nil else { return }
+            _songTempo = tempo
+            startTimer(tempo: tempo, immediate: false)
+        }
     }
 
     func rewind() {
-        globalStep = 0
-        sectionIndex = 0
-        for key in states.keys { states[key] = TrackState() }
-        cancelAllPendingNoteOffs()
-        audioEngine?.allNotesOff()
-        onBarChange?(0)
-        if isSongMode { onSectionChange?(0) }
+        sequencerQueue.async { [weak self] in
+            guard let self else { return }
+            globalStep = 0
+            sectionIndex = 0
+            random = SeededRandomGenerator(seed: initialRandomSeed)
+            for key in Array(states.keys) { states[key] = TrackState() }
+            cancelAllPendingNoteOffs()
+            audioEngine?.allNotesOff()
+            onBarChange?(0)
+            if isSongMode { onSectionChange?(0) }
+        }
     }
 
     func updateTempo(_ tempo: Double) {
-        guard timer != nil else { return }
-        timer?.cancel()
-        timer = nil
-        startTimer(tempo: tempo)
+        sequencerQueue.async { [weak self] in
+            guard let self else { return }
+            _songTempo = tempo
+            guard timer != nil else { return }
+            stopTimer()
+            startTimer(tempo: tempo, immediate: false)
+        }
     }
 
-    private func startTimer(tempo: Double) {
-        let interval = 60.0 / tempo / Double(stepsPerBeat)
-        let queue = DispatchQueue(label: "com.fwd.sequencer", qos: .userInteractive)
-        sequencerQueue = queue
-        let t = DispatchSource.makeTimerSource(queue: queue)
-        t.schedule(deadline: .now(), repeating: interval)
+    private func startTimer(tempo: Double, immediate: Bool) {
+        let safeTempo = min(max(tempo, 20), 400)
+        let interval = 60.0 / safeTempo / Double(stepsPerBeat)
+        let t = DispatchSource.makeTimerSource(queue: sequencerQueue)
+        t.schedule(deadline: .now() + (immediate ? 0 : interval),
+                   repeating: interval,
+                   leeway: .milliseconds(1))
         t.setEventHandler { [weak self] in self?.tick() }
         t.resume()
         timer = t
+    }
+
+    private func reconcileTrackStates(trackIDs: [UUID]) {
+        let desired = Set(trackIDs)
+        for removed in Array(states.keys) where !desired.contains(removed) {
+            cancelPendingNoteOffs(for: removed)
+            for note in states[removed]?.lastMidiNotes ?? [] {
+                audioEngine?.stopNote(trackID: removed, midiNote: UInt8(note))
+            }
+            states.removeValue(forKey: removed)
+        }
+        for added in desired where states[added] == nil {
+            states[added] = TrackState()
+        }
+    }
+
+    private func silenceInaudibleTracks() {
+        let frame = currentFrame()
+        let anySoloed = frame.tracks.contains(where: { $0.isSoloed })
+        let audible = Set(frame.tracks.compactMap { track in
+            (!track.isMuted && (!anySoloed || track.isSoloed)) ? track.id : nil
+        })
+        for id in Array(states.keys) where !audible.contains(id) {
+            cancelPendingNoteOffs(for: id)
+            for note in states[id]?.lastMidiNotes ?? [] {
+                audioEngine?.stopNote(trackID: id, midiNote: UInt8(note))
+            }
+            states[id]?.lastMidiNotes.removeAll()
+            onNotePlayed?(id, [])
+        }
+    }
+
+    private static func seed(from id: UUID) -> UInt64 {
+        withUnsafeBytes(of: id.uuid) { bytes in
+            bytes.enumerated().reduce(UInt64(0x465744)) { partial, pair in
+                (partial &* 1099511628211) ^ UInt64(pair.element)
+            }
+        }
     }
 
     // MARK: - Tick
@@ -270,14 +370,14 @@ class SequencerEngine {
             // Every other track hard-restarts: release its ringing notes and drop
             // pending note-offs so nothing bleeds into the next section (the "extra"/
             // muddy artifact). A carrying Hold is left untouched so it keeps sounding.
-            for key in states.keys {
+            for key in Array(states.keys) {
                 if carries[key]?.carry == .hold { continue }
                 cancelPendingNoteOffs(for: key)
                 for note in states[key]?.lastMidiNotes ?? [] {
                     audioEngine?.stopNote(trackID: key, midiNote: UInt8(note))
                 }
             }
-            for key in states.keys { states[key] = carries[key] ?? TrackState() }
+            for key in Array(states.keys) { states[key] = carries[key] ?? TrackState() }
             globalStep = 0
             if isSongMode {
                 let count = songSectionCount()
@@ -379,11 +479,10 @@ class SequencerEngine {
 
     // Non-looping song reached its end: stop the timer and signal completion.
     private func finishSong() {
-        timer?.cancel()
-        timer = nil
+        stopTimer()
         globalStep = 0
         sectionIndex = 0
-        for key in states.keys { states[key] = TrackState() }
+        for key in Array(states.keys) { states[key] = TrackState() }
         cancelAllPendingNoteOffs()
         audioEngine?.allNotesOff()
         onSongFinished?()
@@ -404,7 +503,7 @@ class SequencerEngine {
             if pendingNoteOffs[trackID]?.isEmpty == true { pendingNoteOffs.removeValue(forKey: trackID) }
         }
         pendingNoteOffs[trackID, default: [:]][offID] = item
-        sequencerQueue?.asyncAfter(deadline: .now() + delay, execute: item)
+        sequencerQueue.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
     // MARK: - Step Execution
@@ -551,7 +650,7 @@ class SequencerEngine {
             // (Fwd/Back/Hold…) calculate from the random note itself. Returns to
             // single-note mode (a random chord isn't meaningful here).
             state.voicing = nil
-            let idx = noteCount > 1 ? Int.random(in: 0..<noteCount) : 0
+            let idx = random.nextIndex(upperBound: noteCount)
             state.notePtr = idx
             state.hasPlayed = true
             advanceStepIndex(si, stepCount: stepCount, state: &state)

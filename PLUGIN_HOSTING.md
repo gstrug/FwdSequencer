@@ -39,7 +39,7 @@ All of this lives in `Engine/AudioEngineManager.swift`.
 
 ## 2. Instantiating an AUv3 plugin
 
-`AudioEngineManager.loadPlugin(_:for:stateData:)`:
+`AudioEngineManager.loadPlugin(_:for:stateData:completion:)`:
 
 1. Build an `AudioComponentDescription` from the saved `PluginInfo`.
 2. `AVAudioUnit.instantiate(with:options:)` — **`options: []`** (iOS AUv3 is always
@@ -48,17 +48,18 @@ All of this lives in `Engine/AudioEngineManager.swift`.
 4. If saved state exists, restore it **after a 1.0 s delay** — many plugins need a
    run-loop cycle before they accept `fullState`.
 
-If instantiation fails, the instrument falls back to the GM sampler so it still makes
-sound.
+If instantiation fails or exceeds 15 seconds, the instrument falls back to the GM
+sampler so it still makes sound. Completion reports the actual result; `SongStore`
+keeps a per-track ready/failed status and presents the failure rather than pretending
+the requested plugin loaded.
 
 ### Loading protection (don't interrupt a plugin mid-load)
 
-Instantiation + state restore is asynchronous (~1–2 s). Interacting with a fragile
-plugin during that window can corrupt it. So `SongStore` sets an `isLoading` flag
-(`beginLoadingWindow`, ~2 s) that `SongView` renders as a **blocking "Loading
-instruments…" overlay**. It fires on song **open** *and* on **live plugin changes**
-(`setPlugin` / `setPerformancePlugin`), so adding/switching an instrument can't be
-interrupted either.
+Instantiation + state restore is asynchronous. Interacting with a fragile plugin
+during that window can corrupt it. `SongStore` therefore derives `isLoading` from a
+set of pending track IDs, and `SongView` renders a blocking **Loading instruments…**
+overlay until every real completion arrives. There is no guessed two-second window.
+Each load has a 15-second timeout and explicit GM fallback.
 
 ---
 

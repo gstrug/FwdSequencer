@@ -71,7 +71,7 @@ struct PluginPickerView: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            if selectedPlugin?.id == plugin.id {
+            if selectedPlugin == plugin {
                 Image(systemName: "checkmark")
                     .foregroundStyle(Color.accentColor)
             }

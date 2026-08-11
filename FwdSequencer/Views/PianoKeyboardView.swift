@@ -46,6 +46,18 @@ struct PianoKeyboardView: View {
         notePool.contains(where: { $0.midiNote == midi })
     }
 
+    private func noteName(_ midi: Int) -> String {
+        let names = ["C", "C sharp", "D", "D sharp", "E", "F",
+                     "F sharp", "G", "G sharp", "A", "A sharp", "B"]
+        return "\(names[midi % 12]) \(midi / 12 - 1)"
+    }
+
+    private func accessibilityValue(_ midi: Int) -> String {
+        if !isInScale(midi) { return "Outside selected scale" }
+        if playingNotes.contains(midi) { return "Selected, playing" }
+        return isSelected(midi) ? "Selected" : "Not selected"
+    }
+
     private func toggle(_ midi: Int) {
         guard isInScale(midi) else { return }
         if let idx = notePool.firstIndex(where: { $0.midiNote == midi }) {
@@ -96,6 +108,11 @@ struct PianoKeyboardView: View {
                                         cMarker(midi: midi, whiteW: whiteW)
                                     }
                                     .onTapGesture { toggle(midi) }
+                                    .accessibilityElement()
+                                    .accessibilityLabel(noteName(midi))
+                                    .accessibilityValue(accessibilityValue(midi))
+                                    .accessibilityAddTraits(.isButton)
+                                    .accessibilityAction { toggle(midi) }
                                     .id(midi)
                             }
                         }
@@ -106,6 +123,11 @@ struct PianoKeyboardView: View {
                                 .frame(width: blackW, height: blackH)
                                 .offset(x: blackKeyX(midi, whiteW: whiteW))
                                 .onTapGesture { toggle(midi) }
+                                .accessibilityElement()
+                                .accessibilityLabel(noteName(midi))
+                                .accessibilityValue(accessibilityValue(midi))
+                                .accessibilityAddTraits(.isButton)
+                                .accessibilityAction { toggle(midi) }
                         }
                     }
                     .frame(width: totalW, height: keyH)

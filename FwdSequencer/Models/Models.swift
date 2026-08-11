@@ -27,6 +27,19 @@ struct PluginInfo: Codable, Identifiable, Equatable {
     var componentType: UInt32
     var componentSubType: UInt32
     var componentManufacturer: UInt32
+
+    /// Audio-component identity is stable across scans and launches. `id` remains in
+    /// the saved format for backward compatibility, but must not decide whether two
+    /// records refer to the same installed plugin.
+    var componentIdentifier: String {
+        "\(componentType)-\(componentSubType)-\(componentManufacturer)"
+    }
+
+    static func == (lhs: PluginInfo, rhs: PluginInfo) -> Bool {
+        lhs.componentType == rhs.componentType
+            && lhs.componentSubType == rhs.componentSubType
+            && lhs.componentManufacturer == rhs.componentManufacturer
+    }
 }
 
 // MARK: - Song
@@ -37,6 +50,8 @@ struct PluginInfo: Codable, Identifiable, Equatable {
 // every section's part for that track stays put. See SONG_MODE_PLAN.md.
 
 struct Song: Codable, Identifiable {
+    /// Optional keeps build 1–16 documents decodable. New saves use format 2.
+    var formatVersion: Int? = 2
     var id: UUID = UUID()
     var name: String = "Untitled Song"
     var tempo: Double = 120.0
@@ -44,6 +59,9 @@ struct Song: Codable, Identifiable {
     var masterVolume: Float = 1.0
     var tracks: [SongTrack] = []      // instruments — loaded once when the song opens
     var sections: [SongSection] = []  // arrangement, in play order
+    /// Optional preserves decoding of builds 1–16. SongStore materialises a stable
+    /// value when an older song opens, making Random steps reproducible thereafter.
+    var randomSeed: UInt64? = nil
     // A dedicated instrument for the manual Play dock, independent of the sequencer
     // tracks. Optional, so older saved songs still decode (missing key → nil).
     var performance: SongTrack? = nil
@@ -100,8 +118,8 @@ struct SongSection: Codable, Identifiable {
 
 // Per-track note data for one section. `trackID` == SongTrack.id, which is also
 // the routing key in AudioEngineManager, so notes reach the already-loaded
-// instrument with no audio-graph change at section boundaries. Key/scale live on
-// the section (shared by all tracks); only rhythm + notes are per-track here.
+// instrument with no audio-graph change at section boundaries. Key/scale, rhythm,
+// and notes are all per-track within the section.
 struct Part: Codable {
     var trackID: UUID
     var notePool: [NoteEntry] = []
