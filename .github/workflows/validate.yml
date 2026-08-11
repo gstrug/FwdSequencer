@@ -10,20 +10,20 @@ jobs:
   core-tests:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Test deterministic core and migrations
         run: swift test
 
   ios-build:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build app without signing
         run: >-
           xcodebuild
           -project FwdSequencer.xcodeproj
           -scheme FwdSequencer
-          -configuration Debug
+          -configuration Release
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
           build

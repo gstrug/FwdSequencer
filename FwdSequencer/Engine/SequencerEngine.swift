@@ -7,7 +7,7 @@ import Foundation
 // sequence of sections. (Note: the tick loop does not read key/scale — those are
 // edit-time constraints only.)
 
-struct PlayTrack {
+nonisolated struct PlayTrack {
     let id: UUID
     let tempoDivision: TempoDivision
     let notePool: [NoteEntry]
@@ -29,7 +29,7 @@ struct PlayTrack {
 }
 
 /// One section of a song, flattened for playback.
-struct SequencerSection {
+nonisolated struct SequencerSection {
     let id: UUID
     let numberOfBars: Int
     let tracks: [PlayTrack]

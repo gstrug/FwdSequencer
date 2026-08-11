@@ -628,7 +628,7 @@ class AudioEngineManager {
         let listPtr = buf.bindMemory(to: MIDIEventList.self, capacity: 1)
         let pktPtr = MIDIEventListInit(listPtr, MIDIProtocolID._1_0)
         _ = MIDIEventListAdd(listPtr, bufSize, pktPtr, 0, 1, &word)
-        block(AUEventSampleTimeImmediate, 0, listPtr)
+        _ = block(AUEventSampleTimeImmediate, 0, listPtr)
     }
 
     func allNotesOff() {

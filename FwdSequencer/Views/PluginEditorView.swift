@@ -402,7 +402,7 @@ struct PluginEditorView: View {
         factoryPresets = au.factoryPresets ?? []
         currentPreset  = au.currentPreset
         if #available(iOS 13, *) {
-            userPresets = (try? au.userPresets) ?? []
+            userPresets = au.userPresets ?? []
         }
     }
 

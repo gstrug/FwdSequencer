@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Project
 
-struct Project: Codable, Identifiable {
+nonisolated struct Project: Codable, Identifiable {
     var id: UUID = UUID()
     var name: String = "Untitled Pattern"
     var tempo: Double = 120.0
@@ -13,14 +13,14 @@ struct Project: Codable, Identifiable {
     var tracks: [Track] = []
 }
 
-struct TimeSignature: Codable {
+nonisolated struct TimeSignature: Codable {
     var numerator: Int = 4
     var denominator: Int = 4
 }
 
 // MARK: - Plugin
 
-struct PluginInfo: Codable, Identifiable, Equatable {
+nonisolated struct PluginInfo: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String
     var manufacturerName: String
@@ -49,7 +49,7 @@ struct PluginInfo: Codable, Identifiable, Equatable {
 // Parts (the "notes"). The two are independent — swap a track's instrument and
 // every section's part for that track stays put. See SONG_MODE_PLAN.md.
 
-struct Song: Codable, Identifiable {
+nonisolated struct Song: Codable, Identifiable {
     /// Optional keeps build 1–16 documents decodable. New saves use format 2.
     var formatVersion: Int? = 2
     var id: UUID = UUID()
@@ -67,7 +67,7 @@ struct Song: Codable, Identifiable {
     var performance: SongTrack? = nil
 }
 
-struct SongTrack: Codable, Identifiable {
+nonisolated struct SongTrack: Codable, Identifiable {
     var id: UUID = UUID()             // stable instrument key in AudioEngineManager
     var name: String = "Track"
     var pluginInfo: PluginInfo? = nil
@@ -76,7 +76,7 @@ struct SongTrack: Codable, Identifiable {
     var collapsed: Bool? = nil        // persisted minimized state (Optional → old songs decode)
 }
 
-struct SongSection: Codable, Identifiable {
+nonisolated struct SongSection: Codable, Identifiable {
     var id: UUID = UUID()
     var name: String = "Section"      // "Verse", "Chorus", …
     var numberOfBars: Int = 4         // per-section length
@@ -120,7 +120,7 @@ struct SongSection: Codable, Identifiable {
 // the routing key in AudioEngineManager, so notes reach the already-loaded
 // instrument with no audio-graph change at section boundaries. Key/scale, rhythm,
 // and notes are all per-track within the section.
-struct Part: Codable {
+nonisolated struct Part: Codable {
     var trackID: UUID
     var notePool: [NoteEntry] = []
     var steps: [Step] = []
@@ -152,7 +152,7 @@ struct Part: Codable {
 
 // MARK: - Track
 
-struct Track: Codable, Identifiable {
+nonisolated struct Track: Codable, Identifiable {
     var id: UUID = UUID()
     var name: String = "Track"
     var pluginInfo: PluginInfo? = nil
@@ -165,14 +165,14 @@ struct Track: Codable, Identifiable {
     var mixer: MixerState = MixerState()
 }
 
-struct NoteEntry: Codable, Identifiable {
+nonisolated struct NoteEntry: Codable, Identifiable {
     var id: UUID = UUID()
     var midiNote: Int
     var velocity: Int = 100
     var gateLength: Double = 0.5
 }
 
-struct MixerState: Codable {
+nonisolated struct MixerState: Codable {
     var volume: Float = 0.8
     var pan: Float = 0.0
     var isMuted: Bool = false
@@ -181,7 +181,7 @@ struct MixerState: Codable {
 
 // MARK: - Step Sequencer
 
-struct Step: Codable, Identifiable {
+nonisolated struct Step: Codable, Identifiable {
     var id: UUID = UUID()
     var type: StepType
     var n: Int = 1
@@ -230,7 +230,7 @@ struct Step: Codable, Identifiable {
     }
 }
 
-enum StepType: String, CaseIterable {
+nonisolated enum StepType: String, CaseIterable {
     case fwd    = "Fwd"
     case back   = "Back"
     case rep    = "Repeat"
@@ -268,7 +268,7 @@ extension StepType: Codable {
 
 // MARK: - Enumerations
 
-enum TempoDivision: String, Codable, CaseIterable {
+nonisolated enum TempoDivision: String, Codable, CaseIterable {
     case breve          = "Breve"
     case whole          = "Whole"
     case half           = "Half"
@@ -302,7 +302,7 @@ enum TempoDivision: String, Codable, CaseIterable {
     }
 }
 
-enum MusicalScale: String, Codable, CaseIterable {
+nonisolated enum MusicalScale: String, Codable, CaseIterable {
     // Diatonic / common
     case chromatic        = "Chromatic"
     case major            = "Major"
