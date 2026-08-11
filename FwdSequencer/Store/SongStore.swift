@@ -482,7 +482,11 @@ class SongStore: ObservableObject {
 
     func setPlugin(_ info: PluginInfo?, for trackID: UUID) {
         guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        if song.tracks[idx].pluginInfo == info { return }
+        // NOTE: do NOT early-return when song.tracks[idx].pluginInfo already == info.
+        // The plugin picker binds straight to $track.pluginInfo, so by the time the
+        // onChange fires this call the model is already updated — an equality guard
+        // here would always be true and skip the actual engine load (old instrument
+        // stays, new one never loads / plays). onChange only fires on a real change.
         checkpointForUndo()
         song.tracks[idx].pluginInfo = info
         song.tracks[idx].pluginStateData = nil
