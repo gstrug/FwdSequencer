@@ -401,6 +401,13 @@ class AudioEngineManager {
         return getPluginState(for: id)
     }
 
+    /// Stable identity of the audio component backing a unit. Saved alongside plugin
+    /// state so a blob captured from one plugin is never restored into another.
+    private func componentIdentifier(for unit: AVAudioUnit) -> String {
+        let d = unit.audioComponentDescription
+        return "\(d.componentType)-\(d.componentSubType)-\(d.componentManufacturer)"
+    }
+
     private func getPluginStateLocked(for id: UUID) -> Data? {
         guard let unit = auv3Units[id] else { return nil }
         let au = unit.auAudioUnit
@@ -441,6 +448,9 @@ class AudioEngineManager {
         // If fullState is substantial, it is authoritative and parameterTree must not overwrite it.
         combined["_parameterTreeRequired"] = !fullStateIsSubstantial
 
+        // Which plugin this state came from, so restore can reject a foreign blob.
+        combined["_componentIdentifier"] = componentIdentifier(for: unit)
+
         guard !combined.isEmpty else { return nil }
         return try? PropertyListSerialization.data(
             fromPropertyList: combined,
@@ -467,6 +477,16 @@ class AudioEngineManager {
             from: data) as? [String: Any] {
             outer = legacy
         } else {
+            return
+        }
+
+        // Never restore a blob captured from a DIFFERENT plugin. Songs saved while the
+        // instrument-swap bug was live paired a new plugin with the old plugin's state;
+        // writing that foreign fullState / parameter addresses can leave the synth
+        // silent. Skipping leaves the plugin at its own defaults, and the next capture
+        // overwrites the bad blob. Legacy saves have no identifier → applied as before.
+        if let saved = outer["_componentIdentifier"] as? String,
+           saved != componentIdentifier(for: unit) {
             return
         }
 
