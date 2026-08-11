@@ -11,6 +11,7 @@ struct ProjectBrowserView: View {
     @State private var renameText = ""
     @State private var failedFiles: [FailedSongFile] = []
     @State private var trashedSongs: [TrashedSong] = []
+    @State private var trashPurgeTarget: TrashedSong? = nil
     @State private var notice: String? = nil
     @State private var importingSong = false
     @State private var exportingSong = false
@@ -105,6 +106,18 @@ struct ProjectBrowserView: View {
             Button("OK") { notice = nil }
         } message: {
             Text(notice ?? "")
+        }
+        .alert("Delete Permanently?", isPresented: Binding(
+            get: { trashPurgeTarget != nil },
+            set: { if !$0 { trashPurgeTarget = nil } }
+        )) {
+            Button("Delete Permanently", role: .destructive) {
+                if let item = trashPurgeTarget { permanentlyDelete(item) }
+                trashPurgeTarget = nil
+            }
+            Button("Cancel", role: .cancel) { trashPurgeTarget = nil }
+        } message: {
+            Text("\"\(trashPurgeTarget?.song.name ?? "")\" will be permanently deleted. This can't be undone.")
         }
         .fileImporter(isPresented: $importingSong, allowedContentTypes: [.fwdSong, .json]) { result in
             importSong(result)
@@ -210,16 +223,21 @@ struct ProjectBrowserView: View {
                 if !trashedSongs.isEmpty {
                     Section("Recently Deleted") {
                         ForEach(trashedSongs) { item in
-                            HStack {
+                            HStack(spacing: 8) {
                                 Label(item.song.name, systemImage: "trash")
                                 Spacer()
                                 Button("Restore") { restore(item) }
                                     .buttonStyle(.bordered)
+                                Button(role: .destructive) { trashPurgeTarget = item } label: {
+                                    Image(systemName: "trash")
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(.red)
                             }
                             .contextMenu {
                                 Button("Restore") { restore(item) }
                                 Button("Delete Permanently", role: .destructive) {
-                                    permanentlyDelete(item)
+                                    trashPurgeTarget = item
                                 }
                             }
                         }
