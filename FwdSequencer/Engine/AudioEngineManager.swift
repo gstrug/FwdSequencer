@@ -120,9 +120,10 @@ class AudioEngineManager {
         // No master effect on the output bus. A master AUPeakLimiter here transiently
         // clamps and adds CPU on the mix bus, which produces audible crackle on heavy
         // sampled instruments (e.g. the Ravenscroft piano) — distinct from clipping.
-        // Touch mainMixerNode so AVAudioEngine establishes the default mainMixer→output
-        // connection; per-track levels stay well below 0 dBFS via the track mixers.
-        _ = engine.mainMixerNode
+        // Connect the mix straight to the output. Do this explicitly rather than relying
+        // on mainMixerNode's lazy auto-connection, which did not establish the output
+        // path here (removing the limiter left the mix with nowhere to go → silence).
+        engine.connect(engine.mainMixerNode, to: engine.outputNode, format: nil)
     }
 
     private func setStatus(_ newStatus: AudioEngineStatus) {
