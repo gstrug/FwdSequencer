@@ -33,7 +33,6 @@ class AudioEngineManager {
     static let shared = AudioEngineManager()
 
     private var engine = AVAudioEngine()
-    private var masterLimiter: AVAudioUnitEffect?
     private var masterTapInstalled = false
     private var samplers: [UUID: AVAudioUnitSampler] = [:]
     private var auv3Units: [UUID: AVAudioUnit] = [:]
@@ -118,19 +117,12 @@ class AudioEngineManager {
     }
 
     private func configureMasterGraph() {
-        let description = AudioComponentDescription(
-            componentType: kAudioUnitType_Effect,
-            componentSubType: kAudioUnitSubType_PeakLimiter,
-            componentManufacturer: kAudioUnitManufacturer_Apple,
-            componentFlags: 0,
-            componentFlagsMask: 0
-        )
-        let limiter = AVAudioUnitEffect(audioComponentDescription: description)
-        engine.attach(limiter)
-        engine.disconnectNodeOutput(engine.mainMixerNode)
-        engine.connect(engine.mainMixerNode, to: limiter, format: nil)
-        engine.connect(limiter, to: engine.outputNode, format: nil)
-        masterLimiter = limiter
+        // No master effect on the output bus. A master AUPeakLimiter here transiently
+        // clamps and adds CPU on the mix bus, which produces audible crackle on heavy
+        // sampled instruments (e.g. the Ravenscroft piano) — distinct from clipping.
+        // Touch mainMixerNode so AVAudioEngine establishes the default mainMixer→output
+        // connection; per-track levels stay well below 0 dBFS via the track mixers.
+        _ = engine.mainMixerNode
     }
 
     private func setStatus(_ newStatus: AudioEngineStatus) {
@@ -224,7 +216,6 @@ class AudioEngineManager {
             loadRequests.removeAll()
             levelTimestamps.removeAll()
             engine = AVAudioEngine()
-            masterLimiter = nil
             masterTapInstalled = false
         }
 
