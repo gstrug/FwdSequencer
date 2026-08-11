@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ProjectBrowserView: View {
     @EnvironmentObject var songStore: SongStore
