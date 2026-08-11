@@ -75,6 +75,11 @@ class SongStore: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var saveWorkItem: DispatchWorkItem?
     private var pendingPluginLoads: Set<UUID> = []
+    /// True only once a song has actually been opened/created. The store's default
+    /// `song` is an empty Song() with a fresh UUID at launch; without this guard a
+    /// background save (captureAndSave) would persist that empty default as a new
+    /// .fwdsong on every launch.
+    private var hasActiveSong = false
     private var undoStack: [Song] = []
     private var redoStack: [Song] = []
 
@@ -224,6 +229,7 @@ class SongStore: ObservableObject {
         song.formatVersion = 2
 
         self.song = song
+        hasActiveSong = true
         selectedSection = 0
         currentSection = 0
         activate()
@@ -277,6 +283,8 @@ class SongStore: ObservableObject {
     /// destabilise a fragile AUv3 the user is actively editing. Live state is captured
     /// separately, only at safe moments (see captureAllPluginStates).
     func saveNow() {
+        // Don't persist the empty default song that exists before any song is opened.
+        guard hasActiveSong else { return }
         // Snapshot copy — never mutate self.song here or didSet → scheduleSave would loop.
         let snapshot = song
         switch SongStorage.saveResult(snapshot) {
@@ -389,6 +397,8 @@ class SongStore: ObservableObject {
         saveNow()
         for t in song.tracks { audioEngine.removeTrack(id: t.id) }
         if let perf = song.performance { audioEngine.removeTrack(id: perf.id) }
+        // No song is open anymore — a later background save must not re-persist this.
+        hasActiveSong = false
     }
 
     // MARK: - Manual Play-dock instrument
