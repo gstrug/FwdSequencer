@@ -60,7 +60,11 @@ nonisolated enum SongValidator {
         try requireUnique(song.tracks.map(\.id), name: "track")
 
         if song.sections.isEmpty {
-            song.addEmptySection(named: "Section 1")
+            song.sections = [SongSection(
+                name: "Section 1",
+                numberOfBars: 4,
+                parts: song.tracks.map { Part(trackID: $0.id) }
+            )]
         }
         guard song.sections.count <= 1_024 else {
             throw SongValidationError.invalid("A song cannot contain more than 1,024 sections.")
