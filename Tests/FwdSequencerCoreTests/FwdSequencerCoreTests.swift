@@ -177,4 +177,18 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(decoded.sections[0].variations.first?.name, "Sparse")
         XCTAssertEqual(decoded.sections[0].variations.first?.parts, song.sections[0].parts)
     }
+
+    func testMIDIExportIsDeterministicAndWellFormed() throws {
+        let song = SongTemplate.ambientCanon.makeSong()
+        let first = try SongMIDIExporter.data(for: song)
+        let second = try SongMIDIExporter.data(for: song)
+
+        XCTAssertEqual(first, second)
+        XCTAssertEqual(Array(first.prefix(4)), [0x4D, 0x54, 0x68, 0x64])
+        XCTAssertEqual(first[8], 0)
+        XCTAssertEqual(first[9], 1)
+        XCTAssertEqual(first[10], 0)
+        XCTAssertEqual(first[11], UInt8(song.tracks.count + 1))
+        XCTAssertTrue(first.count > 100)
+    }
 }

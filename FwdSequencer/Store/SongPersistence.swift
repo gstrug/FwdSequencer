@@ -5,6 +5,25 @@ import UniformTypeIdentifiers
 extension UTType {
     static let fwdSong = UTType(exportedAs: "com.grahamstruwig.FwdSequencer.song",
                                 conformingTo: .json)
+    static let standardMIDI = UTType(filenameExtension: "mid") ?? .data
+}
+
+struct MIDIFileDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.standardMIDI] }
+    var data: Data
+
+    init(data: Data) { self.data = data }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let contents = configuration.file.regularFileContents else {
+            throw SongStorageError.unreadableFile("The selected file has no MIDI data.")
+        }
+        data = contents
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
 }
 
 struct SongDocument: FileDocument {

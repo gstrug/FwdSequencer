@@ -601,7 +601,10 @@ class SequencerEngine {
         guard noteCount > 0 else { return ([], true, 1.0) }
 
         guard stepCount > 0 else {
-            return ([state.notePtr % noteCount], true, 1.0)
+            let index = state.notePtr % noteCount
+            state.notePtr = (index + 1) % noteCount
+            state.hasPlayed = true
+            return ([index], true, 1.0)
         }
 
         state.notePtr = state.notePtr % noteCount
