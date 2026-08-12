@@ -8,10 +8,13 @@ class PluginManager: ObservableObject {
 
     @Published var instruments: [PluginInfo] = []
     @Published var isScanning = false
+    @Published private(set) var favoriteIdentifiers: Set<String>
 
     private var observer: NSObjectProtocol?
+    private let favoritesKey = "FavoritePluginIdentifiers"
 
     init() {
+        favoriteIdentifiers = Set(UserDefaults.standard.stringArray(forKey: favoritesKey) ?? [])
         observer = NotificationCenter.default.addObserver(
             forName: .AVAudioUnitComponentTagsDidChange,
             object: AVAudioUnitComponentManager.shared(),
@@ -20,6 +23,17 @@ class PluginManager: ObservableObject {
             self?.performScan()
         }
         _ = AVAudioUnitComponentManager.shared()
+    }
+
+    func isFavorite(_ plugin: PluginInfo) -> Bool {
+        favoriteIdentifiers.contains(plugin.componentIdentifier)
+    }
+
+    func toggleFavorite(_ plugin: PluginInfo) {
+        let identifier = plugin.componentIdentifier
+        if favoriteIdentifiers.contains(identifier) { favoriteIdentifiers.remove(identifier) }
+        else { favoriteIdentifiers.insert(identifier) }
+        UserDefaults.standard.set(Array(favoriteIdentifiers).sorted(), forKey: favoritesKey)
     }
 
     deinit {

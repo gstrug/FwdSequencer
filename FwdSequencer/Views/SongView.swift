@@ -67,20 +67,19 @@ struct SongView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: showPlayDock)
-        // Block interaction while instruments load/restore, so user input can't
-        // interrupt a plugin (e.g. GeoShred) mid-restore and corrupt its state.
-        .overlay {
+        // Loading remains visible without obscuring the arrangement. Individual
+        // tracks are suspended by the engine until their state is restored.
+        .overlay(alignment: .topTrailing) {
             if songStore.isLoading {
-                ZStack {
-                    Color.black.opacity(0.55).ignoresSafeArea()
-                    VStack(spacing: 14) {
-                        ProgressView().controlSize(.large).tint(.white)
-                        Text("Loading instruments…").font(.title3.bold()).foregroundStyle(.white)
-                        Text("Restoring each sound safely").font(.callout).foregroundStyle(.white.opacity(0.85))
-                    }
-                    .padding(36)
-                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
+                HStack(spacing: 10) {
+                    ProgressView()
+                    Text("Restoring instruments…").font(.subheadline.bold())
                 }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(.regularMaterial, in: Capsule())
+                .shadow(radius: 4, y: 2)
+                .padding(12)
+                .allowsHitTesting(false)
                 .transition(.opacity)
             }
         }
@@ -131,6 +130,8 @@ private struct SongTransportBar: View {
     @State private var savedVisible = false
     @State private var showMixer = false
     @State private var selectAllSongName = false
+    @State private var exportingRecording = false
+    @State private var recordingDocument: AudioRecordingDocument?
 
     private var beatCount: Int { songStore.song.timeSignature.numerator }
     private var currentSectionBars: Int {
@@ -143,31 +144,15 @@ private struct SongTransportBar: View {
             // ── Row 1: playback ──────────────────────────────────────────
             HStack(spacing: 14) {
                 Button(action: onBack) {
-                    Image(systemName: "chevron.left").font(.title3.weight(.semibold))
+                    Image(systemName: "chevron.left").iconHitTarget()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back to songs")
 
                 Divider().frame(height: 26)
 
-                Button { songStore.undo() } label: {
-                    Image(systemName: "arrow.uturn.backward")
-                }
-                .buttonStyle(.plain)
-                .disabled(!songStore.canUndo)
-                .accessibilityLabel("Undo")
-
-                Button { songStore.redo() } label: {
-                    Image(systemName: "arrow.uturn.forward")
-                }
-                .buttonStyle(.plain)
-                .disabled(!songStore.canRedo)
-                .accessibilityLabel("Redo")
-
-                Divider().frame(height: 26)
-
                 Button { songStore.rewind() } label: {
-                    Image(systemName: "backward.end.fill").font(.body)
+                    Image(systemName: "backward.end.fill").iconHitTarget()
                         .foregroundStyle(songStore.isPlaying || songStore.isPaused ? .primary : .secondary)
                 }
                 .buttonStyle(.plain)
@@ -179,26 +164,28 @@ private struct SongTransportBar: View {
                     else                        { songStore.play() }
                 } label: {
                     Image(systemName: songStore.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title2).foregroundColor(.green).frame(width: 32)
+                        .foregroundColor(.green).iconHitTarget()
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(songStore.isPlaying ? "Pause song" : "Play song")
 
                 Button { songStore.stop() } label: {
-                    Image(systemName: "stop.fill").font(.body)
+                    Image(systemName: "stop.fill").iconHitTarget()
                         .foregroundStyle(songStore.isPlaying || songStore.isPaused ? .red : .secondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Stop song")
 
-                Button { songStore.midiPanic() } label: {
-                    Text("!").font(.body.bold()).foregroundStyle(.red).frame(width: 20)
+                Button { toggleRecording() } label: {
+                    Image(systemName: songStore.isRecording ? "stop.circle.fill" : "record.circle")
+                        .foregroundStyle(songStore.isRecording ? .red : .secondary)
+                        .iconHitTarget()
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Stop all MIDI notes")
+                .accessibilityLabel(songStore.isRecording ? "Stop and export recording" : "Record master output")
 
                 Button { songStore.loopEnabled.toggle() } label: {
-                    Image(systemName: "repeat").font(.body)
+                    Image(systemName: "repeat").iconHitTarget()
                         .foregroundStyle(songStore.loopEnabled ? Color.accentColor : .secondary)
                 }
                 .buttonStyle(.plain)
@@ -289,6 +276,24 @@ private struct SongTransportBar: View {
                     Label("Mixer", systemImage: "slider.vertical.3")
                 }
                 .buttonStyle(.bordered)
+
+                Menu {
+                    Button { songStore.undo() } label: {
+                        Label("Undo", systemImage: "arrow.uturn.backward")
+                    }
+                    .disabled(!songStore.canUndo)
+                    Button { songStore.redo() } label: {
+                        Label("Redo", systemImage: "arrow.uturn.forward")
+                    }
+                    .disabled(!songStore.canRedo)
+                    Divider()
+                    Button(role: .destructive) { songStore.midiPanic() } label: {
+                        Label("Stop All Notes", systemImage: "exclamationmark.octagon")
+                    }
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
+                }
+                .buttonStyle(.bordered)
             }
         }
         .padding(.horizontal, 20)
@@ -299,6 +304,13 @@ private struct SongTransportBar: View {
             SongMixerView()
                 .environmentObject(songStore)
                 .environmentObject(songStore.levels)
+        }
+        .fileExporter(isPresented: $exportingRecording,
+                      document: recordingDocument,
+                      contentType: .coreAudioRecording,
+                      defaultFilename: recordingFilename) { result in
+            if case .failure(let error) = result { songStore.notice = error.localizedDescription }
+            recordingDocument = nil
         }
         .onReceive(songStore.savedSignal) {
             savedVisible = true
@@ -322,6 +334,26 @@ private struct SongTransportBar: View {
         let intervals = zip(tapTimes.dropLast(), tapTimes.dropFirst()).map { $1.timeIntervalSince($0) }
         let avg = intervals.reduce(0, +) / Double(intervals.count)
         songStore.song.tempo = min(240, max(40, (60.0 / avg).rounded()))
+    }
+
+    private var recordingFilename: String {
+        let invalid = CharacterSet(charactersIn: "/\\:?%*|\"<>")
+        let name = songStore.song.name.components(separatedBy: invalid).joined(separator: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (name.isEmpty ? "FWD" : name) + " Recording"
+    }
+
+    private func toggleRecording() {
+        do {
+            if songStore.isRecording {
+                recordingDocument = AudioRecordingDocument(data: try songStore.finishRecording())
+                exportingRecording = true
+            } else {
+                try songStore.beginRecording()
+            }
+        } catch {
+            songStore.notice = error.localizedDescription
+        }
     }
 }
 
@@ -354,34 +386,33 @@ private struct ArrangementStrip: View {
                 .padding(.vertical, 8)
             }
 
-            Divider().frame(height: 28)
-
-            // Section controls act on the selected section.
             let sel = songStore.selectedSection
-            Button { songStore.addSection() } label: {
-                Image(systemName: "plus").iconHitTarget(40)
+            Menu {
+                Button { songStore.addSection() } label: {
+                    Label("Add Section", systemImage: "plus")
+                }
+                Button { songStore.duplicateSection(at: sel) } label: {
+                    Label("Duplicate Selected", systemImage: "plus.square.on.square")
+                }
+                Divider()
+                Button { songStore.moveSection(from: sel, to: sel - 1) } label: {
+                    Label("Move Earlier", systemImage: "arrow.left")
+                }
+                .disabled(sel <= 0)
+                Button { songStore.moveSection(from: sel, to: sel + 1) } label: {
+                    Label("Move Later", systemImage: "arrow.right")
+                }
+                .disabled(sel >= songStore.song.sections.count - 1)
+                Divider()
+                Button(role: .destructive) { songStore.deleteSection(at: sel) } label: {
+                    Label("Delete Selected", systemImage: "trash")
+                }
+                .disabled(songStore.song.sections.count <= 1)
+            } label: {
+                Label("Section", systemImage: "ellipsis.circle")
+                    .frame(minHeight: 44)
             }
-            .help("Add section")
-
-            Button { songStore.duplicateSection(at: sel) } label: {
-                Image(systemName: "plus.square.on.square").iconHitTarget(40)
-            }
-            .help("Duplicate section")
-
-            Button { songStore.moveSection(from: sel, to: sel - 1) } label: {
-                Image(systemName: "chevron.left").iconHitTarget(40)
-            }
-            .disabled(sel <= 0)
-
-            Button { songStore.moveSection(from: sel, to: sel + 1) } label: {
-                Image(systemName: "chevron.right").iconHitTarget(40)
-            }
-            .disabled(sel >= songStore.song.sections.count - 1)
-
-            Button(role: .destructive) { songStore.deleteSection(at: sel) } label: {
-                Image(systemName: "trash").iconHitTarget(40)
-            }
-            .disabled(songStore.song.sections.count <= 1)
+            .buttonStyle(.bordered)
             .padding(.trailing, 8)
         }
         .background(.regularMaterial)
@@ -437,8 +468,9 @@ private struct SectionSettingsBar: View {
 
     var body: some View {
         let sel = songStore.selectedSection
-        HStack(spacing: 12) {
-            if songStore.song.sections.indices.contains(sel) {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                if songStore.song.sections.indices.contains(sel) {
                 Image(systemName: "square.stack").foregroundStyle(.secondary)
                 // Inline, editable name — same as track naming: long-press to select all.
                 SelectAllTextField(
@@ -511,10 +543,11 @@ private struct SectionSettingsBar: View {
                 }
                 .toggleStyle(.button)
                 .help("Keep the editor on the section currently playing")
+                }
+                Spacer(minLength: 0)
             }
-            Spacer()
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 16)
         .padding(.vertical, 6)
         .background(.regularMaterial)
     }
@@ -638,10 +671,17 @@ private struct SongTrackRowView: View {
             if isCollapsed {
                 collapsedBar
             } else {
-                HStack(alignment: .top, spacing: 10) {
-                    trackHeader.frame(width: 250)
-                    Divider()
-                    noteZone
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 10) {
+                        trackHeader.frame(width: 250)
+                        Divider()
+                        noteZone.frame(minWidth: 400)
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        trackHeader.frame(maxWidth: .infinity)
+                        Divider()
+                        noteZone
+                    }
                 }
                 .padding(10)
             }

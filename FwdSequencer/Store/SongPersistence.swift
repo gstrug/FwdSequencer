@@ -6,6 +6,7 @@ extension UTType {
     static let fwdSong = UTType(exportedAs: "com.grahamstruwig.FwdSequencer.song",
                                 conformingTo: .json)
     static let standardMIDI = UTType(filenameExtension: "mid") ?? .data
+    static let coreAudioRecording = UTType(filenameExtension: "caf") ?? .audio
 }
 
 struct MIDIFileDocument: FileDocument {
@@ -21,6 +22,22 @@ struct MIDIFileDocument: FileDocument {
         data = contents
     }
 
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
+struct AudioRecordingDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.coreAudioRecording] }
+    var data: Data
+
+    init(data: Data) { self.data = data }
+    init(configuration: ReadConfiguration) throws {
+        guard let contents = configuration.file.regularFileContents else {
+            throw SongStorageError.unreadableFile("The selected file has no audio data.")
+        }
+        data = contents
+    }
     func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
         FileWrapper(regularFileWithContents: data)
     }

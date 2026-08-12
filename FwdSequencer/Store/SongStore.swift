@@ -54,6 +54,7 @@ class SongStore: ObservableObject {
     @Published var pluginStatuses: [UUID: TrackPluginStatus] = [:]
     @Published var audioStatus: AudioEngineStatus = .recovering
     @Published var notice: String? = nil
+    @Published private(set) var isRecording = false
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
     /// When off (default), the song plays once to the end and stops; on, it loops.
@@ -82,6 +83,7 @@ class SongStore: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var saveWorkItem: DispatchWorkItem?
     private var pendingPluginLoads = PluginLoadTracker()
+    private var recordingURL: URL?
     /// True only once a song has actually been opened/created. The store's default
     /// `song` is an empty Song() with a fresh UUID at launch; without this guard a
     /// background save (captureAndSave) would persist that empty default as a new
@@ -103,6 +105,12 @@ class SongStore: ObservableObject {
         }
         audioEngine.onRecoveryRequired = { [weak self] in
             self?.reloadAudioGraph()
+        }
+        audioEngine.onRecordingError = { [weak self] detail in
+            if let url = self?.recordingURL { try? FileManager.default.removeItem(at: url) }
+            self?.isRecording = false
+            self?.recordingURL = nil
+            self?.notice = AudioRecordingError.writeFailed(detail).localizedDescription
         }
 
         sequencer.onNotePlayed = { [weak self] trackID, notes in
@@ -407,10 +415,37 @@ class SongStore: ObservableObject {
         playback.activeSteps.removeAll()
     }
 
+    func beginRecording() throws {
+        guard !isRecording else { return }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FWD-\(UUID().uuidString).caf")
+        try audioEngine.startRecording(to: url)
+        recordingURL = url
+        isRecording = true
+    }
+
+    func finishRecording() throws -> Data {
+        guard isRecording, let url = recordingURL else {
+            throw AudioRecordingError.unavailable
+        }
+        audioEngine.stopRecording()
+        isRecording = false
+        recordingURL = nil
+        defer { try? FileManager.default.removeItem(at: url) }
+        do { return try Data(contentsOf: url) }
+        catch { throw AudioRecordingError.writeFailed(error.localizedDescription) }
+    }
+
     /// Release this song's instruments (call when leaving the song view). Captures live
     /// plugin state and persists BEFORE tearing the instruments down (they must still be
     /// loaded to read their state), so the sounds you were editing are saved.
     func close() {
+        if isRecording {
+            audioEngine.stopRecording()
+            if let recordingURL { try? FileManager.default.removeItem(at: recordingURL) }
+            recordingURL = nil
+            isRecording = false
+        }
         stop()
         captureAllPluginStates()
         saveNow()

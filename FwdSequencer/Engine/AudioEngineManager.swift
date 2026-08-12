@@ -30,6 +30,18 @@ enum PluginLoadError: LocalizedError {
     }
 }
 
+enum AudioRecordingError: LocalizedError {
+    case unavailable
+    case writeFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable: return "Add a track before recording the mix."
+        case .writeFailed(let detail): return "The recording could not be written. \(detail)"
+        }
+    }
+}
+
 class AudioEngineManager {
     // One shared audio engine / session for the whole app. Pattern playback and
     // song playback both route through it (only one document plays at a time).
@@ -37,17 +49,18 @@ class AudioEngineManager {
 
     private var engine = AVAudioEngine()
     private var masterTapInstalled = false
+    private let recordingLock = NSLock()
+    private var recordingFile: AVAudioFile?
     private var samplers: [UUID: AVAudioUnitSampler] = [:]
     private var auv3Units: [UUID: AVAudioUnit] = [:]
     private var trackMixers: [UUID: AVAudioMixerNode] = [:]
-    private var levelTimestamps: [UUID: Double] = [:]
 
     var onLevelUpdate: ((UUID, Float) -> Void)?
     var onMasterLevelUpdate: ((Float) -> Void)?
     var onStatusChange: ((AudioEngineStatus) -> Void)?
     var onPlaybackInterrupted: ((String) -> Void)?
     var onRecoveryRequired: (() -> Void)?
-    private var masterLevelTimestamp: Double = 0
+    var onRecordingError: ((String) -> Void)?
     private var status: AudioEngineStatus = .recovering
     var currentStatus: AudioEngineStatus { status }
     private var sessionObservers: [NSObjectProtocol] = []
@@ -221,6 +234,7 @@ class AudioEngineManager {
 
     private func rebuildAfterMediaServicesReset() {
         setStatus(.recovering)
+        var recordingWasInterrupted = false
         let cancelled = withLock { () -> [(Result<Void, PluginLoadError>) -> Void] in
             engine.stop()
             samplers.removeAll()
@@ -229,12 +243,18 @@ class AudioEngineManager {
             suspended.removeAll()
             let completions = loadRequests.values.map(\.completion)
             loadRequests.removeAll()
-            levelTimestamps.removeAll()
             engine = AVAudioEngine()
             masterTapInstalled = false
+            recordingLock.lock()
+            recordingWasInterrupted = recordingFile != nil
+            recordingFile = nil
+            recordingLock.unlock()
             return completions
         }
         cancelled.forEach { deliver(.failure(.cancelled), to: $0) }
+        if recordingWasInterrupted {
+            onRecordingError?("The audio system restarted before the recording finished.")
+        }
 
         do {
             try configureAudioSession()
@@ -254,15 +274,49 @@ class AudioEngineManager {
         guard !masterTapInstalled else { return }
         let main = engine.mainMixerNode
         guard main.numberOfInputs > 0 else { return }
+        var lastLevelTimestamp: Double = 0
         main.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
             guard let self else { return }
+            recordingLock.lock()
+            if let file = recordingFile {
+                do { try file.write(from: buffer) }
+                catch {
+                    recordingFile = nil
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onRecordingError?(error.localizedDescription)
+                    }
+                }
+            }
+            recordingLock.unlock()
             let level = self.rms(buffer)
             let now = CACurrentMediaTime()
-            guard now - self.masterLevelTimestamp > 0.05 else { return }
-            self.masterLevelTimestamp = now
+            guard now - lastLevelTimestamp > 0.05 else { return }
+            lastLevelTimestamp = now
             self.onMasterLevelUpdate?(level)
         }
         masterTapInstalled = true
+    }
+
+    func startRecording(to url: URL) throws {
+        guard masterTapInstalled else { throw AudioRecordingError.unavailable }
+        let format = engine.mainMixerNode.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            throw AudioRecordingError.unavailable
+        }
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            recordingLock.lock()
+            recordingFile = file
+            recordingLock.unlock()
+        } catch {
+            throw AudioRecordingError.writeFailed(error.localizedDescription)
+        }
+    }
+
+    func stopRecording() {
+        recordingLock.lock()
+        recordingFile = nil
+        recordingLock.unlock()
     }
 
     func addTrack(id: UUID, volume: Float = 0.8, pan: Float = 0.0) {
@@ -572,12 +626,13 @@ class AudioEngineManager {
     }
 
     private func installLevelTap(id: UUID, node: AVAudioMixerNode) {
+        var lastLevelTimestamp: Double = 0
         node.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
             guard let self else { return }
             let level = self.rms(buffer)
             let now = CACurrentMediaTime()
-            guard now - (self.levelTimestamps[id] ?? 0) > 0.05 else { return }
-            self.levelTimestamps[id] = now
+            guard now - lastLevelTimestamp > 0.05 else { return }
+            lastLevelTimestamp = now
             self.onLevelUpdate?(id, level)
         }
     }
