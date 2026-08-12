@@ -51,6 +51,10 @@ class AudioEngineManager {
     private var masterTapInstalled = false
     private let recordingLock = NSLock()
     private var recordingFile: AVAudioFile?
+    private let midiClockQueue = DispatchQueue(label: "com.fwd.midi-clock", qos: .userInteractive)
+    private var midiClient = MIDIClientRef()
+    private var midiClockSource = MIDIEndpointRef()
+    private var midiClockTimer: DispatchSourceTimer?
     private var samplers: [UUID: AVAudioUnitSampler] = [:]
     private var auv3Units: [UUID: AVAudioUnit] = [:]
     private var trackMixers: [UUID: AVAudioMixerNode] = [:]
@@ -107,6 +111,7 @@ class AudioEngineManager {
     }
 
     init() {
+        configureMIDIClockSource()
         registerForAudioSessionEvents()
         do {
             try configureAudioSession()
@@ -119,6 +124,68 @@ class AudioEngineManager {
 
     deinit {
         for observer in sessionObservers { NotificationCenter.default.removeObserver(observer) }
+        midiClockTimer?.cancel()
+        if midiClockSource != 0 { MIDIEndpointDispose(midiClockSource) }
+        if midiClient != 0 { MIDIClientDispose(midiClient) }
+    }
+
+    private func configureMIDIClockSource() {
+        guard MIDIClientCreate("FWD Sequencer" as CFString, nil, nil, &midiClient) == noErr else { return }
+        if MIDISourceCreate(midiClient, "FWD Sequencer Clock" as CFString, &midiClockSource) != noErr {
+            MIDIClientDispose(midiClient)
+            midiClient = 0
+        }
+    }
+
+    func startMIDIClock(tempo: Double, continuing: Bool = false) {
+        midiClockQueue.async { [weak self] in
+            guard let self else { return }
+            stopMIDIClockTimer()
+            sendMIDIRealtime(continuing ? 0xFB : 0xFA)
+            installMIDIClockTimer(tempo: tempo)
+        }
+    }
+
+    func updateMIDIClockTempo(_ tempo: Double) {
+        midiClockQueue.async { [weak self] in
+            guard let self, midiClockTimer != nil else { return }
+            stopMIDIClockTimer()
+            installMIDIClockTimer(tempo: tempo)
+        }
+    }
+
+    func stopMIDIClock() {
+        midiClockQueue.async { [weak self] in
+            guard let self else { return }
+            stopMIDIClockTimer()
+            sendMIDIRealtime(0xFC)
+        }
+    }
+
+    private func installMIDIClockTimer(tempo: Double) {
+        let interval = 60.0 / min(400, max(20, tempo)) / 24.0
+        let timer = DispatchSource.makeTimerSource(queue: midiClockQueue)
+        timer.schedule(deadline: .now() + interval, repeating: interval,
+                       leeway: .microseconds(200))
+        timer.setEventHandler { [weak self] in self?.sendMIDIRealtime(0xF8) }
+        timer.resume()
+        midiClockTimer = timer
+    }
+
+    private func stopMIDIClockTimer() {
+        midiClockTimer?.setEventHandler {}
+        midiClockTimer?.cancel()
+        midiClockTimer = nil
+    }
+
+    private func sendMIDIRealtime(_ status: UInt8) {
+        guard midiClockSource != 0 else { return }
+        var packet = MIDIPacket()
+        packet.timeStamp = 0
+        packet.length = 1
+        packet.data.0 = status
+        var list = MIDIPacketList(numPackets: 1, packet: packet)
+        MIDIReceived(midiClockSource, &list)
     }
 
     private func configureAudioSession() throws {

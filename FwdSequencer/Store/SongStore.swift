@@ -70,6 +70,13 @@ class SongStore: ObservableObject {
     ) as? Bool ?? true {
         didSet { UserDefaults.standard.set(followsPlayhead, forKey: "FollowsSongPlayhead") }
     }
+    @Published var midiClockEnabled: Bool = UserDefaults.standard.bool(forKey: "MIDIClockOutputEnabled") {
+        didSet {
+            UserDefaults.standard.set(midiClockEnabled, forKey: "MIDIClockOutputEnabled")
+            if !midiClockEnabled { audioEngine.stopMIDIClock() }
+            else if isPlaying { audioEngine.startMIDIClock(tempo: song.tempo) }
+        }
+    }
 
     let levels = LevelMonitor()
     let playback = PlaybackMonitor()
@@ -143,6 +150,7 @@ class SongStore: ObservableObject {
         sequencer.onSongFinished = { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }
+                if self.midiClockEnabled { self.audioEngine.stopMIDIClock() }
                 self.isPlaying = false
                 self.isPaused = false
                 self.currentSection = 0
@@ -156,6 +164,15 @@ class SongStore: ObservableObject {
             .map(\.masterVolume)
             .removeDuplicates()
             .sink { [weak self] vol in self?.audioEngine.setMasterVolume(vol) }
+            .store(in: &cancellables)
+
+        $song
+            .map(\.tempo)
+            .removeDuplicates()
+            .sink { [weak self] tempo in
+                guard let self, midiClockEnabled, isPlaying else { return }
+                audioEngine.updateMIDIClockTempo(tempo)
+            }
             .store(in: &cancellables)
 
         // Push volume/pan to mixer nodes only when a value actually changed.
@@ -369,10 +386,12 @@ class SongStore: ObservableObject {
             loop: loopEnabled,
             randomSeed: song.randomSeed ?? Self.seed(from: song.id)
         )
+        if midiClockEnabled { audioEngine.startMIDIClock(tempo: song.tempo) }
     }
 
     func pause() {
         sequencer.pause()
+        if midiClockEnabled { audioEngine.stopMIDIClock() }
         isPlaying = false
         isPaused = true
         playback.playingNotes.removeAll()
@@ -384,12 +403,14 @@ class SongStore: ObservableObject {
     func resume() {
         updateLiveSong()
         sequencer.resume(tempo: song.tempo)
+        if midiClockEnabled { audioEngine.startMIDIClock(tempo: song.tempo, continuing: true) }
         isPlaying = true
         isPaused = false
     }
 
     func stop() {
         sequencer.stop()
+        if midiClockEnabled { audioEngine.stopMIDIClock() }
         isPlaying = false
         isPaused = false
         currentSection = 0
@@ -400,6 +421,7 @@ class SongStore: ObservableObject {
 
     func rewind() {
         sequencer.rewind()
+        if midiClockEnabled && isPlaying { audioEngine.startMIDIClock(tempo: song.tempo) }
         currentSection = 0
         playback.currentBar = 0
         playback.playingNotes.removeAll()
@@ -408,6 +430,7 @@ class SongStore: ObservableObject {
 
     func midiPanic() {
         sequencer.stop()
+        if midiClockEnabled { audioEngine.stopMIDIClock() }
         audioEngine.allNotesOff()
         isPlaying = false
         isPaused = false

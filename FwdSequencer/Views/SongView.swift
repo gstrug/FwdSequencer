@@ -287,6 +287,9 @@ private struct SongTransportBar: View {
                     }
                     .disabled(!songStore.canRedo)
                     Divider()
+                    Toggle(isOn: $songStore.midiClockEnabled) {
+                        Label("MIDI Clock Output", systemImage: "cable.connector")
+                    }
                     Button(role: .destructive) { songStore.midiPanic() } label: {
                         Label("Stop All Notes", systemImage: "exclamationmark.octagon")
                     }
