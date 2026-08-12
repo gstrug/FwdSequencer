@@ -106,6 +106,21 @@ nonisolated enum SongValidator {
             for partIndex in section.parts.indices {
                 try validate(section.parts[partIndex], section: sectionIndex + 1)
             }
+            guard section.variations.count <= 32 else {
+                throw SongValidationError.invalid("Section \(sectionIndex + 1) has more than 32 variations.")
+            }
+            try requireUnique(section.variations.map(\.id), name: "variation in section \(sectionIndex + 1)")
+            for variation in section.variations {
+                guard !variation.name.isEmpty, variation.name.count <= 200 else {
+                    throw SongValidationError.invalid("A variation in section \(sectionIndex + 1) has an invalid name.")
+                }
+                let variationPartIDs = variation.parts.map(\.trackID)
+                try requireUnique(variationPartIDs, name: "variation part in section \(sectionIndex + 1)")
+                guard Set(variationPartIDs) == trackIDs else {
+                    throw SongValidationError.invalid("A variation in section \(sectionIndex + 1) does not match the song tracks.")
+                }
+                for part in variation.parts { try validate(part, section: sectionIndex + 1) }
+            }
             song.sections[sectionIndex] = section
         }
 
@@ -169,6 +184,13 @@ nonisolated enum SongValidator {
             try requireFinite(step.gate, name: "Step gate")
             guard (0.01...8).contains(step.gate) else {
                 throw SongValidationError.invalid("A step gate in section \(section) is outside 0.01–8.")
+            }
+            try requireFinite(step.probability, name: "Step probability")
+            guard (0...1).contains(step.probability) else {
+                throw SongValidationError.invalid("A step probability in section \(section) is outside 0–1.")
+            }
+            guard (1...8).contains(step.ratchets) else {
+                throw SongValidationError.invalid("A step ratchet count in section \(section) is outside 1–8.")
             }
         }
     }

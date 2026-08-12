@@ -76,26 +76,41 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     var collapsed: Bool? = nil        // persisted minimized state (Optional → old songs decode)
 }
 
+/// A named, non-destructive snapshot of a section's note data. Variations do not
+/// create extra arrangement entries; applying one replaces the section's current
+/// parts and remains undoable through SongStore.
+nonisolated struct SectionVariation: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    var name: String
+    var parts: [Part]
+}
+
 nonisolated struct SongSection: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String = "Section"      // "Verse", "Chorus", …
     var numberOfBars: Int = 4         // per-section length
     var parts: [Part] = []            // one per SongTrack, keyed by trackID (key/scale live here now)
+    var variations: [SectionVariation] = []
 
-    init(id: UUID = UUID(), name: String = "Section", numberOfBars: Int = 4, parts: [Part] = []) {
-        self.id = id; self.name = name; self.numberOfBars = numberOfBars; self.parts = parts
+    init(id: UUID = UUID(), name: String = "Section", numberOfBars: Int = 4,
+         parts: [Part] = [], variations: [SectionVariation] = []) {
+        self.id = id; self.name = name; self.numberOfBars = numberOfBars
+        self.parts = parts; self.variations = variations
     }
 
     // key/scale used to live on the section; they're now per-Part. `key`/`scale` remain
     // as decode-only keys so older songs migrate: any legacy section-level value is
     // back-filled onto that section's parts that don't already carry their own.
-    private enum CodingKeys: String, CodingKey { case id, name, numberOfBars, key, scale, parts }
+    private enum CodingKeys: String, CodingKey {
+        case id, name, numberOfBars, key, scale, parts, variations
+    }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Section"
         numberOfBars = try c.decodeIfPresent(Int.self, forKey: .numberOfBars) ?? 4
         parts = try c.decodeIfPresent([Part].self, forKey: .parts) ?? []
+        variations = try c.decodeIfPresent([SectionVariation].self, forKey: .variations) ?? []
         // Legacy migration: sections written before this change stored key/scale.
         // If present, stamp them onto the parts (old parts had no key/scale of their own).
         if let legacyKey = try c.decodeIfPresent(Int.self, forKey: .key) {
@@ -113,6 +128,7 @@ nonisolated struct SongSection: Codable, Identifiable, Equatable {
         try c.encode(name, forKey: .name)
         try c.encode(numberOfBars, forKey: .numberOfBars)
         try c.encode(parts, forKey: .parts)
+        try c.encode(variations, forKey: .variations)
     }
 }
 
@@ -191,17 +207,27 @@ nonisolated struct Step: Codable, Identifiable, Equatable {
     /// Per-step articulation, 0.05–1.0. Scales how long this step's note(s) sustain
     /// (multiplies each note's own gate). 1.0 = full note gates (default).
     var gate: Double = 1.0
+    /// Deterministic chance that this step sounds. Traversal still advances when a
+    /// hit is skipped, so probability changes rhythm without changing the sequence.
+    var probability: Double = 1.0
+    /// Number of evenly-spaced re-triggers within this step's duration.
+    var ratchets: Int = 1
 
-    init(type: StepType, n: Int = 1, chordPositions: [Int] = [], gate: Double = 1.0) {
+    init(type: StepType, n: Int = 1, chordPositions: [Int] = [], gate: Double = 1.0,
+         probability: Double = 1.0, ratchets: Int = 1) {
         self.type = type
         self.n = n
         self.chordPositions = chordPositions
         self.gate = gate
+        self.probability = probability
+        self.ratchets = ratchets
     }
 
     // Custom decoder so steps saved before `chordPositions`/`gate` existed still load.
     // (Swift's synthesised decoder throws on a missing key even with a default.)
-    private enum CodingKeys: String, CodingKey { case id, type, n, chordPositions, gate }
+    private enum CodingKeys: String, CodingKey {
+        case id, type, n, chordPositions, gate, probability, ratchets
+    }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
@@ -209,23 +235,27 @@ nonisolated struct Step: Codable, Identifiable, Equatable {
         n = try c.decodeIfPresent(Int.self, forKey: .n) ?? 1
         chordPositions = try c.decodeIfPresent([Int].self, forKey: .chordPositions) ?? []
         gate = try c.decodeIfPresent(Double.self, forKey: .gate) ?? 1.0
+        probability = try c.decodeIfPresent(Double.self, forKey: .probability) ?? 1.0
+        ratchets = try c.decodeIfPresent(Int.self, forKey: .ratchets) ?? 1
     }
 
     /// True when this Play step names more than one note (a chord).
     var isChord: Bool { type == .play && chordPositions.count > 1 }
 
     var label: String {
+        let suffix = (ratchets > 1 ? " ×\(ratchets)" : "")
+            + (probability < 0.999 ? " \(Int((probability * 100).rounded()))%" : "")
         switch type {
         case .play:
-            return isChord ? "P" + chordPositions.map(String.init).joined(separator: ",") : "P\(n)"
-        case .rep   where n > 1: return "R×\(n)"
-        case .fwd   where n > 1: return "F\(n)"
-        case .back  where n > 1: return "B\(n)"
+            return (isChord ? "P" + chordPositions.map(String.init).joined(separator: ",") : "P\(n)") + suffix
+        case .rep   where n > 1: return "R×\(n)" + suffix
+        case .fwd   where n > 1: return "F\(n)" + suffix
+        case .back  where n > 1: return "B\(n)" + suffix
         case .hold  where n > 1: return "H×\(n)"
         case .pause where n > 1: return "—×\(n)"
         case .hold:  return "Hold"
         case .pause: return "—"
-        default: return type.abbreviation
+        default: return type.abbreviation + suffix
         }
     }
 }

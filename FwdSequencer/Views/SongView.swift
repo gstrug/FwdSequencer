@@ -475,6 +475,42 @@ private struct SectionSettingsBar: View {
                 }
                 .buttonStyle(.bordered)
                 .help("Create an undoable variation of this section")
+
+                Menu {
+                    Button { songStore.captureVariation() } label: {
+                        Label("Save Current Snapshot", systemImage: "camera")
+                    }
+                    .disabled(songStore.song.sections[sel].variations.count >= 32)
+
+                    if !songStore.song.sections[sel].variations.isEmpty {
+                        Divider()
+                        ForEach(songStore.song.sections[sel].variations) { variation in
+                            Menu(variation.name) {
+                                Button { songStore.applyVariation(variation.id) } label: {
+                                    Label("Apply", systemImage: "arrow.uturn.backward.circle")
+                                }
+                                Button(role: .destructive) {
+                                    songStore.deleteVariation(variation.id)
+                                } label: {
+                                    Label("Delete Snapshot", systemImage: "trash")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    Label(
+                        "Variations \(songStore.song.sections[sel].variations.count)",
+                        systemImage: "square.stack.3d.up"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .help("Save and recall alternate versions without adding arrangement sections")
+
+                Toggle(isOn: $songStore.followsPlayhead) {
+                    Label("Follow", systemImage: "scope")
+                }
+                .toggleStyle(.button)
+                .help("Keep the editor on the section currently playing")
             }
             Spacer()
         }

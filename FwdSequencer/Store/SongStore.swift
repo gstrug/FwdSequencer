@@ -62,6 +62,13 @@ class SongStore: ObservableObject {
             if isPlaying || isPaused { updateLiveSong() }
         }
     }
+    /// Keep the editor on the sounding section. This is a local workflow preference,
+    /// not song data, so collaborators opening the document keep their own setting.
+    @Published var followsPlayhead: Bool = UserDefaults.standard.object(
+        forKey: "FollowsSongPlayhead"
+    ) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(followsPlayhead, forKey: "FollowsSongPlayhead") }
+    }
 
     let levels = LevelMonitor()
     let playback = PlaybackMonitor()
@@ -122,7 +129,7 @@ class SongStore: ObservableObject {
                 // Follow the playhead so the note editor (blue selected keys, steps,
                 // section settings) reflects the section currently sounding. Fires
                 // only during playback, so manual selection is untouched when stopped.
-                self?.selectedSection = index
+                if self?.followsPlayhead == true { self?.selectedSection = index }
             }
         }
         sequencer.onSongFinished = { [weak self] in
@@ -457,6 +464,9 @@ class SongStore: ObservableObject {
         // Every section gains an (empty) part for the new track.
         for i in song.sections.indices {
             song.sections[i].parts.append(Part(trackID: track.id))
+            for variationIndex in song.sections[i].variations.indices {
+                song.sections[i].variations[variationIndex].parts.append(Part(trackID: track.id))
+            }
         }
         audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
     }
@@ -470,6 +480,9 @@ class SongStore: ObservableObject {
         song.tracks.removeAll { $0.id == trackID }
         for i in song.sections.indices {
             song.sections[i].parts.removeAll { $0.trackID == trackID }
+            for variationIndex in song.sections[i].variations.indices {
+                song.sections[i].variations[variationIndex].parts.removeAll { $0.trackID == trackID }
+            }
         }
     }
 
@@ -499,6 +512,12 @@ class SongStore: ObservableObject {
             var newPart = song.sections[s].parts.first(where: { $0.trackID == trackID }) ?? Part(trackID: copy.id)
             newPart.trackID = copy.id
             song.sections[s].parts.append(newPart)
+            for variationIndex in song.sections[s].variations.indices {
+                var variationPart = song.sections[s].variations[variationIndex].parts
+                    .first(where: { $0.trackID == trackID }) ?? Part(trackID: copy.id)
+                variationPart.trackID = copy.id
+                song.sections[s].variations[variationIndex].parts.append(variationPart)
+            }
         }
 
         audioEngine.addTrack(id: copy.id, volume: copy.mixer.volume, pan: copy.mixer.pan)
@@ -600,6 +619,35 @@ class SongStore: ObservableObject {
             }
             song.randomSeed = seed
         }
+    }
+
+    func captureVariation() {
+        guard song.sections.indices.contains(selectedSection),
+              song.sections[selectedSection].variations.count < 32 else { return }
+        checkpointForUndo()
+        let number = song.sections[selectedSection].variations.count + 1
+        let snapshot = SectionVariation(
+            name: "Variation \(number)",
+            parts: song.sections[selectedSection].parts
+        )
+        song.sections[selectedSection].variations.append(snapshot)
+    }
+
+    func applyVariation(_ variationID: UUID) {
+        guard song.sections.indices.contains(selectedSection),
+              let variation = song.sections[selectedSection].variations
+                .first(where: { $0.id == variationID }),
+              variation.parts != song.sections[selectedSection].parts else { return }
+        checkpointForUndo()
+        song.sections[selectedSection].parts = variation.parts
+    }
+
+    func deleteVariation(_ variationID: UUID) {
+        guard song.sections.indices.contains(selectedSection),
+              song.sections[selectedSection].variations.contains(where: { $0.id == variationID })
+        else { return }
+        checkpointForUndo()
+        song.sections[selectedSection].variations.removeAll { $0.id == variationID }
     }
 
     private static func seed(from id: UUID) -> UInt64 {
