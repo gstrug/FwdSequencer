@@ -25,7 +25,7 @@ enum PluginLoadError: LocalizedError {
         case .timedOut(let name):
             return "\(name) took too long to load. The GM instrument is active instead."
         case .instantiationFailed(let name, let detail):
-            return "\(name) could not be loaded. \(detail)"
+            return "\(name) could not be loaded. The built-in GM sound is active instead. \(detail)"
         }
     }
 }

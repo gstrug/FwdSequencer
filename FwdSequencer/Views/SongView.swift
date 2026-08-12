@@ -844,8 +844,12 @@ private struct SongTrackRowView: View {
                     Label("Instrument ready", systemImage: "checkmark.circle.fill")
                         .font(.caption2).foregroundStyle(.green)
                 case .failed(let message):
-                    Label(message, systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption2).foregroundStyle(.orange).lineLimit(2)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label(message, systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption2).foregroundStyle(.orange).lineLimit(3)
+                        Button("Choose Replacement") { showPluginPicker = true }
+                            .buttonStyle(.bordered).controlSize(.small)
+                    }
                 }
             }
 

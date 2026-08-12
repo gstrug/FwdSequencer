@@ -18,7 +18,16 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Build app without signing
+      - name: Build debug app without signing
+        run: >-
+          xcodebuild
+          -project FwdSequencer.xcodeproj
+          -scheme FwdSequencer
+          -configuration Debug
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO
+          build
+      - name: Build optimized app without signing
         run: >-
           xcodebuild
           -project FwdSequencer.xcodeproj

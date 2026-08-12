@@ -12,9 +12,12 @@ struct OnboardingView: View {
         ("square.stack.3d.up",
          "Sections become a song",
          "Each section keeps its own notes and steps while the instrument and mixer stay consistent across the arrangement."),
+        ("dial.medium",
+         "Shape it without losing it",
+         "Chance and ratchets add movement. Save section variations before experimenting, then recall or undo them anytime."),
         ("puzzlepiece.extension.fill",
-         "Start simple, then add sounds",
-         "Every template works immediately with the built-in GM sound. Choose an AUv3 instrument whenever you are ready.")
+         "Play first, finish anywhere",
+         "Templates work immediately with built-in sound. Add AUv3 instruments, record the mix, or export deterministic MIDI when you are ready.")
     ]
 
     var body: some View {

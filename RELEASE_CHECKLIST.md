@@ -17,15 +17,20 @@
 - [ ] Reordering sections preserves the section currently sounding
 - [ ] Loop and time-signature changes take effect coherently
 - [ ] Non-looping songs stop once and return the playhead to the start
+- [ ] Chance and Random output repeat after rewind for the same seed
+- [ ] Ratchets stop cleanly on pause, rewind, section change, and track deletion
+- [ ] Applying a saved variation is undoable and never changes another section
 
 ## Audio and AUv3
 
-- [ ] Master output cannot exceed the limiter ceiling with 12 loud tracks
+- [ ] Dense 12-track output remains free of clipping and CPU crackle at intended headroom
 - [ ] AUv3 load status remains visible until restoration actually completes
 - [ ] Failed and timed-out AUv3 instruments show GM fallback and a retryable error
 - [ ] Calls/Siri, headphone removal, Bluetooth changes, and Media Services Reset recover
 - [ ] Background playback does not cut notes merely to autosave
 - [ ] GeoShred and other compatibility exceptions are documented from device evidence
+- [ ] Master recording produces a playable CAF and reports route/reset/write failures
+- [ ] MIDI clock emits Start/Continue/Stop and follows live tempo in a receiving app
 
 ## Documents
 
@@ -33,6 +38,7 @@
 - [ ] Save failure is visible and does not show a false “Saved” confirmation
 - [ ] Corrupt files appear under Needs Attention
 - [ ] Exported `.fwdsong` files import on a second device
+- [ ] Exported MIDI opens with correct tempo, meter, section markers, and track notes
 - [ ] Delete, restore, and permanent delete behave as labelled
 - [ ] Undo/redo restores destructive structural and key/scale edits
 
@@ -50,6 +56,6 @@
 
 - [ ] Marketing version and build number are intentional
 - [ ] App Store privacy answers match the archive privacy report
-- [ ] Microphone permission and deprecated Inter-App Audio entitlement are absent
+- [ ] Microphone permission is absent; the existing Inter-App Audio entitlement required by this target remains present
 - [ ] Support URL, privacy policy, screenshots, subtitle, keywords, and release notes are current
 - [ ] TestFlight smoke test passes on the oldest and newest supported iPadOS versions
