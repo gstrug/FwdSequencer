@@ -12,6 +12,7 @@ enum AudioEngineStatus: Equatable {
 
 enum PluginLoadError: LocalizedError {
     case trackUnavailable
+    case cancelled
     case timedOut(String)
     case instantiationFailed(String, String)
 
@@ -19,6 +20,8 @@ enum PluginLoadError: LocalizedError {
         switch self {
         case .trackUnavailable:
             return "The track is no longer available."
+        case .cancelled:
+            return "Instrument loading was cancelled."
         case .timedOut(let name):
             return "\(name) took too long to load. The GM instrument is active instead."
         case .instantiationFailed(let name, let detail):
@@ -48,7 +51,11 @@ class AudioEngineManager {
     private var status: AudioEngineStatus = .recovering
     var currentStatus: AudioEngineStatus { status }
     private var sessionObservers: [NSObjectProtocol] = []
-    private var loadRequests: [UUID: UUID] = [:]
+    private struct PluginLoadRequest {
+        let id: UUID
+        let completion: (Result<Void, PluginLoadError>) -> Void
+    }
+    private var loadRequests: [UUID: PluginLoadRequest] = [:]
 
     // All access to the node dictionaries and to a hosted AU's state/MIDI is serialised
     // through this lock. The sequencer tick sends MIDI from a background queue while the
@@ -131,6 +138,12 @@ class AudioEngineManager {
         DispatchQueue.main.async { [weak self] in self?.onStatusChange?(newStatus) }
     }
 
+    private func deliver(_ result: Result<Void, PluginLoadError>,
+                         to completion: @escaping (Result<Void, PluginLoadError>) -> Void) {
+        if Thread.isMainThread { completion(result) }
+        else { DispatchQueue.main.async { completion(result) } }
+    }
+
     private func startEngineIfNeeded() -> Bool {
         guard !engine.isRunning else { return true }
         do {
@@ -208,17 +221,20 @@ class AudioEngineManager {
 
     private func rebuildAfterMediaServicesReset() {
         setStatus(.recovering)
-        withLock {
+        let cancelled = withLock { () -> [(Result<Void, PluginLoadError>) -> Void] in
             engine.stop()
             samplers.removeAll()
             auv3Units.removeAll()
             trackMixers.removeAll()
             suspended.removeAll()
+            let completions = loadRequests.values.map(\.completion)
             loadRequests.removeAll()
             levelTimestamps.removeAll()
             engine = AVAudioEngine()
             masterTapInstalled = false
+            return completions
         }
+        cancelled.forEach { deliver(.failure(.cancelled), to: $0) }
 
         do {
             try configureAudioSession()
@@ -277,9 +293,10 @@ class AudioEngineManager {
     }
 
     func removeTrack(id: UUID) {
+        var cancelled: ((Result<Void, PluginLoadError>) -> Void)?
         withLock {
             suspended.remove(id)
-            loadRequests.removeValue(forKey: id)
+            cancelled = loadRequests.removeValue(forKey: id)?.completion
             if let mixer = trackMixers.removeValue(forKey: id) {
                 mixer.removeTap(onBus: 0)
                 engine.detach(mixer)
@@ -291,6 +308,7 @@ class AudioEngineManager {
                 engine.detach(sampler)
             }
         }
+        if let cancelled { deliver(.failure(.cancelled), to: cancelled) }
     }
 
     // Swap the instrument on a track. Completion fires only after state restoration or
@@ -298,12 +316,15 @@ class AudioEngineManager {
     func loadPlugin(_ pluginInfo: PluginInfo?, for trackID: UUID, stateData: Data? = nil,
                     completion: @escaping (Result<Void, PluginLoadError>) -> Void = { _ in }) {
         let requestID = UUID()
-        let mixer: AVAudioMixerNode? = withLock {
-            loadRequests[trackID] = requestID
-            return trackMixers[trackID]
+        let result: (mixer: AVAudioMixerNode?, cancelled: ((Result<Void, PluginLoadError>) -> Void)?) = withLock {
+            let oldCompletion = loadRequests.removeValue(forKey: trackID)?.completion
+            guard let mixer = trackMixers[trackID] else { return (nil, oldCompletion) }
+            loadRequests[trackID] = PluginLoadRequest(id: requestID, completion: completion)
+            return (mixer, oldCompletion)
         }
-        guard let mixer else {
-            DispatchQueue.main.async { completion(.failure(.trackUnavailable)) }
+        if let cancelled = result.cancelled { deliver(.failure(.cancelled), to: cancelled) }
+        guard let mixer = result.mixer else {
+            deliver(.failure(.trackUnavailable), to: completion)
             return
         }
 
@@ -331,20 +352,17 @@ class AudioEngineManager {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                                 guard self.isCurrentLoad(requestID, for: trackID) else { return }
                                 self.applyPluginState(data, for: trackID)
-                                self.finishPluginLoad(requestID, for: trackID,
-                                                      result: .success(()), completion: completion)
+                                self.finishPluginLoad(requestID, for: trackID, result: .success(()))
                             }
                         } else {
-                            self.finishPluginLoad(requestID, for: trackID,
-                                                  result: .success(()), completion: completion)
+                            self.finishPluginLoad(requestID, for: trackID, result: .success(()))
                         }
                     } else {
                         let detail = error?.localizedDescription ?? "The Audio Unit returned no instrument."
                         self.attachSampler(for: trackID, mixer: mixer)
                         self.finishPluginLoad(
                             requestID, for: trackID,
-                            result: .failure(.instantiationFailed(pluginInfo.name, detail)),
-                            completion: completion
+                            result: .failure(.instantiationFailed(pluginInfo.name, detail))
                         )
                     }
                 }
@@ -354,30 +372,27 @@ class AudioEngineManager {
                 guard let self, isCurrentLoad(requestID, for: trackID) else { return }
                 attachSampler(for: trackID, mixer: mixer)
                 finishPluginLoad(requestID, for: trackID,
-                                 result: .failure(.timedOut(pluginInfo.name)),
-                                 completion: completion)
+                                 result: .failure(.timedOut(pluginInfo.name)))
             }
         } else {
             attachSampler(for: trackID, mixer: mixer)
-            finishPluginLoad(requestID, for: trackID, result: .success(()), completion: completion)
+            finishPluginLoad(requestID, for: trackID, result: .success(()))
         }
     }
 
     private func isCurrentLoad(_ requestID: UUID, for trackID: UUID) -> Bool {
-        withLock { loadRequests[trackID] == requestID && trackMixers[trackID] != nil }
+        withLock { loadRequests[trackID]?.id == requestID && trackMixers[trackID] != nil }
     }
 
     private func finishPluginLoad(_ requestID: UUID, for trackID: UUID,
-                                  result: Result<Void, PluginLoadError>,
-                                  completion: @escaping (Result<Void, PluginLoadError>) -> Void) {
-        let shouldFinish = withLock { () -> Bool in
-            guard loadRequests[trackID] == requestID else { return false }
-            loadRequests.removeValue(forKey: trackID)
-            return true
+                                  result: Result<Void, PluginLoadError>) {
+        let completion = withLock { () -> ((Result<Void, PluginLoadError>) -> Void)? in
+            guard loadRequests[trackID]?.id == requestID else { return nil }
+            return loadRequests.removeValue(forKey: trackID)?.completion
         }
-        guard shouldFinish else { return }
+        guard let completion else { return }
         resumeTrack(trackID)
-        completion(result)
+        deliver(result, to: completion)
     }
 
     // Return the live AVAudioUnit for a track (nil if using GM sampler).

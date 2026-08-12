@@ -27,7 +27,8 @@ let package = Package(
                 "Models/Models.swift",
                 "Models/SongValidation.swift",
                 "Models/SongTemplates.swift",
-                "Engine/SequencerRandom.swift"
+                "Engine/SequencerRandom.swift",
+                "Engine/PluginLoadTracker.swift"
             ]
         ),
         .testTarget(

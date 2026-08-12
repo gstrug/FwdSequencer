@@ -119,4 +119,26 @@ final class FwdSequencerCoreTests: XCTestCase {
         let data = Data(#"{"type":"FutureOperation","n":1}"#.utf8)
         XCTAssertThrowsError(try JSONDecoder().decode(Step.self, from: data))
     }
+
+    func testStalePluginLoadCannotFinishNewRequest() {
+        var tracker = PluginLoadTracker()
+        let trackID = UUID()
+        let old = tracker.begin(for: trackID)
+        let current = tracker.begin(for: trackID)
+
+        XCTAssertFalse(tracker.finish(for: trackID, token: old))
+        XCTAssertFalse(tracker.isEmpty)
+        XCTAssertTrue(tracker.finish(for: trackID, token: current))
+        XCTAssertTrue(tracker.isEmpty)
+    }
+
+    func testCancellingPluginLoadClearsTracker() {
+        var tracker = PluginLoadTracker()
+        let trackID = UUID()
+        _ = tracker.begin(for: trackID)
+
+        tracker.cancel(for: trackID)
+
+        XCTAssertTrue(tracker.isEmpty)
+    }
 }

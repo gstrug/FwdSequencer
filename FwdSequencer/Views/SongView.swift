@@ -500,6 +500,8 @@ private struct SongTrackRowView: View {
     @State private var showNoteParams = false
     @State private var showScalePicker = false
     @State private var showDeleteAlert = false
+    @State private var stepsBaseline: Song?
+    @State private var noteParametersBaseline: Song?
     @State private var selectAllName = false
     // A proposed key/scale change waiting on confirmation because it would drop notes.
     @State private var pendingKeyScale: (key: Int, scale: MusicalScale)?
@@ -571,6 +573,8 @@ private struct SongTrackRowView: View {
     private func proposeKeyScale(key: Int, scale: MusicalScale) {
         let bad = offendingNotes(key: key, scale: scale)
         if bad.isEmpty {
+            guard part.key != key || part.scale != scale else { return }
+            songStore.checkpointForUndo()
             part.key = key
             part.scale = scale
         } else {
@@ -607,20 +611,23 @@ private struct SongTrackRowView: View {
             }
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .onChange(of: track.pluginInfo) { newPlugin in
-            songStore.setPlugin(newPlugin, for: track.id)
-        }
         .sheet(isPresented: $showPluginPicker) {
-            PluginPickerView(selectedPlugin: $track.pluginInfo)
+            PluginPickerView(selectedPlugin: pluginBinding)
         }
         .fullScreenCover(isPresented: $showPluginEditor) {
             PluginEditorView(trackID: track.id, trackName: track.name,
                              onCommitState: { songStore.capturePluginState(for: track.id) })
         }
-        .sheet(isPresented: $showSteps) {
+        .sheet(isPresented: $showSteps, onDismiss: {
+            if let baseline = stepsBaseline { songStore.recordUndoSnapshot(baseline) }
+            stepsBaseline = nil
+        }) {
             StepsView(steps: $part.steps, noteCount: part.notePool.count)
         }
-        .sheet(isPresented: $showNoteParams) {
+        .sheet(isPresented: $showNoteParams, onDismiss: {
+            if let baseline = noteParametersBaseline { songStore.recordUndoSnapshot(baseline) }
+            noteParametersBaseline = nil
+        }) {
             NoteParametersView(notePool: $part.notePool)
         }
         .sheet(isPresented: $showScalePicker) {
@@ -645,6 +652,13 @@ private struct SongTrackRowView: View {
         } message: {
             Text("Removes this instrument from every section.")
         }
+    }
+
+    private var pluginBinding: Binding<PluginInfo?> {
+        Binding(
+            get: { track.pluginInfo },
+            set: { songStore.setPlugin($0, for: track.id) }
+        )
     }
 
     // Compact one-line row shown when the track is collapsed.
@@ -820,6 +834,7 @@ private struct SongTrackRowView: View {
                 notePool: $part.notePool,
                 scale: part.scale,
                 key: part.key,
+                onBeforeChange: { songStore.checkpointForUndo() },
                 onPreview: { midi in
                     let n = UInt8(midi)
                     AudioEngineManager.shared.playNote(trackID: track.id, midiNote: n, velocity: 100)
@@ -830,12 +845,18 @@ private struct SongTrackRowView: View {
             )
 
             HStack(spacing: 10) {
-                Button { showNoteParams = true } label: {
+                Button {
+                    noteParametersBaseline = songStore.song
+                    showNoteParams = true
+                } label: {
                     Label("Note Params", systemImage: "slider.vertical.3").font(.caption)
                 }
                 .buttonStyle(.bordered).disabled(part.notePool.isEmpty)
 
-                Button { showSteps = true } label: {
+                Button {
+                    stepsBaseline = songStore.song
+                    showSteps = true
+                } label: {
                     Label(part.steps.isEmpty ? "Steps" : "Steps (\(part.steps.count))",
                           systemImage: "list.number").font(.caption)
                 }
@@ -853,6 +874,7 @@ private struct SongKeyboard: View {
     @Binding var notePool: [NoteEntry]
     let scale: MusicalScale
     let key: Int
+    let onBeforeChange: () -> Void
     let onPreview: (Int) -> Void
     @EnvironmentObject var playback: PlaybackMonitor
 
@@ -862,6 +884,7 @@ private struct SongKeyboard: View {
             scale: scale,
             playingNotes: playback.playingNotes[trackID] ?? [],
             key: key,
+            onBeforeChange: onBeforeChange,
             onPreview: onPreview
         )
     }

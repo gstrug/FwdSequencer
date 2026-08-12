@@ -74,7 +74,7 @@ class SongStore: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var saveWorkItem: DispatchWorkItem?
-    private var pendingPluginLoads: Set<UUID> = []
+    private var pendingPluginLoads = PluginLoadTracker()
     /// True only once a song has actually been opened/created. The store's default
     /// `song` is an empty Song() with a fresh UUID at launch; without this guard a
     /// background save (captureAndSave) would persist that empty default as a new
@@ -212,7 +212,7 @@ class SongStore: ObservableObject {
 
     /// Open a song: tear down any previously loaded instruments and load this
     /// song's instruments once (concurrently — open time ≈ one plugin's load).
-    func open(_ song: Song) {
+    func open(_ song: Song, preserveHistory: Bool = false) {
         let safeSong: Song
         do {
             safeSong = try SongValidator.validateAndNormalize(song)
@@ -221,6 +221,9 @@ class SongStore: ObservableObject {
             return
         }
         stop()
+        pendingPluginLoads.cancelAll()
+        pluginStatuses.removeAll()
+        isLoading = false
         for t in self.song.tracks { audioEngine.removeTrack(id: t.id) }
         if let performance = self.song.performance { audioEngine.removeTrack(id: performance.id) }
 
@@ -228,6 +231,12 @@ class SongStore: ObservableObject {
         // Part, so with zero sections note edits have nowhere to go and silently fail.
         // (An older saved song can decode with an empty section list.)
         let song = safeSong
+
+        if !preserveHistory {
+            undoStack.removeAll()
+            redoStack.removeAll()
+            updateHistoryAvailability()
+        }
 
         self.song = song
         hasActiveSong = true
@@ -251,17 +260,19 @@ class SongStore: ObservableObject {
         }
     }
 
-    private func loadPlugin(_ info: PluginInfo, for trackID: UUID, stateData: Data? = nil) {
-        pendingPluginLoads.insert(trackID)
-        pluginStatuses[trackID] = .loading(info.name)
+    private func loadPlugin(_ info: PluginInfo?, for trackID: UUID, stateData: Data? = nil) {
+        let token = pendingPluginLoads.begin(for: trackID)
+        pluginStatuses[trackID] = .loading(info?.name ?? "Built-in Sound")
         isLoading = true
         audioEngine.loadPlugin(info, for: trackID, stateData: stateData) { [weak self] result in
             guard let self else { return }
-            pendingPluginLoads.remove(trackID)
+            guard pendingPluginLoads.finish(for: trackID, token: token) else { return }
             isLoading = !pendingPluginLoads.isEmpty
             switch result {
             case .success:
                 pluginStatuses[trackID] = .ready
+            case .failure(.cancelled):
+                pluginStatuses.removeValue(forKey: trackID)
             case .failure(let error):
                 let message = error.localizedDescription
                 pluginStatuses[trackID] = .failed(message)
@@ -396,6 +407,9 @@ class SongStore: ObservableObject {
         stop()
         captureAllPluginStates()
         saveNow()
+        pendingPluginLoads.cancelAll()
+        pluginStatuses.removeAll()
+        isLoading = false
         for t in song.tracks { audioEngine.removeTrack(id: t.id) }
         if let perf = song.performance { audioEngine.removeTrack(id: perf.id) }
         // No song is open anymore — a later background save must not re-persist this.
@@ -419,8 +433,7 @@ class SongStore: ObservableObject {
         if let info {
             loadPlugin(info, for: perf.id)
         } else {
-            audioEngine.loadPlugin(nil, for: perf.id)
-            pluginStatuses[perf.id] = .ready
+            loadPlugin(nil, for: perf.id)
         }
     }
 
@@ -450,6 +463,9 @@ class SongStore: ObservableObject {
 
     func deleteTrack(_ trackID: UUID) {
         checkpointForUndo()
+        pendingPluginLoads.cancel(for: trackID)
+        pluginStatuses.removeValue(forKey: trackID)
+        isLoading = !pendingPluginLoads.isEmpty
         audioEngine.removeTrack(id: trackID)
         song.tracks.removeAll { $0.id == trackID }
         for i in song.sections.indices {
@@ -493,19 +509,14 @@ class SongStore: ObservableObject {
 
     func setPlugin(_ info: PluginInfo?, for trackID: UUID) {
         guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        // NOTE: do NOT early-return when song.tracks[idx].pluginInfo already == info.
-        // The plugin picker binds straight to $track.pluginInfo, so by the time the
-        // onChange fires this call the model is already updated — an equality guard
-        // here would always be true and skip the actual engine load (old instrument
-        // stays, new one never loads / plays). onChange only fires on a real change.
+        guard song.tracks[idx].pluginInfo != info else { return }
         checkpointForUndo()
         song.tracks[idx].pluginInfo = info
         song.tracks[idx].pluginStateData = nil
         if let info {
             loadPlugin(info, for: trackID)
         } else {
-            audioEngine.loadPlugin(nil, for: trackID)
-            pluginStatuses[trackID] = .ready
+            loadPlugin(nil, for: trackID)
         }
     }
 
@@ -600,7 +611,19 @@ class SongStore: ObservableObject {
     }
 
     func checkpointForUndo() {
+        guard undoStack.last != song else { return }
         undoStack.append(song)
+        if undoStack.count > 30 { undoStack.removeFirst() }
+        redoStack.removeAll()
+        updateHistoryAvailability()
+    }
+
+    /// Record an editor's pre-presentation value after the editor closes, but only if
+    /// it actually changed the song. Binding-driven sheets become one meaningful undo
+    /// transaction instead of creating an entry for every slider tick.
+    func recordUndoSnapshot(_ snapshot: Song) {
+        guard snapshot != song, undoStack.last != snapshot else { return }
+        undoStack.append(snapshot)
         if undoStack.count > 30 { undoStack.removeFirst() }
         redoStack.removeAll()
         updateHistoryAvailability()
@@ -609,14 +632,14 @@ class SongStore: ObservableObject {
     func undo() {
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(song)
-        open(previous)
+        open(previous, preserveHistory: true)
         updateHistoryAvailability()
     }
 
     func redo() {
         guard let next = redoStack.popLast() else { return }
         undoStack.append(song)
-        open(next)
+        open(next, preserveHistory: true)
         updateHistoryAvailability()
     }
 
@@ -640,8 +663,9 @@ class SongStore: ObservableObject {
 
     private func reloadAudioGraph() {
         pauseForAudioInterruption("The audio system restarted. Instruments are being reloaded.")
-        pendingPluginLoads.removeAll()
+        pendingPluginLoads.cancelAll()
         pluginStatuses.removeAll()
+        isLoading = false
         for track in song.tracks {
             audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
             if let plugin = track.pluginInfo {
