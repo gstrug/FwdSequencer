@@ -213,20 +213,21 @@ class SongStore: ObservableObject {
     /// Open a song: tear down any previously loaded instruments and load this
     /// song's instruments once (concurrently — open time ≈ one plugin's load).
     func open(_ song: Song) {
+        let safeSong: Song
+        do {
+            safeSong = try SongValidator.validateAndNormalize(song)
+        } catch {
+            notice = error.localizedDescription
+            return
+        }
         stop()
         for t in self.song.tracks { audioEngine.removeTrack(id: t.id) }
+        if let performance = self.song.performance { audioEngine.removeTrack(id: performance.id) }
 
         // A song must always have at least one section — note data lives in a section's
         // Part, so with zero sections note edits have nowhere to go and silently fail.
         // (An older saved song can decode with an empty section list.)
-        var song = song
-        if song.sections.isEmpty {
-            song.addEmptySection(named: "Section 1")
-        }
-        if song.randomSeed == nil {
-            song.randomSeed = Self.seed(from: song.id)
-        }
-        song.formatVersion = 2
+        let song = safeSong
 
         self.song = song
         hasActiveSong = true

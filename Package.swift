@@ -25,6 +25,7 @@ let package = Package(
             ],
             sources: [
                 "Models/Models.swift",
+                "Models/SongValidation.swift",
                 "Models/SongTemplates.swift",
                 "Engine/SequencerRandom.swift"
             ]

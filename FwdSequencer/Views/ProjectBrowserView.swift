@@ -179,13 +179,20 @@ struct ProjectBrowserView: View {
                 if !failedFiles.isEmpty {
                     Section("Needs Attention") {
                         ForEach(failedFiles) { failure in
-                            Label {
-                                VStack(alignment: .leading) {
-                                    Text("Unreadable song: \(failure.filename)")
-                                    Text(failure.message).font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Label {
+                                    VStack(alignment: .leading) {
+                                        Text("Unreadable song: \(failure.filename)")
+                                        Text(failure.message).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                } icon: {
+                                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                                 }
-                            } icon: {
-                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                                Spacer()
+                                if failure.canRestoreBackup {
+                                    Button("Restore Backup") { restoreBackup(failure) }
+                                        .buttonStyle(.borderedProminent)
+                                }
                             }
                         }
                     }
@@ -288,7 +295,7 @@ struct ProjectBrowserView: View {
             let url = try result.get()
             let accessed = url.startAccessingSecurityScopedResource()
             defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-            let imported = try JSONDecoder().decode(Song.self, from: Data(contentsOf: url))
+            let imported = try SongStorage.decodeDocument(Data(contentsOf: url))
             switch SongStorage.importSong(imported) {
             case .success:
                 reload()
@@ -309,6 +316,13 @@ struct ProjectBrowserView: View {
 
     private func permanentlyDelete(_ item: TrashedSong) {
         if case .failure(let error) = SongStorage.permanentlyDelete(item) {
+            notice = error.localizedDescription
+        }
+        reload()
+    }
+
+    private func restoreBackup(_ failure: FailedSongFile) {
+        if case .failure(let error) = SongStorage.restoreBackup(failure) {
             notice = error.localizedDescription
         }
         reload()

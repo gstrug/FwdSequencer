@@ -63,4 +63,60 @@ final class FwdSequencerCoreTests: XCTestCase {
             }
         }
     }
+
+    func testValidatorRejectsZeroTimeSignatureDenominator() {
+        var song = SongTemplate.ambientCanon.makeSong()
+        song.timeSignature.denominator = 0
+
+        XCTAssertThrowsError(try SongValidator.validateAndNormalize(song)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("denominator"))
+        }
+    }
+
+    func testValidatorRejectsOutOfRangeMIDI() {
+        var song = SongTemplate.ambientCanon.makeSong()
+        song.sections[0].parts[0].notePool[0].midiNote = 256
+
+        XCTAssertThrowsError(try SongValidator.validateAndNormalize(song)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("MIDI"))
+        }
+    }
+
+    func testValidatorRejectsDuplicateTrackIdentity() {
+        var song = SongTemplate.ambientCanon.makeSong()
+        song.tracks.append(song.tracks[0])
+
+        XCTAssertThrowsError(try SongValidator.validateAndNormalize(song)) { error in
+            XCTAssertTrue(error.localizedDescription.contains("duplicate track"))
+        }
+    }
+
+    func testValidatorRepairsMissingLegacyPartAndMetadata() throws {
+        var song = SongTemplate.ambientCanon.makeSong()
+        let missingTrackID = song.tracks[0].id
+        song.formatVersion = nil
+        song.randomSeed = nil
+        song.sections[0].parts.removeAll { $0.trackID == missingTrackID }
+
+        let validated = try SongValidator.validateAndNormalize(song)
+
+        XCTAssertEqual(validated.formatVersion, SongValidator.currentFormatVersion)
+        XCTAssertNotNil(validated.randomSeed)
+        XCTAssertNotNil(validated.sections[0].parts.first { $0.trackID == missingTrackID })
+    }
+
+    func testValidatorRejectsFutureFormat() {
+        var song = SongTemplate.ambientCanon.makeSong()
+        song.formatVersion = SongValidator.currentFormatVersion + 1
+
+        XCTAssertThrowsError(try SongValidator.validateAndNormalize(song)) { error in
+            XCTAssertEqual(error as? SongValidationError,
+                           .unsupportedVersion(SongValidator.currentFormatVersion + 1))
+        }
+    }
+
+    func testUnknownStepOperationDoesNotSilentlyBecomeForward() {
+        let data = Data(#"{"type":"FutureOperation","n":1}"#.utf8)
+        XCTAssertThrowsError(try JSONDecoder().decode(Step.self, from: data))
+    }
 }

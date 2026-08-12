@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Project
 
-nonisolated struct Project: Codable, Identifiable {
+nonisolated struct Project: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String = "Untitled Pattern"
     var tempo: Double = 120.0
@@ -13,7 +13,7 @@ nonisolated struct Project: Codable, Identifiable {
     var tracks: [Track] = []
 }
 
-nonisolated struct TimeSignature: Codable {
+nonisolated struct TimeSignature: Codable, Equatable {
     var numerator: Int = 4
     var denominator: Int = 4
 }
@@ -49,7 +49,7 @@ nonisolated struct PluginInfo: Codable, Identifiable, Equatable {
 // Parts (the "notes"). The two are independent — swap a track's instrument and
 // every section's part for that track stays put. See SONG_MODE_PLAN.md.
 
-nonisolated struct Song: Codable, Identifiable {
+nonisolated struct Song: Codable, Identifiable, Equatable {
     /// Optional keeps build 1–16 documents decodable. New saves use format 2.
     var formatVersion: Int? = 2
     var id: UUID = UUID()
@@ -67,7 +67,7 @@ nonisolated struct Song: Codable, Identifiable {
     var performance: SongTrack? = nil
 }
 
-nonisolated struct SongTrack: Codable, Identifiable {
+nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     var id: UUID = UUID()             // stable instrument key in AudioEngineManager
     var name: String = "Track"
     var pluginInfo: PluginInfo? = nil
@@ -76,7 +76,7 @@ nonisolated struct SongTrack: Codable, Identifiable {
     var collapsed: Bool? = nil        // persisted minimized state (Optional → old songs decode)
 }
 
-nonisolated struct SongSection: Codable, Identifiable {
+nonisolated struct SongSection: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String = "Section"      // "Verse", "Chorus", …
     var numberOfBars: Int = 4         // per-section length
@@ -120,7 +120,7 @@ nonisolated struct SongSection: Codable, Identifiable {
 // the routing key in AudioEngineManager, so notes reach the already-loaded
 // instrument with no audio-graph change at section boundaries. Key/scale, rhythm,
 // and notes are all per-track within the section.
-nonisolated struct Part: Codable {
+nonisolated struct Part: Codable, Equatable {
     var trackID: UUID
     var notePool: [NoteEntry] = []
     var steps: [Step] = []
@@ -152,7 +152,7 @@ nonisolated struct Part: Codable {
 
 // MARK: - Track
 
-nonisolated struct Track: Codable, Identifiable {
+nonisolated struct Track: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String = "Track"
     var pluginInfo: PluginInfo? = nil
@@ -165,14 +165,14 @@ nonisolated struct Track: Codable, Identifiable {
     var mixer: MixerState = MixerState()
 }
 
-nonisolated struct NoteEntry: Codable, Identifiable {
+nonisolated struct NoteEntry: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var midiNote: Int
     var velocity: Int = 100
     var gateLength: Double = 0.5
 }
 
-nonisolated struct MixerState: Codable {
+nonisolated struct MixerState: Codable, Equatable {
     var volume: Float = 0.8
     var pan: Float = 0.0
     var isMuted: Bool = false
@@ -181,7 +181,7 @@ nonisolated struct MixerState: Codable {
 
 // MARK: - Step Sequencer
 
-nonisolated struct Step: Codable, Identifiable {
+nonisolated struct Step: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var type: StepType
     var n: Int = 1
@@ -230,7 +230,7 @@ nonisolated struct Step: Codable, Identifiable {
     }
 }
 
-nonisolated enum StepType: String, CaseIterable {
+nonisolated enum StepType: String, CaseIterable, Equatable {
     case fwd    = "Fwd"
     case back   = "Back"
     case rep    = "Repeat"
@@ -252,13 +252,21 @@ nonisolated enum StepType: String, CaseIterable {
     }
 }
 
-// Custom Codable so songs saved with the old "Skip" name still decode as .hold, and
-// any unknown future value falls back safely rather than failing the whole song.
+// Custom Codable so songs saved with the old "Skip" name still decode as .hold.
+// Unknown operations are rejected: silently turning a future operation into Fwd would
+// change the composition while making the document appear to have loaded correctly.
 extension StepType: Codable {
     init(from decoder: Decoder) throws {
-        let raw = try decoder.singleValueContainer().decode(String.self)
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
         if raw == "Skip" { self = .hold }
-        else { self = StepType(rawValue: raw) ?? .fwd }
+        else if let value = StepType(rawValue: raw) { self = value }
+        else {
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unknown step operation: \(raw)"
+            )
+        }
     }
     func encode(to encoder: Encoder) throws {
         var c = encoder.singleValueContainer()
@@ -268,7 +276,7 @@ extension StepType: Codable {
 
 // MARK: - Enumerations
 
-nonisolated enum TempoDivision: String, Codable, CaseIterable {
+nonisolated enum TempoDivision: String, Codable, CaseIterable, Equatable {
     case breve          = "Breve"
     case whole          = "Whole"
     case half           = "Half"
@@ -302,7 +310,7 @@ nonisolated enum TempoDivision: String, Codable, CaseIterable {
     }
 }
 
-nonisolated enum MusicalScale: String, Codable, CaseIterable {
+nonisolated enum MusicalScale: String, Codable, CaseIterable, Equatable {
     // Diatonic / common
     case chromatic        = "Chromatic"
     case major            = "Major"
