@@ -21,7 +21,7 @@ struct PlayDockView: View {
     var body: some View {
         VStack(spacing: 8) {
             header
-            if let p = perf, p.pluginInfo != nil {
+            if let p = perf {
                 PlayableKeyboard(
                     onNoteOn: { note in
                         activeNotes.insert(note)
@@ -32,14 +32,6 @@ struct PlayDockView: View {
                         AudioEngineManager.shared.stopNote(trackID: p.id, midiNote: note)
                     }
                 )
-            } else {
-                Button { showPluginPicker = true } label: {
-                    Label("Choose an instrument to play", systemImage: "pianokeys")
-                        .font(.subheadline)
-                }
-                .buttonStyle(.bordered)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
             }
         }
         .padding(10)
@@ -47,6 +39,7 @@ struct PlayDockView: View {
         .background(.regularMaterial)
         .clipped()                           // keep the wide keyboard from spilling past the edges
         .overlay(alignment: .top) { Divider() }
+        .onAppear { songStore.ensurePerformanceInstrument() }
         .onDisappear { releaseAll() }
         .sheet(isPresented: $showPluginPicker) {
             PluginPickerView(selectedPlugin: pluginBinding)
@@ -63,7 +56,7 @@ struct PlayDockView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Button { showPluginPicker = true } label: {
-                Label(perf?.pluginInfo?.name ?? "Choose Instrument",
+                Label(perf?.pluginInfo?.name ?? "Built-in GM Sound",
                       systemImage: "pianokeys")
                     .font(.subheadline.bold()).lineLimit(1)
             }
@@ -75,10 +68,14 @@ struct PlayDockView: View {
                     Label("Edit Sound", systemImage: "slider.horizontal.3").font(.caption)
                 }
                 .buttonStyle(.bordered).tint(.purple)
+            }
 
+            if perf != nil {
                 Divider().frame(height: 20)
                 Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
-                Slider(value: volumeBinding, in: 0...1).frame(width: 120)
+                Slider(value: volumeBinding, in: 0...1)
+                    .frame(width: 120)
+                    .accessibilityLabel("Manual keyboard volume")
                 if let id = perf?.id { SongTrackMeter(trackID: id) }
             }
 
@@ -96,6 +93,7 @@ struct PlayDockView: View {
                 .font(.title3).foregroundStyle(.secondary)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Close manual keyboard")
     }
 
     private var pluginBinding: Binding<PluginInfo?> {
@@ -218,6 +216,12 @@ private struct PlayKey: View {
     let onNoteOff: (UInt8) -> Void
     @State private var pressed = false
 
+    private var noteName: String {
+        let names = ["C", "C sharp", "D", "D sharp", "E", "F",
+                     "F sharp", "G", "G sharp", "A", "A sharp", "B"]
+        return "\(names[midi % 12]) \(midi / 12 - 1)"
+    }
+
     var body: some View {
         Rectangle()
             .fill(pressed ? Color.accentColor
@@ -233,5 +237,25 @@ private struct PlayKey: View {
                         pressed = false; onNoteOff(UInt8(midi))
                     }
             )
+            .accessibilityElement()
+            .accessibilityLabel(noteName)
+            .accessibilityValue(pressed ? "Playing" : "Ready")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction {
+                guard !pressed else { return }
+                pressed = true
+                onNoteOn(UInt8(midi))
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    guard pressed else { return }
+                    pressed = false
+                    onNoteOff(UInt8(midi))
+                }
+            }
+            .onDisappear {
+                if pressed {
+                    pressed = false
+                    onNoteOff(UInt8(midi))
+                }
+            }
     }
 }

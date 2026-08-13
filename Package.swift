@@ -18,19 +18,21 @@ let package = Package(
                 "Info.plist",
                 "PrivacyInfo.xcprivacy",
                 "FwdSequencerApp.swift",
-                "Store",
+                "Store/PlaybackMonitor.swift",
+                "Store/SongStore.swift",
                 "Views",
                 "Engine/AudioEngineManager.swift",
-                "Engine/PluginManager.swift",
-                "Engine/SequencerEngine.swift"
+                "Engine/PluginManager.swift"
             ],
             sources: [
                 "Models/Models.swift",
                 "Models/SongValidation.swift",
                 "Models/SongTemplates.swift",
                 "Engine/SequencerRandom.swift",
+                "Engine/SequencerEngine.swift",
                 "Engine/PluginLoadTracker.swift",
-                "Engine/SongMIDIExporter.swift"
+                "Engine/SongMIDIExporter.swift",
+                "Store/SongPersistence.swift"
             ]
         ),
         .testTarget(

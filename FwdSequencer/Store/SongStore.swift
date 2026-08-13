@@ -35,6 +35,12 @@ enum SectionTransform: String, CaseIterable, Identifiable {
 // engine's level callbacks for whichever store is in front. See SONG_MODE_PLAN.md.
 
 class SongStore: ObservableObject {
+    /// The v1 audio verification matrix is defined up to 12 simultaneous tracks.
+    /// Existing/imported documents remain readable up to the validator's safety
+    /// limits; these caps only prevent the editor creating an unverified workload.
+    static let maximumEditableTrackCount = 12
+    static let maximumEditableSectionCount = 128
+
     @Published var song: Song = Song() {
         didSet {
             // Send one coherent snapshot so section order, track state, tempo, meter,
@@ -390,14 +396,18 @@ class SongStore: ObservableObject {
     }
 
     func pause() {
-        sequencer.pause()
         if midiClockEnabled { audioEngine.stopMIDIClock() }
         isPlaying = false
         isPaused = true
         playback.playingNotes.removeAll()
         playback.activeSteps.removeAll()
-        // Paused = a safe moment (no MIDI flowing) to snapshot live plugin sounds.
-        captureAllPluginStates()
+        // Capture only after the sequencer queue has cancelled delayed ratchets and
+        // silenced its outputs. If playback resumed while that barrier was pending,
+        // skip capture rather than interrupt the newly-resumed performance.
+        sequencer.pause { [weak self] in
+            guard let self, isPaused, !isPlaying else { return }
+            captureAllPluginStates()
+        }
     }
 
     func resume() {
@@ -462,31 +472,68 @@ class SongStore: ObservableObject {
     /// Release this song's instruments (call when leaving the song view). Captures live
     /// plugin state and persists BEFORE tearing the instruments down (they must still be
     /// loaded to read their state), so the sounds you were editing are saved.
-    func close() {
+    func close(completion: (() -> Void)? = nil) {
         if isRecording {
             audioEngine.stopRecording()
             if let recordingURL { try? FileManager.default.removeItem(at: recordingURL) }
             recordingURL = nil
             isRecording = false
         }
-        stop()
-        captureAllPluginStates()
-        saveNow()
-        pendingPluginLoads.cancelAll()
-        pluginStatuses.removeAll()
-        isLoading = false
-        for t in song.tracks { audioEngine.removeTrack(id: t.id) }
-        if let perf = song.performance { audioEngine.removeTrack(id: perf.id) }
-        // No song is open anymore — a later background save must not re-persist this.
-        hasActiveSong = false
+        if midiClockEnabled { audioEngine.stopMIDIClock() }
+        isPlaying = false
+        isPaused = false
+        currentSection = 0
+        playback.currentBar = 0
+        playback.playingNotes.removeAll()
+        playback.activeSteps.removeAll()
+
+        // Do not capture AU state until the queue has cancelled its timer, ratchets,
+        // and note releases. The completion returns to main for model/UI work.
+        sequencer.stop { [weak self] in
+            guard let self else { completion?(); return }
+            captureAllPluginStates()
+            saveNow()
+            pendingPluginLoads.cancelAll()
+            pluginStatuses.removeAll()
+            isLoading = false
+            for track in song.tracks { audioEngine.removeTrack(id: track.id) }
+            if let performance = song.performance { audioEngine.removeTrack(id: performance.id) }
+            // No song is open anymore — a later background save must not re-persist this.
+            hasActiveSong = false
+            completion?()
+        }
     }
 
     // MARK: - Manual Play-dock instrument
 
+    /// Materialise the manual keyboard's built-in GM voice on first use. The Play
+    /// dock must remain useful on a clean iPad with no third-party AUv3 installed.
+    func ensurePerformanceInstrument() {
+        if let performance = song.performance {
+            if !audioEngine.hasInstrument(for: performance.id) {
+                audioEngine.addTrack(
+                    id: performance.id,
+                    volume: performance.mixer.volume,
+                    pan: performance.mixer.pan
+                )
+            }
+            return
+        }
+
+        let performance = SongTrack(name: "Manual Keys")
+        song.performance = performance
+        audioEngine.addTrack(
+            id: performance.id,
+            volume: performance.mixer.volume,
+            pan: performance.mixer.pan
+        )
+    }
+
     /// Choose (or change) the instrument the manual keyboard drives. Independent of
     /// the sequencer tracks — it gets its own engine voice.
     func setPerformancePlugin(_ info: PluginInfo?) {
-        var perf = song.performance ?? SongTrack(name: "Manual Keys")
+        ensurePerformanceInstrument()
+        guard var perf = song.performance else { return }
         if perf.pluginInfo == info { return }
         checkpointForUndo()
         perf.pluginInfo = info
@@ -516,6 +563,10 @@ class SongStore: ObservableObject {
     // MARK: - Track editing
 
     func addTrack() {
+        guard song.tracks.count < Self.maximumEditableTrackCount else {
+            notice = "FWD Sequencer currently supports creating up to \(Self.maximumEditableTrackCount) tracks per song."
+            return
+        }
         checkpointForUndo()
         let track = SongTrack(name: "Track \(song.tracks.count + 1)")
         song.tracks.append(track)
@@ -558,6 +609,10 @@ class SongStore: ObservableObject {
 
     /// Duplicate a track (new instrument instance + independent note data in every section).
     func duplicateTrack(_ trackID: UUID) {
+        guard song.tracks.count < Self.maximumEditableTrackCount else {
+            notice = "FWD Sequencer currently supports creating up to \(Self.maximumEditableTrackCount) tracks per song."
+            return
+        }
         guard let i = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
         checkpointForUndo()
         var copy = song.tracks[i]
@@ -607,6 +662,10 @@ class SongStore: ObservableObject {
     // MARK: - Section editing (independent clones — no cross-section reuse)
 
     func addSection() {
+        guard song.sections.count < Self.maximumEditableSectionCount else {
+            notice = "A song can contain up to \(Self.maximumEditableSectionCount) editable sections."
+            return
+        }
         checkpointForUndo()
         song.addEmptySection(named: "Section \(song.sections.count + 1)")
         selectedSection = song.sections.count - 1
@@ -614,6 +673,10 @@ class SongStore: ObservableObject {
 
     /// Deep value-copy → a fully independent clone (new ids), inserted after the source.
     func duplicateSection(at index: Int) {
+        guard song.sections.count < Self.maximumEditableSectionCount else {
+            notice = "A song can contain up to \(Self.maximumEditableSectionCount) editable sections."
+            return
+        }
         guard song.sections.indices.contains(index) else { return }
         checkpointForUndo()
         var copy = song.sections[index]
@@ -759,6 +822,7 @@ class SongStore: ObservableObject {
             notice = message
             return
         }
+        if midiClockEnabled { audioEngine.stopMIDIClock() }
         sequencer.pause()
         isPlaying = false
         isPaused = true

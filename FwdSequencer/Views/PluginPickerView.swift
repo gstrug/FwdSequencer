@@ -20,7 +20,7 @@ struct PluginPickerView: View {
     var body: some View {
         NavigationStack {
             content
-                .navigationTitle("Select Plugin")
+                .navigationTitle("Select Instrument")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -44,30 +44,36 @@ struct PluginPickerView: View {
 
     @ViewBuilder
     private var content: some View {
-        if manager.isScanning {
-            VStack(spacing: 16) {
-                ProgressView()
-                Text("Scanning for plugins…")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+        List {
+            Section("Included") {
+                Button {
+                    selectedPlugin = nil
+                    dismiss()
+                } label: {
+                    HStack {
+                        Label("Built-in GM Sound", systemImage: "pianokeys")
+                            .foregroundStyle(.primary)
+                        Spacer()
+                        if selectedPlugin == nil {
+                            Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                        }
+                    }
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if manager.instruments.isEmpty {
-            VStack(spacing: 12) {
-                Image(systemName: "puzzlepiece.extension")
-                    .font(.system(size: 48))
-                    .foregroundStyle(.secondary)
-                Text("No AUv3 Instruments Found")
-                    .font(.headline)
-                Text("Install AUv3 instrument apps on this iPad to use them here.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            List {
+
+            if manager.isScanning {
+                Section("AUv3 Instruments") {
+                    HStack(spacing: 12) {
+                        ProgressView()
+                        Text("Scanning for plugins…").foregroundStyle(.secondary)
+                    }
+                }
+            } else if manager.instruments.isEmpty {
+                Section("AUv3 Instruments") {
+                    Text("No AUv3 instruments are installed. The included sound is ready to play.")
+                        .foregroundStyle(.secondary)
+                }
+            } else {
                 if matches.isEmpty {
                     Text("No instruments match \"\(searchText)\".")
                         .foregroundStyle(.secondary)

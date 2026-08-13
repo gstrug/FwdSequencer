@@ -1,5 +1,14 @@
 import Foundation
 
+/// The real-time sequencer only needs these three MIDI operations. Keeping that
+/// boundary independent of AVFoundation lets the deterministic scheduler run in
+/// portable tests with a recording fake.
+nonisolated protocol SequencerAudioOutput: AnyObject {
+    func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8)
+    func stopNote(trackID: UUID, midiNote: UInt8)
+    func allNotesOff()
+}
+
 // MARK: - Playable views
 //
 // The tick loop triggers against these lightweight per-track views rather than a
@@ -35,8 +44,8 @@ nonisolated struct SequencerSection {
     let tracks: [PlayTrack]
 }
 
-class SequencerEngine {
-    var audioEngine: AudioEngineManager?
+nonisolated class SequencerEngine {
+    var audioEngine: SequencerAudioOutput?
     var onNotePlayed: ((UUID, [Int]) -> Void)?   // notes now sounding ([] = none)
     var onBarChange: ((Int) -> Void)?
     var onStepChange: ((UUID, Int) -> Void)?
@@ -215,8 +224,11 @@ class SequencerEngine {
         }
     }
 
-    func stop() {
-        sequencerQueue.async { [weak self] in self?.stopInternal(resetPosition: true) }
+    func stop(completion: (() -> Void)? = nil) {
+        sequencerQueue.async { [weak self] in
+            self?.stopInternal(resetPosition: true)
+            if let completion { DispatchQueue.main.async { completion() } }
+        }
     }
 
     private func stopInternal(resetPosition: Bool) {
@@ -238,8 +250,18 @@ class SequencerEngine {
         timer = nil
     }
 
-    func pause() {
-        sequencerQueue.async { [weak self] in self?.stopTimer() }
+    /// Pause at a queue boundary. Delayed ratchets share `pendingNoteOffs` with
+    /// note releases, so merely cancelling the repeating timer is insufficient:
+    /// already-enqueued ratchets can otherwise sound after the UI says Paused.
+    /// Track traversal state is retained so resume continues from the same place.
+    func pause(completion: (() -> Void)? = nil) {
+        sequencerQueue.async { [weak self] in
+            guard let self else { return }
+            stopTimer()
+            cancelAllPendingNoteOffs()
+            audioEngine?.allNotesOff()
+            if let completion { DispatchQueue.main.async { completion() } }
+        }
     }
 
     func resume(tempo: Double) {

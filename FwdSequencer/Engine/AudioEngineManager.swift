@@ -3,14 +3,14 @@ import AVFoundation
 import AudioToolbox
 import CoreMIDI
 
-enum AudioEngineStatus: Equatable {
+nonisolated enum AudioEngineStatus: Equatable {
     case ready
     case interrupted
     case recovering
     case failed(String)
 }
 
-enum PluginLoadError: LocalizedError {
+nonisolated enum PluginLoadError: LocalizedError {
     case trackUnavailable
     case cancelled
     case timedOut(String)
@@ -30,7 +30,7 @@ enum PluginLoadError: LocalizedError {
     }
 }
 
-enum AudioRecordingError: LocalizedError {
+nonisolated enum AudioRecordingError: LocalizedError {
     case unavailable
     case writeFailed(String)
 
@@ -42,7 +42,7 @@ enum AudioRecordingError: LocalizedError {
     }
 }
 
-class AudioEngineManager {
+nonisolated class AudioEngineManager: SequencerAudioOutput {
     // One shared audio engine / session for the whole app. Pattern playback and
     // song playback both route through it (only one document plays at a time).
     static let shared = AudioEngineManager()
@@ -269,6 +269,7 @@ class AudioEngineManager {
 
         switch type {
         case .began:
+            stopMIDIClock()
             allNotesOff()
             engine.pause()
             setStatus(.interrupted)
@@ -295,11 +296,13 @@ class AudioEngineManager {
         guard let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
               let reason = AVAudioSession.RouteChangeReason(rawValue: raw),
               reason == .oldDeviceUnavailable else { return }
+        stopMIDIClock()
         allNotesOff()
         onPlaybackInterrupted?("Playback paused because the audio output changed.")
     }
 
     private func rebuildAfterMediaServicesReset() {
+        stopMIDIClock()
         setStatus(.recovering)
         var recordingWasInterrupted = false
         let cancelled = withLock { () -> [(Result<Void, PluginLoadError>) -> Void] in

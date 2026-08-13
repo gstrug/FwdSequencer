@@ -21,6 +21,10 @@ struct ProjectBrowserView: View {
     @State private var midiDocument: MIDIFileDocument? = nil
     @State private var midiFilename = "FWD Song"
     @State private var showingOnboarding = false
+    @State private var failedRemovalTarget: FailedSongFile? = nil
+    @State private var exportingFailedFile = false
+    @State private var failedFileDocument: RawSongDocument? = nil
+    @State private var failedExportFilename = "Unreadable FWD Song"
 
     var body: some View {
         NavigationStack {
@@ -60,6 +64,7 @@ struct ProjectBrowserView: View {
             // Backgrounding is a safe point to snapshot live plugin sounds and persist.
             songStore.captureAndSave()
         }
+        .onOpenURL { url in importSong(at: url) }
         .fullScreenCover(isPresented: $showingSong, onDismiss: {
             songStore.saveNow()
             reload()
@@ -122,6 +127,18 @@ struct ProjectBrowserView: View {
         } message: {
             Text("\"\(trashPurgeTarget?.song.name ?? "")\" will be permanently deleted. This can't be undone.")
         }
+        .alert("Remove Unreadable Song?", isPresented: Binding(
+            get: { failedRemovalTarget != nil },
+            set: { if !$0 { failedRemovalTarget = nil } }
+        )) {
+            Button("Remove from Library", role: .destructive) {
+                if let failure = failedRemovalTarget { quarantine(failure) }
+                failedRemovalTarget = nil
+            }
+            Button("Cancel", role: .cancel) { failedRemovalTarget = nil }
+        } message: {
+            Text("The unreadable file will leave the song list but remain quarantined inside FWD Sequencer for support or recovery. Export the original first if you want your own copy.")
+        }
         .fileImporter(isPresented: $importingSong, allowedContentTypes: [.fwdSong, .json]) { result in
             importSong(result)
         }
@@ -138,6 +155,13 @@ struct ProjectBrowserView: View {
                       defaultFilename: midiFilename) { result in
             if case .failure(let error) = result { notice = error.localizedDescription }
             midiDocument = nil
+        }
+        .fileExporter(isPresented: $exportingFailedFile,
+                      document: failedFileDocument,
+                      contentType: .fwdSong,
+                      defaultFilename: failedExportFilename) { result in
+            if case .failure(let error) = result { notice = error.localizedDescription }
+            failedFileDocument = nil
         }
         .sheet(isPresented: $showingOnboarding) {
             OnboardingView(completed: $didCompleteOnboarding)
@@ -213,6 +237,20 @@ struct ProjectBrowserView: View {
                                     Button("Restore Backup") { restoreBackup(failure) }
                                         .buttonStyle(.borderedProminent)
                                 }
+                                Menu {
+                                    Button { exportOriginal(failure) } label: {
+                                        Label("Export Original", systemImage: "square.and.arrow.up")
+                                    }
+                                    Button(role: .destructive) {
+                                        failedRemovalTarget = failure
+                                    } label: {
+                                        Label("Remove from Library", systemImage: "archivebox")
+                                    }
+                                } label: {
+                                    Image(systemName: "ellipsis.circle")
+                                        .frame(width: 44, height: 44)
+                                }
+                                .accessibilityLabel("Actions for unreadable song \(failure.filename)")
                             }
                         }
                     }
@@ -240,7 +278,7 @@ struct ProjectBrowserView: View {
                             Button { beginRename(song) } label: { Label("Rename", systemImage: "pencil") }
                             Button { duplicateSong(song) } label: { Label("Duplicate", systemImage: "doc.on.doc") }
                             Button { exportSong(song) } label: {
-                                Label("Export FWD Project", systemImage: "square.and.arrow.up")
+                                Label("Export FWD Song", systemImage: "square.and.arrow.up")
                             }
                             Button { exportMIDI(song) } label: {
                                 Label("Export MIDI", systemImage: "music.note.list")
@@ -317,15 +355,20 @@ struct ProjectBrowserView: View {
 
     private func importSong(_ result: Result<URL, Error>) {
         do {
-            let url = try result.get()
-            let accessed = url.startAccessingSecurityScopedResource()
-            defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+            importSong(at: try result.get())
+        } catch {
+            notice = "That file is not a valid FWD song. \(error.localizedDescription)"
+        }
+    }
+
+    private func importSong(at url: URL) {
+        let accessed = url.startAccessingSecurityScopedResource()
+        defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+        do {
             let imported = try SongStorage.decodeDocument(Data(contentsOf: url))
             switch SongStorage.importSong(imported) {
-            case .success:
-                reload()
-            case .failure(let error):
-                notice = error.localizedDescription
+            case .success: reload()
+            case .failure(let error): notice = error.localizedDescription
             }
         } catch {
             notice = "That file is not a valid FWD song. \(error.localizedDescription)"
@@ -348,6 +391,23 @@ struct ProjectBrowserView: View {
 
     private func restoreBackup(_ failure: FailedSongFile) {
         if case .failure(let error) = SongStorage.restoreBackup(failure) {
+            notice = error.localizedDescription
+        }
+        reload()
+    }
+
+    private func exportOriginal(_ failure: FailedSongFile) {
+        do {
+            failedFileDocument = RawSongDocument(data: try Data(contentsOf: failure.fileURL))
+            failedExportFilename = sanitizedFilename(failure.filename)
+            exportingFailedFile = true
+        } catch {
+            notice = "The unreadable file could not be exported. \(error.localizedDescription)"
+        }
+    }
+
+    private func quarantine(_ failure: FailedSongFile) {
+        if case .failure(let error) = SongStorage.quarantine(failure) {
             notice = error.localizedDescription
         }
         reload()

@@ -64,6 +64,24 @@ struct SongDocument: FileDocument {
     }
 }
 
+/// Byte-preserving wrapper used to let a user export an unreadable song before
+/// removing it from the visible library. It intentionally performs no decoding.
+struct RawSongDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.fwdSong, .json, .data] }
+    var data: Data
+
+    init(data: Data) { self.data = data }
+    init(configuration: ReadConfiguration) throws {
+        guard let contents = configuration.file.regularFileContents else {
+            throw SongStorageError.unreadableFile("The selected file has no song data.")
+        }
+        data = contents
+    }
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
 enum SongStorageError: LocalizedError {
     case directoryUnavailable(String)
     case unreadableFile(String)
@@ -77,7 +95,7 @@ enum SongStorageError: LocalizedError {
         case .unreadableFile(let detail): return detail
         case .corruptFile(let detail): return "A song could not be opened. \(detail)"
         case .writeFailed(let detail): return "The song could not be saved. \(detail)"
-        case .deleteFailed(let detail): return "The song could not be moved to Recently Deleted. \(detail)"
+        case .deleteFailed(let detail): return "The song could not be removed. \(detail)"
         }
     }
 }
@@ -107,11 +125,15 @@ struct TrashedSong: Identifiable {
 
 enum SongStorage {
     private static let fileManager = FileManager.default
+    /// Portable tests redirect storage to a unique temporary directory. Production
+    /// never sets this value and continues to use Documents/Songs.
+    static var directoryOverrideForTesting: URL?
 
-    static let directory: URL = {
+    static var directory: URL {
+        if let directoryOverrideForTesting { return directoryOverrideForTesting }
         let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
         return docs.appendingPathComponent("Songs", isDirectory: true)
-    }()
+    }
 
     private static var trashDirectory: URL {
         directory.appendingPathComponent("Recently Deleted", isDirectory: true)
@@ -333,6 +355,26 @@ enum SongStorage {
             return .failure(error)
         } catch {
             return .failure(.writeFailed(error.localizedDescription))
+        }
+    }
+
+    /// Remove an unreadable primary from the visible library without destroying
+    /// its bytes. The browser offers export first; this internal quarantine also
+    /// leaves a support/recovery copy if the user chooses Remove from Library.
+    static func quarantine(_ failure: FailedSongFile) -> Result<Void, SongStorageError> {
+        do {
+            try prepareDirectories()
+            guard fileManager.fileExists(atPath: failure.fileURL.path) else {
+                return .success(())
+            }
+            let base = failure.fileURL.deletingPathExtension().lastPathComponent
+            let destination = quarantineDirectory.appendingPathComponent(
+                "\(base)-\(UUID().uuidString).fwdsong"
+            )
+            try fileManager.moveItem(at: failure.fileURL, to: destination)
+            return .success(())
+        } catch {
+            return .failure(.deleteFailed(error.localizedDescription))
         }
     }
 

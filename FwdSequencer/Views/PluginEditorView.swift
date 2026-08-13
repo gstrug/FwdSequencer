@@ -208,6 +208,12 @@ private struct KeyButton: View {
     let onNoteOff: (UInt8) -> Void
     @State private var pressed = false
 
+    private var noteName: String {
+        let names = ["C", "C sharp", "D", "D sharp", "E", "F",
+                     "F sharp", "G", "G sharp", "A", "A sharp", "B"]
+        return "\(names[Int(midi) % 12]) \(Int(midi) / 12 - 1)"
+    }
+
     var body: some View {
         Rectangle()
             .fill(pressed
@@ -228,6 +234,26 @@ private struct KeyButton: View {
                         onNoteOff(midi)
                     }
             )
+            .accessibilityElement()
+            .accessibilityLabel(noteName)
+            .accessibilityValue(pressed ? "Playing" : "Ready")
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction {
+                guard !pressed else { return }
+                pressed = true
+                onNoteOn(midi)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    guard pressed else { return }
+                    pressed = false
+                    onNoteOff(midi)
+                }
+            }
+            .onDisappear {
+                if pressed {
+                    pressed = false
+                    onNoteOff(midi)
+                }
+            }
     }
 }
 

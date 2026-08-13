@@ -21,6 +21,7 @@ nonisolated enum SongMIDIExporter {
         let priority: Int
         let serial: Int
         let bytes: [UInt8]
+        var cancelled = false
     }
 
     private struct RenderState {
@@ -29,6 +30,11 @@ nonisolated enum SongMIDIExporter {
         var dwellRemaining = 0
         var voicing: [Int]? = nil
         var hasPlayed = false
+        var carry: StepType? = nil
+        var lastMIDINotes: [Int] = []
+        /// Indices into this track's event array for releases and delayed ratchets
+        /// that have not yet reached the renderer's current tick.
+        var pendingEventIndices: [Int] = []
     }
 
     static func data(for input: Song) throws -> Data {
@@ -38,12 +44,44 @@ nonisolated enum SongMIDIExporter {
         }
         var generator = SeededRandomGenerator(seed: song.randomSeed ?? 0x465744)
         var trackEvents = Array(repeating: [Event](), count: song.tracks.count)
+        var states = Dictionary(uniqueKeysWithValues: song.tracks.map { ($0.id, RenderState()) })
         var conductor: [Event] = []
         var serial = 0
 
         func event(_ tick: Int, _ priority: Int, _ bytes: [UInt8]) -> Event {
             serial += 1
             return Event(tick: tick, priority: priority, serial: serial, bytes: bytes)
+        }
+
+        func expireEvents(before tick: Int, state: inout RenderState, events: inout [Event]) {
+            var remaining: [Int] = []
+            for index in state.pendingEventIndices {
+                guard events.indices.contains(index), !events[index].cancelled else { continue }
+                guard events[index].tick < tick else {
+                    remaining.append(index)
+                    continue
+                }
+                let bytes = events[index].bytes
+                if bytes.count >= 2, (bytes[0] & 0xF0) == 0x80 {
+                    state.lastMIDINotes.removeAll { $0 == Int(bytes[1]) }
+                }
+            }
+            state.pendingEventIndices = remaining
+        }
+
+        func cancelPending(state: inout RenderState, events: inout [Event]) {
+            for index in state.pendingEventIndices where events.indices.contains(index) {
+                events[index].cancelled = true
+            }
+            state.pendingEventIndices.removeAll()
+        }
+
+        func stopLastNotes(at tick: Int, channel: UInt8,
+                           state: inout RenderState, events: inout [Event]) {
+            for note in state.lastMIDINotes {
+                events.append(event(tick, 0, [0x80 | channel, UInt8(note), 0]))
+            }
+            state.lastMIDINotes.removeAll()
         }
 
         let microseconds = Int((60_000_000 / max(20, min(400, song.tempo))).rounded())
@@ -61,9 +99,8 @@ nonisolated enum SongMIDIExporter {
 
         let channels = (0..<16).filter { $0 != 9 }
         var absoluteTick = 0
-        for section in song.sections {
+        for (sectionIndex, section) in song.sections.enumerated() {
             conductor.append(event(absoluteTick, -8, metaText(0x06, section.name)))
-            var states = Dictionary(uniqueKeysWithValues: song.tracks.map { ($0.id, RenderState()) })
             let ticksPerBar = ticksPerQuarter * 4 * song.timeSignature.numerator
                 / song.timeSignature.denominator
             let sectionTicks = ticksPerBar * section.numberOfBars
@@ -71,42 +108,123 @@ nonisolated enum SongMIDIExporter {
 
             for localTick in stride(from: 0, to: sectionTicks, by: baseTick) {
                 for (trackIndex, track) in song.tracks.enumerated() {
-                    guard !track.mixer.isMuted, !anySoloed || track.mixer.isSoloed,
-                          let part = section.parts.first(where: { $0.trackID == track.id }),
+                    guard let part = section.parts.first(where: { $0.trackID == track.id }),
                           !part.notePool.isEmpty else { continue }
                     let trigger = triggerTicks(for: part.tempoDivision)
                     guard localTick % trigger == 0, var state = states[track.id] else { continue }
 
+                    let currentTick = absoluteTick + localTick
+                    expireEvents(before: currentTick, state: &state, events: &trackEvents[trackIndex])
+
+                    let isCarrying = state.carry != nil
                     let activeStep = part.steps.isEmpty ? nil : part.steps[state.stepIndex % part.steps.count]
                     var resolved = execute(part: part, state: &state, random: &generator)
-                    if let step = activeStep, step.probability < 1,
+                    if !isCarrying, let step = activeStep, step.probability < 1,
                        generator.nextUnitInterval() >= max(0, step.probability) {
                         resolved.indices.removeAll()
+                        resolved.stopPrevious = true
                     }
-                    states[track.id] = state
-                    guard !resolved.indices.isEmpty else { continue }
+
+                    let channel = UInt8(channels[trackIndex % channels.count])
+                    if resolved.stopPrevious {
+                        cancelPending(state: &state, events: &trackEvents[trackIndex])
+                        stopLastNotes(at: currentTick, channel: channel,
+                                      state: &state, events: &trackEvents[trackIndex])
+                    } else if !state.pendingEventIndices.isEmpty {
+                        // Hold: cancel delayed ratchets/releases and move the release
+                        // one complete track step later, matching the live scheduler.
+                        cancelPending(state: &state, events: &trackEvents[trackIndex])
+                        let heldNotes = state.lastMIDINotes
+                        for note in heldNotes {
+                            let index = trackEvents[trackIndex].count
+                            trackEvents[trackIndex].append(event(
+                                currentTick + trigger, 0, [0x80 | channel, UInt8(note), 0]
+                            ))
+                            state.pendingEventIndices.append(index)
+                        }
+                    }
+
+                    let shouldSound = !track.mixer.isMuted && (!anySoloed || track.mixer.isSoloed)
+                    guard shouldSound, !resolved.indices.isEmpty else {
+                        states[track.id] = state
+                        continue
+                    }
 
                     let ratchets = min(8, max(1, activeStep?.ratchets ?? 1))
-                    let subdivision = trigger / ratchets
-                    let channel = UInt8(channels[trackIndex % channels.count])
+                    let subdivision = Double(trigger) / Double(ratchets)
+                    var soundingNotes: [Int] = []
                     for poolIndex in resolved.indices {
                         let note = part.notePool[poolIndex]
                         let gate = max(0.01, note.gateLength * resolved.gate)
-                        let duration = max(1, min(subdivision - 1, Int(Double(subdivision) * gate)))
+                        let duration = max(1, Int((subdivision * gate).rounded()))
                         for ratchet in 0..<ratchets {
-                            let onTick = absoluteTick + localTick + ratchet * subdivision
+                            let onTick = currentTick + Int((Double(ratchet) * subdivision).rounded())
                             let noteByte = UInt8(note.midiNote)
                             trackEvents[trackIndex].append(event(
                                 onTick, 1, [0x90 | channel, noteByte, UInt8(note.velocity)]
                             ))
+                            if ratchet > 0 {
+                                state.pendingEventIndices.append(trackEvents[trackIndex].count - 1)
+                            }
+                            let offIndex = trackEvents[trackIndex].count
                             trackEvents[trackIndex].append(event(
                                 onTick + duration, 0, [0x80 | channel, noteByte, 0]
                             ))
+                            state.pendingEventIndices.append(offIndex)
                         }
+                        soundingNotes.append(note.midiNote)
                     }
+                    state.lastMIDINotes = soundingNotes
+                    states[track.id] = state
                 }
             }
             absoluteTick += sectionTicks
+
+            // Live playback resets normal traversal at every boundary, while an
+            // in-progress Hold/Rest dwell carries into the next section. Cancel all
+            // future events at the end of the final section, exactly as finishSong().
+            let hasNextSection = sectionIndex + 1 < song.sections.count
+            for (trackIndex, track) in song.tracks.enumerated() {
+                guard var state = states[track.id] else { continue }
+                let channel = UInt8(channels[trackIndex % channels.count])
+                expireEvents(before: absoluteTick, state: &state, events: &trackEvents[trackIndex])
+
+                let part = section.parts.first(where: { $0.trackID == track.id })
+                let carryType: StepType?
+                if hasNextSection, state.dwellRemaining > 0 {
+                    if let existing = state.carry {
+                        carryType = existing
+                    } else if let part, !part.steps.isEmpty {
+                        let type = part.steps[state.stepIndex % part.steps.count].type
+                        carryType = (type == .hold || type == .pause) ? type : nil
+                    } else {
+                        carryType = nil
+                    }
+                } else {
+                    carryType = nil
+                }
+
+                if let carryType {
+                    var carried = RenderState()
+                    carried.carry = carryType
+                    carried.dwellRemaining = state.dwellRemaining
+                    carried.notePointer = state.notePointer
+                    if carryType == .hold {
+                        carried.lastMIDINotes = state.lastMIDINotes
+                        carried.pendingEventIndices = state.pendingEventIndices
+                    } else {
+                        cancelPending(state: &state, events: &trackEvents[trackIndex])
+                        stopLastNotes(at: absoluteTick, channel: channel,
+                                      state: &state, events: &trackEvents[trackIndex])
+                    }
+                    states[track.id] = carried
+                } else {
+                    cancelPending(state: &state, events: &trackEvents[trackIndex])
+                    stopLastNotes(at: absoluteTick, channel: channel,
+                                  state: &state, events: &trackEvents[trackIndex])
+                    states[track.id] = RenderState()
+                }
+            }
         }
 
         var chunks: [Data] = [trackChunk(events: conductor, endTick: absoluteTick)]
@@ -127,12 +245,12 @@ nonisolated enum SongMIDIExporter {
 
     private static func execute(part: Part, state: inout RenderState,
                                 random: inout SeededRandomGenerator)
-        -> (indices: [Int], gate: Double) {
+        -> (indices: [Int], stopPrevious: Bool, gate: Double) {
         let noteCount = part.notePool.count
         guard !part.steps.isEmpty else {
             let index = state.notePointer % noteCount
             state.notePointer = (index + 1) % noteCount
-            return ([index], 1)
+            return ([index], true, 1)
         }
         let stepIndex = state.stepIndex % part.steps.count
         let step = part.steps[stepIndex]
@@ -155,17 +273,17 @@ nonisolated enum SongMIDIExporter {
                 state.voicing = moved
                 state.notePointer = moved.first ?? 0
                 state.hasPlayed = true
-                return (moved, step.gate)
+                return (moved, true, step.gate)
             }
             if state.hasPlayed {
                 state.notePointer = ((state.notePointer + movement) % noteCount + noteCount) % noteCount
             }
             state.hasPlayed = true
-            return ([state.notePointer], step.gate)
+            return ([state.notePointer], true, step.gate)
         case .rep:
             dwell()
             state.hasPlayed = true
-            return (state.voicing ?? [state.notePointer], step.gate)
+            return (state.voicing ?? [state.notePointer], true, step.gate)
         case .play:
             let positions = step.chordPositions.count > 1 ? step.chordPositions : [step.n]
             var seen = Set<Int>()
@@ -174,21 +292,27 @@ nonisolated enum SongMIDIExporter {
                 return index >= 0 && index < noteCount && seen.insert(index).inserted ? index : nil
             }
             advance()
-            guard let first = indices.first else { state.voicing = nil; return ([], step.gate) }
+            guard let first = indices.first else {
+                state.voicing = nil
+                return ([], true, step.gate)
+            }
             state.voicing = indices.count > 1 ? indices : nil
             state.notePointer = first
             state.hasPlayed = true
-            return (indices, step.gate)
+            return (indices, true, step.gate)
         case .random:
             let index = random.nextIndex(upperBound: noteCount)
             state.voicing = nil
             state.notePointer = index
             state.hasPlayed = true
             advance()
-            return ([index], step.gate)
-        case .hold, .pause:
+            return ([index], true, step.gate)
+        case .hold:
             dwell()
-            return ([], 1)
+            return ([], false, 1)
+        case .pause:
+            dwell()
+            return ([], true, 1)
         }
     }
 
@@ -231,7 +355,7 @@ nonisolated enum SongMIDIExporter {
     }
 
     private static func trackChunk(events: [Event], endTick: Int) -> Data {
-        let sorted = events.sorted {
+        let sorted = events.filter { !$0.cancelled }.sorted {
             if $0.tick != $1.tick { return $0.tick < $1.tick }
             if $0.priority != $1.priority { return $0.priority < $1.priority }
             return $0.serial < $1.serial

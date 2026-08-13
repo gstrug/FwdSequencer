@@ -14,8 +14,7 @@ struct SongView: View {
     var body: some View {
         VStack(spacing: 0) {
             SongTransportBar(onBack: {
-                songStore.close()   // captures live plugin state + saves, then tears down
-                dismiss()
+                songStore.close { dismiss() }
             }, showPlayDock: $showPlayDock)
 
             ArrangementStrip()
@@ -50,6 +49,7 @@ struct SongView: View {
                             .padding(10)
                     }
                     .buttonStyle(.bordered)
+                    .disabled(songStore.song.tracks.count >= SongStore.maximumEditableTrackCount)
                 }
                 .padding(12)
             }
@@ -60,7 +60,7 @@ struct SongView: View {
         // to the song's monitors, not the pattern store's.
         .environmentObject(songStore.levels)
         .environmentObject(songStore.playback)
-        .overlay(alignment: .bottom) {
+        .safeAreaInset(edge: .bottom, spacing: 0) {
             if showPlayDock {
                 PlayDockView(onClose: { withAnimation { showPlayDock = false } })
                     .transition(.move(edge: .bottom))
@@ -92,6 +92,7 @@ struct SongView: View {
         } message: {
             Text(songStore.notice ?? "")
         }
+        .interactiveDismissDisabled()
     }
 
     /// Binding to a track's Part in the currently selected section. Falls back to
@@ -193,36 +194,6 @@ private struct SongTransportBar: View {
                 .accessibilityLabel("Loop song")
                 .accessibilityValue(songStore.loopEnabled ? "On" : "Off")
 
-                Divider().frame(height: 26)
-
-                HStack(spacing: 6) {
-                    Text("BPM").font(.caption).foregroundStyle(.secondary)
-                    Text("\(Int(songStore.song.tempo))")
-                        .font(.caption.monospacedDigit()).frame(width: 36, alignment: .trailing)
-                    Stepper("", value: $songStore.song.tempo, in: 40...240, step: 1).labelsHidden()
-                    Button { handleTap() } label: {
-                        Label("Tap", systemImage: "hand.tap.fill").font(.caption)
-                    }
-                    .buttonStyle(.borderedProminent).controlSize(.small)
-                }
-
-                Divider().frame(height: 26)
-
-                // Metronome beat lights — red on beat 1, green on the rest.
-                HStack(spacing: 4) {
-                    ForEach(0..<beatCount, id: \.self) { beat in
-                        let isActive = songStore.isPlaying && beat == currentBeat
-                        Circle()
-                            .fill(isActive ? (beat == 0 ? Color.red : Color.green) : Color.gray.opacity(0.25))
-                            .frame(width: 10, height: 10)
-                            .animation(.easeOut(duration: 0.08), value: isActive)
-                    }
-                }
-
-                Divider().frame(height: 26)
-
-                SongBarCounter(totalBars: currentSectionBars)
-
                 Spacer()
                     .overlay(alignment: .trailing) {
                         Label("Saved", systemImage: "checkmark.circle.fill")
@@ -233,38 +204,77 @@ private struct SongTransportBar: View {
             }
 
             // ── Row 2: song settings + panels ────────────────────────────
-            HStack(spacing: 14) {
-                HStack(spacing: 4) {
-                    Text("Time").font(.caption).foregroundStyle(.secondary)
-                    Picker("", selection: $songStore.song.timeSignature.numerator) {
-                        ForEach([2,3,4,5,6,7,8], id: \.self) { Text("\($0)").tag($0) }
-                    }.pickerStyle(.menu).fixedSize()
-                    Text("/").font(.body.bold()).foregroundStyle(.secondary)
-                    Picker("", selection: $songStore.song.timeSignature.denominator) {
-                        ForEach([2,4,8], id: \.self) { Text("\($0)").tag($0) }
-                    }.pickerStyle(.menu).fixedSize()
+            HStack(spacing: 10) {
+                // Secondary controls receive the flexible space and scroll when
+                // portrait width or Dynamic Type cannot fit them. Transport and
+                // panel actions remain fixed and immediately reachable.
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        HStack(spacing: 6) {
+                            Text("BPM").font(.caption).foregroundStyle(.secondary)
+                            Text("\(Int(songStore.song.tempo))")
+                                .font(.caption.monospacedDigit())
+                                .frame(width: 36, alignment: .trailing)
+                            Stepper("", value: $songStore.song.tempo, in: 40...240, step: 1)
+                                .labelsHidden()
+                            Button { handleTap() } label: {
+                                Label("Tap", systemImage: "hand.tap.fill").font(.caption)
+                            }
+                            .buttonStyle(.borderedProminent).controlSize(.small)
+                        }
+
+                        Divider().frame(height: 26)
+
+                        HStack(spacing: 4) {
+                            ForEach(0..<beatCount, id: \.self) { beat in
+                                let isActive = songStore.isPlaying && beat == currentBeat
+                                Circle()
+                                    .fill(isActive ? (beat == 0 ? Color.red : Color.green) : Color.gray.opacity(0.25))
+                                    .frame(width: 10, height: 10)
+                                    .animation(.easeOut(duration: 0.08), value: isActive)
+                            }
+                        }
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("Beat \(currentBeat + 1) of \(beatCount)")
+
+                        Divider().frame(height: 26)
+                        SongBarCounter(totalBars: currentSectionBars)
+                        Divider().frame(height: 26)
+
+                        HStack(spacing: 4) {
+                            Text("Time").font(.caption).foregroundStyle(.secondary)
+                            Picker("", selection: $songStore.song.timeSignature.numerator) {
+                                ForEach([2,3,4,5,6,7,8], id: \.self) { Text("\($0)").tag($0) }
+                            }.pickerStyle(.menu).fixedSize()
+                            Text("/").font(.body.bold()).foregroundStyle(.secondary)
+                            Picker("", selection: $songStore.song.timeSignature.denominator) {
+                                ForEach([2,4,8], id: \.self) { Text("\($0)").tag($0) }
+                            }.pickerStyle(.menu).fixedSize()
+                        }
+
+                        Divider().frame(height: 26)
+
+                        HStack(spacing: 6) {
+                            Image(systemName: "speaker.wave.2.fill")
+                                .font(.caption2).foregroundStyle(.secondary)
+                            Slider(value: $songStore.song.masterVolume, in: 0...1)
+                                .frame(width: 130)
+                                .accessibilityLabel("Master volume")
+                        }
+
+                        Divider().frame(height: 26)
+
+                        SelectAllTextField(
+                            text: $songStore.song.name,
+                            placeholder: "Song Name",
+                            font: .preferredBold(.subheadline),
+                            selectAllTrigger: $selectAllSongName
+                        )
+                        .frame(minWidth: 120, maxWidth: 240)
+                        .onLongPressGesture { selectAllSongName = true }
+                    }
                 }
-
-                Divider().frame(height: 26)
-
-                HStack(spacing: 6) {
-                    Image(systemName: "speaker.wave.2.fill").font(.caption2).foregroundStyle(.secondary)
-                    Slider(value: $songStore.song.masterVolume, in: 0...1).frame(width: 130)
-                }
-
-                Divider().frame(height: 26)
-
-                SelectAllTextField(
-                    text: $songStore.song.name,
-                    placeholder: "Song Name",
-                    font: .preferredBold(.subheadline),
-                    selectAllTrigger: $selectAllSongName
-                )
-                .frame(minWidth: 120, maxWidth: 240)
-                // Long-press the name to highlight it and type over.
-                .onLongPressGesture { selectAllSongName = true }
-
-                Spacer()
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 Button { showPlayDock.toggle() } label: {
                     Label("Play", systemImage: "pianokeys")
@@ -278,6 +288,14 @@ private struct SongTransportBar: View {
                 .buttonStyle(.bordered)
 
                 Menu {
+                    Section("Time Signature") {
+                        Picker("Beats per Bar", selection: $songStore.song.timeSignature.numerator) {
+                            ForEach([2,3,4,5,6,7,8], id: \.self) { Text("\($0)").tag($0) }
+                        }
+                        Picker("Beat Unit", selection: $songStore.song.timeSignature.denominator) {
+                            ForEach([2,4,8], id: \.self) { Text("1/\($0)").tag($0) }
+                        }
+                    }
                     Button { songStore.undo() } label: {
                         Label("Undo", systemImage: "arrow.uturn.backward")
                     }
@@ -294,7 +312,7 @@ private struct SongTransportBar: View {
                         Label("Stop All Notes", systemImage: "exclamationmark.octagon")
                     }
                 } label: {
-                    Label("More", systemImage: "ellipsis.circle")
+                    Label("Settings", systemImage: "gearshape")
                 }
                 .buttonStyle(.bordered)
             }
@@ -378,15 +396,21 @@ private struct ArrangementStrip: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    // Identity-based so deleting a section can't crash on a stale index.
-                    ForEach(Array(songStore.song.sections.enumerated()), id: \.element.id) { idx, section in
-                        chip(idx, section)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        // Identity-based so deleting a section can't crash on a stale index.
+                        ForEach(Array(songStore.song.sections.enumerated()), id: \.element.id) { idx, section in
+                            chip(idx, section).id(section.id)
+                        }
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
+                .onChange(of: songStore.selectedSection) { index in
+                    guard songStore.song.sections.indices.contains(index) else { return }
+                    withAnimation { proxy.scrollTo(songStore.song.sections[index].id, anchor: .center) }
+                }
             }
 
             let sel = songStore.selectedSection
@@ -394,9 +418,11 @@ private struct ArrangementStrip: View {
                 Button { songStore.addSection() } label: {
                     Label("Add Section", systemImage: "plus")
                 }
+                .disabled(songStore.song.sections.count >= SongStore.maximumEditableSectionCount)
                 Button { songStore.duplicateSection(at: sel) } label: {
                     Label("Duplicate Selected", systemImage: "plus.square.on.square")
                 }
+                .disabled(songStore.song.sections.count >= SongStore.maximumEditableSectionCount)
                 Divider()
                 Button { songStore.moveSection(from: sel, to: sel - 1) } label: {
                     Label("Move Earlier", systemImage: "arrow.left")
@@ -457,6 +483,19 @@ private struct ArrangementStrip: View {
         .contentShape(Rectangle())
         .onTapGesture { songStore.selectedSection = idx }
         .onLongPressGesture {
+            renameText = section.name
+            renaming = idx
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("Section \(idx + 1), \(section.name)")
+        .accessibilityValue(
+            "\(section.numberOfBars) bars"
+                + (isSelected ? ", selected" : "")
+                + (isPlaying ? ", playing" : "")
+        )
+        .accessibilityAction { songStore.selectedSection = idx }
+        .accessibilityAction(named: Text("Rename section")) {
             renameText = section.name
             renaming = idx
         }
@@ -820,6 +859,8 @@ private struct SongTrackRowView: View {
                     Image(systemName: "plus.square.on.square").iconHitTarget(34)
                 }
                 .buttonStyle(.plain)
+                .disabled(trackCount >= SongStore.maximumEditableTrackCount)
+                .accessibilityLabel("Duplicate \(track.name)")
 
                 Button(role: .destructive) { showDeleteAlert = true } label: {
                     Image(systemName: "trash").foregroundColor(.red).iconHitTarget(34)
