@@ -969,34 +969,37 @@ private struct SongTrackRowView: View {
                     font: .preferredBold(.subheadline),
                     selectAllTrigger: $selectAllName
                 )
+                .frame(minWidth: 0, maxWidth: .infinity)
+                .layoutPriority(1)
                 // Long-press the name to highlight it and type over the default.
                 .onLongPressGesture { selectAllName = true }
-                Spacer()
 
-                Button { songStore.moveTrackUp(track.id) } label: {
-                    Image(systemName: "chevron.up").iconHitTarget(34)
-                }
-                .buttonStyle(.plain).disabled(index == 0)
-                .accessibilityLabel("Move \(track.name) up")
+                Menu {
+                    Button { songStore.moveTrackUp(track.id) } label: {
+                        Label("Move Up", systemImage: "chevron.up")
+                    }
+                    .disabled(index == 0)
 
-                Button { songStore.moveTrackDown(track.id) } label: {
-                    Image(systemName: "chevron.down").iconHitTarget(34)
-                }
-                .buttonStyle(.plain).disabled(index == trackCount - 1)
-                .accessibilityLabel("Move \(track.name) down")
+                    Button { songStore.moveTrackDown(track.id) } label: {
+                        Label("Move Down", systemImage: "chevron.down")
+                    }
+                    .disabled(index == trackCount - 1)
 
-                Button { songStore.duplicateTrack(track.id) } label: {
-                    Image(systemName: "plus.square.on.square").iconHitTarget(34)
+                    Button { songStore.duplicateTrack(track.id) } label: {
+                        Label("Duplicate Track", systemImage: "plus.square.on.square")
+                    }
+                    .disabled(trackCount >= SongStore.maximumEditableTrackCount)
+
+                    Divider()
+
+                    Button(role: .destructive) { showDeleteAlert = true } label: {
+                        Label("Delete Track", systemImage: "trash")
+                    }
+                } label: {
+                    Image(systemName: "ellipsis.circle").iconHitTarget(34)
                 }
                 .buttonStyle(.plain)
-                .disabled(trackCount >= SongStore.maximumEditableTrackCount)
-                .accessibilityLabel("Duplicate \(track.name)")
-
-                Button(role: .destructive) { showDeleteAlert = true } label: {
-                    Image(systemName: "trash").foregroundColor(.red).iconHitTarget(34)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Delete \(track.name)")
+                .accessibilityLabel("Actions for \(track.name)")
             }
 
             Button { showPluginPicker = true } label: {
