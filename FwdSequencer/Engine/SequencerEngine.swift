@@ -44,7 +44,9 @@ nonisolated struct SequencerSection {
     let tracks: [PlayTrack]
 }
 
-nonisolated class SequencerEngine {
+/// Mutable playback state is confined to `sequencerQueue`; callbacks are installed
+/// during SongStore initialization and hand UI work back to the main queue.
+nonisolated final class SequencerEngine: @unchecked Sendable {
     var audioEngine: SequencerAudioOutput?
     var onNotePlayed: ((UUID, [Int]) -> Void)?   // notes now sounding ([] = none)
     var onBarChange: ((Int) -> Void)?
