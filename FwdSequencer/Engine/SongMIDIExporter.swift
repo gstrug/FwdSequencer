@@ -252,6 +252,20 @@ nonisolated enum SongMIDIExporter {
             state.notePointer = (index + 1) % noteCount
             return ([index], true, 1)
         }
+
+        // Finish a Hold/Pause carried from the preceding section before traversing
+        // this section's own steps. This mirrors SequencerEngine.executeStep exactly:
+        // the boundary trigger consumes one remaining dwell, then step 0 begins on
+        // the following trigger.
+        if let carryType = state.carry {
+            state.dwellRemaining -= 1
+            if state.dwellRemaining <= 0 {
+                state.carry = nil
+                state.stepIndex = 0
+            }
+            return carryType == .hold ? ([], false, 1) : ([], true, 1)
+        }
+
         let stepIndex = state.stepIndex % part.steps.count
         let step = part.steps[stepIndex]
         func advance() { state.stepIndex = (stepIndex + 1) % part.steps.count }
