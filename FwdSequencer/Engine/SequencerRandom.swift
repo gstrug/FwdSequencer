@@ -2,7 +2,7 @@ import Foundation
 
 /// Small deterministic generator used by Random steps. A song supplies the seed, so
 /// reopening, rewinding, and exporting the same song produces the same sequence.
-struct SeededRandomGenerator {
+nonisolated struct SeededRandomGenerator {
     private(set) var state: UInt64
 
     init(seed: UInt64) {
