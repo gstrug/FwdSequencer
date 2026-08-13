@@ -73,19 +73,27 @@ struct SongView: View {
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: showPlayDock)
-        // Loading remains visible without obscuring the arrangement. Individual
-        // tracks are suspended by the engine until their state is restored.
-        .overlay(alignment: .topTrailing) {
+        // BLOCKING while instruments load/restore — this must capture touches.
+        // Engine-side track suspension only gates sequencer MIDI; it does not stop the
+        // user opening a plugin's UI, swapping the plugin again, or playing keys during
+        // the ~1–2 s instantiate+restore window. Interrupting a fragile AUv3 (GeoShred)
+        // in that window crashes its extension, so input is blocked until it finishes.
+        // Do not add .allowsHitTesting(false) here. See PLUGIN_HOSTING.md §2.
+        .overlay {
             if songStore.isLoading {
-                HStack(spacing: 10) {
-                    ProgressView()
-                    Text("Restoring instruments…").font(.subheadline.bold())
+                ZStack {
+                    Color.black.opacity(0.55).ignoresSafeArea()
+                    VStack(spacing: 14) {
+                        ProgressView().controlSize(.large).tint(.white)
+                        Text("Restoring instruments…")
+                            .font(.title3.bold()).foregroundStyle(.white)
+                        Text("Please wait — don't tap yet")
+                            .font(.callout).foregroundStyle(.white.opacity(0.85))
+                    }
+                    .padding(36)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))
                 }
-                .padding(.horizontal, 14).padding(.vertical, 10)
-                .background(.regularMaterial, in: Capsule())
-                .shadow(radius: 4, y: 2)
-                .padding(12)
-                .allowsHitTesting(false)
+                .contentShape(Rectangle())   // capture every touch in the overlay
                 .transition(.opacity)
             }
         }

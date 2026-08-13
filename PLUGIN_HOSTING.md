@@ -56,11 +56,25 @@ the requested plugin loaded.
 ### Loading protection (don't interrupt a plugin mid-load)
 
 Instantiation + state restore is asynchronous. Interacting with a half-restored
-plugin can corrupt it. `SongStore` therefore tracks generation-tokened requests and
-the engine suspends MIDI only for each loading track. `SongView` keeps a visible
-**Restoring instruments…** banner while navigation and ready tracks remain usable.
-There is no guessed two-second window. Each load has a 15-second timeout and explicit
-GM fallback.
+plugin can corrupt it, and with a fragile AUv3 (GeoShred) it crashes the extension.
+
+Three layers protect the window, and **all three are load-bearing**:
+
+1. `SongStore` tracks generation-tokened requests, so a stale completion can never
+   clear a newer load's state. Each load has a 15-second timeout and an explicit GM
+   fallback — no guessed two-second window.
+2. The engine **suspends MIDI per loading track**, so the sequencer tick can't hit a
+   half-attached node. Note-offs still pass, so nothing hangs.
+3. `SongView` shows a **blocking** *Restoring instruments…* overlay that **captures
+   touches** until every load finishes.
+
+Layer 3 is not cosmetic and must not be downgraded to a passive banner. Suspension
+(layer 2) gates only *sequencer-generated* MIDI; it does nothing about the **user**
+opening a plugin's UI, swapping the instrument again, or playing the Play dock
+during instantiate+restore — which is precisely how GeoShred is crashed. A
+non-blocking banner with `.allowsHitTesting(false)` reintroduced that crash and was
+reverted; if the overlay ever needs to allow interaction, gate the plugin editor,
+plugin picker, and Play dock individually first.
 
 ---
 
