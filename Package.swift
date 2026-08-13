@@ -14,6 +14,7 @@ let package = Package(
             exclude: [
                 "Assets.xcassets",
                 "Bridge",
+                "FwdSequencer.entitlements",
                 "Info.plist",
                 "PrivacyInfo.xcprivacy",
                 "FwdSequencerApp.swift",
