@@ -554,7 +554,7 @@ private struct SectionSettingsBar: View {
                     Label("Transform", systemImage: "wand.and.stars")
                 }
                 .buttonStyle(.bordered)
-                .help("Create an undoable variation of this section")
+                .help("Reshape this section's notes and steps in place — a single undoable edit")
 
                 Menu {
                     Button { songStore.captureVariation() } label: {

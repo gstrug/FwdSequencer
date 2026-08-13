@@ -17,6 +17,43 @@ and Rest—then arranges independent parts into song sections.
 The v1 goal is a focused composition instrument, not a full DAW. Effects chains,
 cloud collaboration, and broad automation should be driven by validated user need.
 
+## Section tools (Transform / Variations / Follow)
+
+These sit in the section settings bar and act on the **currently selected section**.
+
+### Transform
+
+Four one-shot edits applied **in place to every track** in the section. Each is a
+single undoable action; none of them add or remove steps.
+
+| Item | Effect |
+|------|--------|
+| **Rotate Notes** | Moves the first note of each track's pool to the end (pools of >1 note). Steps are unchanged, so every step lands on a different note — the pattern shifts through the pool. |
+| **Reverse Notes** | Reverses each track's note pool order. Steps unchanged. |
+| **Flip Direction** | Swaps every `Fwd` step ↔ `Back` step. Play/Rep/Hold/Pause/Random are untouched. |
+| **Evolve One Step** | Picks **one** random step per track and reassigns its type from Fwd, Back, Rep, Random, Hold, Pause (never Play). Driven by the song's stored seed, which it advances — so it is deterministic and reproducible, not truly random. |
+
+### Variations
+
+Named **snapshots of a section's note data** — every track's note pool, steps,
+key/scale, and rate. Up to 32 per section.
+
+- **Save Current Snapshot** stores the section's current state as "Variation N".
+- Each saved variation offers **Apply** (replaces the section's current parts) and
+  **Delete Snapshot**.
+
+Variations let you try alternate takes **without adding arrangement sections**.
+Applying is undoable, but it overwrites whatever is currently in the section, so
+snapshot the current state first if you want to return to it. Typical workflow:
+snapshot → Transform → keep it, or Apply the snapshot to revert.
+
+### Follow
+
+When **on**, the editor switches the selected section to whichever section is
+playing, so the steps and keyboard track the playhead. When **off**, manual section
+selection stays put during playback — useful for editing section 3 while section 1
+plays. The setting persists across launches.
+
 ## Build
 
 1. Open `FwdSequencer.xcodeproj` in the current Xcode release.
