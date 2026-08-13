@@ -181,11 +181,17 @@ enum SongStorage {
             let safeSong = try SongValidator.validateAndNormalize(song)
             let destination = url(for: safeSong.id)
             if fileManager.fileExists(atPath: destination.path) {
-                let backup = backupURL(for: safeSong.id)
-                if fileManager.fileExists(atPath: backup.path) {
-                    try fileManager.removeItem(at: backup)
+                // Only promote a readable primary to "last known good". An externally
+                // corrupted file must not overwrite the valid recovery copy before a
+                // replacement save has completed.
+                let existingData = try Data(contentsOf: destination)
+                if (try? decodeDocument(existingData)) != nil {
+                    let backup = backupURL(for: safeSong.id)
+                    if fileManager.fileExists(atPath: backup.path) {
+                        try fileManager.removeItem(at: backup)
+                    }
+                    try fileManager.copyItem(at: destination, to: backup)
                 }
-                try fileManager.copyItem(at: destination, to: backup)
             }
             let data = try JSONEncoder().encode(safeSong)
             try data.write(to: destination, options: .atomic)

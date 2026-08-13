@@ -43,7 +43,8 @@ nonisolated enum AudioRecordingError: LocalizedError {
 }
 
 /// Audio graph access is protected by `auLock`; MIDI-clock state is confined to
-/// `midiClockQueue`; recording writes are protected by `recordingLock`.
+/// `midiClockQueue`; recording writes are protected by `recordingLock`; callbacks
+/// shared by the main and render threads are copied under `callbackLock`.
 nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sendable {
     // One shared audio engine / session for the whole app. Pattern playback and
     // song playback both route through it (only one document plays at a time).
@@ -61,14 +62,42 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     private var auv3Units: [UUID: AVAudioUnit] = [:]
     private var trackMixers: [UUID: AVAudioMixerNode] = [:]
 
-    var onLevelUpdate: ((UUID, Float) -> Void)?
-    var onMasterLevelUpdate: ((Float) -> Void)?
-    var onStatusChange: ((AudioEngineStatus) -> Void)?
-    var onPlaybackInterrupted: ((String) -> Void)?
-    var onRecoveryRequired: (() -> Void)?
-    var onRecordingError: ((String) -> Void)?
+    private let callbackLock = NSLock()
+    private var _onLevelUpdate: ((UUID, Float) -> Void)?
+    private var _onMasterLevelUpdate: ((Float) -> Void)?
+    private var _onStatusChange: ((AudioEngineStatus) -> Void)?
+    private var _onPlaybackInterrupted: ((String) -> Void)?
+    private var _onRecoveryRequired: (() -> Void)?
+    private var _onRecordingError: ((String) -> Void)?
     private var status: AudioEngineStatus = .recovering
-    var currentStatus: AudioEngineStatus { status }
+    private func withCallbackLock<T>(_ body: () -> T) -> T {
+        callbackLock.lock(); defer { callbackLock.unlock() }; return body()
+    }
+    var onLevelUpdate: ((UUID, Float) -> Void)? {
+        get { withCallbackLock { _onLevelUpdate } }
+        set { withCallbackLock { _onLevelUpdate = newValue } }
+    }
+    var onMasterLevelUpdate: ((Float) -> Void)? {
+        get { withCallbackLock { _onMasterLevelUpdate } }
+        set { withCallbackLock { _onMasterLevelUpdate = newValue } }
+    }
+    var onStatusChange: ((AudioEngineStatus) -> Void)? {
+        get { withCallbackLock { _onStatusChange } }
+        set { withCallbackLock { _onStatusChange = newValue } }
+    }
+    var onPlaybackInterrupted: ((String) -> Void)? {
+        get { withCallbackLock { _onPlaybackInterrupted } }
+        set { withCallbackLock { _onPlaybackInterrupted = newValue } }
+    }
+    var onRecoveryRequired: (() -> Void)? {
+        get { withCallbackLock { _onRecoveryRequired } }
+        set { withCallbackLock { _onRecoveryRequired = newValue } }
+    }
+    var onRecordingError: ((String) -> Void)? {
+        get { withCallbackLock { _onRecordingError } }
+        set { withCallbackLock { _onRecordingError = newValue } }
+    }
+    var currentStatus: AudioEngineStatus { withCallbackLock { status } }
     private var sessionObservers: [NSObjectProtocol] = []
     private struct PluginLoadRequest {
         let id: UUID
@@ -216,7 +245,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     }
 
     private func setStatus(_ newStatus: AudioEngineStatus) {
-        status = newStatus
+        withCallbackLock { status = newStatus }
         DispatchQueue.main.async { [weak self] in self?.onStatusChange?(newStatus) }
     }
 

@@ -21,6 +21,8 @@ nonisolated enum SongValidator {
     static let currentFormatVersion = 2
     static let maximumDocumentBytes = 64 * 1_024 * 1_024
     static let maximumPluginStateBytes = 32 * 1_024 * 1_024
+    static let maximumNameLength = 200
+    static let maximumPluginLabelLength = 1_000
 
     static func decodeAndValidate(_ data: Data) throws -> Song {
         guard data.count <= maximumDocumentBytes else {
@@ -44,7 +46,7 @@ nonisolated enum SongValidator {
             }
         }
 
-        guard song.name.count <= 200 else {
+        guard song.name.count <= maximumNameLength else {
             throw SongValidationError.invalid("The song name is too long.")
         }
         try requireFinite(song.tempo, name: "Tempo")
@@ -73,6 +75,8 @@ nonisolated enum SongValidator {
 
         let trackIDs = Set(song.tracks.map(\.id))
         for track in song.tracks {
+            try validateDisplayName(track.name, context: "A track")
+            try validate(track.pluginInfo, context: "Track \"\(track.name)\"")
             try validate(track.mixer, context: "Track \"\(track.name)\"")
             try validatePluginState(track.pluginStateData, context: "Track \"\(track.name)\"")
         }
@@ -81,13 +85,15 @@ nonisolated enum SongValidator {
             guard !trackIDs.contains(performance.id) else {
                 throw SongValidationError.invalid("The manual instrument reuses a sequencer track identifier.")
             }
+            try validateDisplayName(performance.name, context: "The manual instrument")
+            try validate(performance.pluginInfo, context: "Manual instrument")
             try validate(performance.mixer, context: "Manual instrument")
             try validatePluginState(performance.pluginStateData, context: "Manual instrument")
         }
 
         for sectionIndex in song.sections.indices {
             var section = song.sections[sectionIndex]
-            guard section.name.count <= 200 else {
+            guard section.name.count <= maximumNameLength else {
                 throw SongValidationError.invalid("Section \(sectionIndex + 1) has a name that is too long.")
             }
             guard (1...256).contains(section.numberOfBars) else {
@@ -111,7 +117,7 @@ nonisolated enum SongValidator {
             }
             try requireUnique(section.variations.map(\.id), name: "variation in section \(sectionIndex + 1)")
             for variation in section.variations {
-                guard !variation.name.isEmpty, variation.name.count <= 200 else {
+                guard !variation.name.isEmpty, variation.name.count <= maximumNameLength else {
                     throw SongValidationError.invalid("A variation in section \(sectionIndex + 1) has an invalid name.")
                 }
                 let variationPartIDs = variation.parts.map(\.trackID)
@@ -145,6 +151,20 @@ nonisolated enum SongValidator {
         try requireFinite(mixer.pan, name: "\(context) pan")
         guard (-1...1).contains(mixer.pan) else {
             throw SongValidationError.invalid("\(context) pan must be between -1 and 1.")
+        }
+    }
+
+    private static func validateDisplayName(_ value: String, context: String) throws {
+        guard value.count <= maximumNameLength else {
+            throw SongValidationError.invalid("\(context) has a name that is too long.")
+        }
+    }
+
+    private static func validate(_ plugin: PluginInfo?, context: String) throws {
+        guard let plugin else { return }
+        guard plugin.name.count <= maximumPluginLabelLength,
+              plugin.manufacturerName.count <= maximumPluginLabelLength else {
+            throw SongValidationError.invalid("\(context) has plug-in labels that are too long.")
         }
     }
 

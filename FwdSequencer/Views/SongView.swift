@@ -9,12 +9,15 @@ import SwiftUI
 struct SongView: View {
     @EnvironmentObject var songStore: SongStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showPlayDock = false
 
     var body: some View {
         VStack(spacing: 0) {
             SongTransportBar(onBack: {
-                songStore.close { dismiss() }
+                songStore.close { saved in
+                    if saved { dismiss() }
+                }
             }, showPlayDock: $showPlayDock)
 
             ArrangementStrip()
@@ -62,11 +65,14 @@ struct SongView: View {
         .environmentObject(songStore.playback)
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if showPlayDock {
-                PlayDockView(onClose: { withAnimation { showPlayDock = false } })
+                PlayDockView(onClose: {
+                    if reduceMotion { showPlayDock = false }
+                    else { withAnimation { showPlayDock = false } }
+                })
                     .transition(.move(edge: .bottom))
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: showPlayDock)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: showPlayDock)
         // Loading remains visible without obscuring the arrangement. Individual
         // tracks are suspended by the engine until their state is restored.
         .overlay(alignment: .topTrailing) {
@@ -83,7 +89,7 @@ struct SongView: View {
                 .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: songStore.isLoading)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: songStore.isLoading)
         .alert("FWD Sequencer", isPresented: Binding(
             get: { songStore.notice != nil },
             set: { if !$0 { songStore.notice = nil } }
@@ -124,6 +130,7 @@ struct SongView: View {
 
 private struct SongTransportBar: View {
     @EnvironmentObject var songStore: SongStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var onBack: () -> Void
     @Binding var showPlayDock: Bool
     @State private var currentBeat: Int = 0
@@ -143,7 +150,8 @@ private struct SongTransportBar: View {
     var body: some View {
         VStack(spacing: 6) {
             // ── Row 1: playback ──────────────────────────────────────────
-            HStack(spacing: 14) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 14) {
                 Button(action: onBack) {
                     Image(systemName: "chevron.left").iconHitTarget()
                 }
@@ -194,28 +202,23 @@ private struct SongTransportBar: View {
                 .accessibilityLabel("Loop song")
                 .accessibilityValue(songStore.loopEnabled ? "On" : "Off")
 
-                Spacer()
-                    .overlay(alignment: .trailing) {
-                        Label("Saved", systemImage: "checkmark.circle.fill")
-                            .font(.subheadline.bold()).foregroundStyle(.green)
-                            .opacity(savedVisible ? 1 : 0)
-                            .animation(.easeInOut(duration: 0.3), value: savedVisible)
-                    }
+                    Label("Saved", systemImage: "checkmark.circle.fill")
+                        .font(.subheadline.bold()).foregroundStyle(.green)
+                        .opacity(savedVisible ? 1 : 0)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: savedVisible)
+                }
+                .fixedSize(horizontal: true, vertical: false)
             }
 
             // ── Row 2: song settings + panels ────────────────────────────
-            HStack(spacing: 10) {
-                // Secondary controls receive the flexible space and scroll when
-                // portrait width or Dynamic Type cannot fit them. Transport and
-                // panel actions remain fixed and immediately reachable.
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
                         HStack(spacing: 6) {
                             Text("BPM").font(.caption).foregroundStyle(.secondary)
                             Text("\(Int(songStore.song.tempo))")
                                 .font(.caption.monospacedDigit())
                                 .frame(width: 36, alignment: .trailing)
-                            Stepper("", value: $songStore.song.tempo, in: 40...240, step: 1)
+                            Stepper("", value: $songStore.song.tempo, in: 20...400, step: 1)
                                 .labelsHidden()
                             Button { handleTap() } label: {
                                 Label("Tap", systemImage: "hand.tap.fill").font(.caption)
@@ -231,7 +234,7 @@ private struct SongTransportBar: View {
                                 Circle()
                                     .fill(isActive ? (beat == 0 ? Color.red : Color.green) : Color.gray.opacity(0.25))
                                     .frame(width: 10, height: 10)
-                                    .animation(.easeOut(duration: 0.08), value: isActive)
+                                    .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: isActive)
                             }
                         }
                         .accessibilityElement(children: .ignore)
@@ -244,11 +247,11 @@ private struct SongTransportBar: View {
                         HStack(spacing: 4) {
                             Text("Time").font(.caption).foregroundStyle(.secondary)
                             Picker("", selection: $songStore.song.timeSignature.numerator) {
-                                ForEach([2,3,4,5,6,7,8], id: \.self) { Text("\($0)").tag($0) }
+                                ForEach(1...32, id: \.self) { Text("\($0)").tag($0) }
                             }.pickerStyle(.menu).fixedSize()
                             Text("/").font(.body.bold()).foregroundStyle(.secondary)
                             Picker("", selection: $songStore.song.timeSignature.denominator) {
-                                ForEach([2,4,8], id: \.self) { Text("\($0)").tag($0) }
+                                ForEach([1,2,4,8,16,32], id: \.self) { Text("\($0)").tag($0) }
                             }.pickerStyle(.menu).fixedSize()
                         }
 
@@ -272,10 +275,6 @@ private struct SongTransportBar: View {
                         )
                         .frame(minWidth: 120, maxWidth: 240)
                         .onLongPressGesture { selectAllSongName = true }
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
                 Button { showPlayDock.toggle() } label: {
                     Label("Play", systemImage: "pianokeys")
                 }
@@ -290,10 +289,10 @@ private struct SongTransportBar: View {
                 Menu {
                     Section("Time Signature") {
                         Picker("Beats per Bar", selection: $songStore.song.timeSignature.numerator) {
-                            ForEach([2,3,4,5,6,7,8], id: \.self) { Text("\($0)").tag($0) }
+                            ForEach(1...32, id: \.self) { Text("\($0)").tag($0) }
                         }
                         Picker("Beat Unit", selection: $songStore.song.timeSignature.denominator) {
-                            ForEach([2,4,8], id: \.self) { Text("1/\($0)").tag($0) }
+                            ForEach([1,2,4,8,16,32], id: \.self) { Text("1/\($0)").tag($0) }
                         }
                     }
                     Button { songStore.undo() } label: {
@@ -315,9 +314,11 @@ private struct SongTransportBar: View {
                     Label("Settings", systemImage: "gearshape")
                 }
                 .buttonStyle(.bordered)
+                }
+                .fixedSize(horizontal: true, vertical: false)
             }
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.bar)
         .overlay(alignment: .bottom) { Divider() }
@@ -354,7 +355,7 @@ private struct SongTransportBar: View {
         guard tapTimes.count >= 2 else { return }
         let intervals = zip(tapTimes.dropLast(), tapTimes.dropFirst()).map { $1.timeIntervalSince($0) }
         let avg = intervals.reduce(0, +) / Double(intervals.count)
-        songStore.song.tempo = min(240, max(40, (60.0 / avg).rounded()))
+        songStore.song.tempo = min(400, max(20, (60.0 / avg).rounded()))
     }
 
     private var recordingFilename: String {
@@ -391,6 +392,7 @@ private extension View {
 
 private struct ArrangementStrip: View {
     @EnvironmentObject var songStore: SongStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var renaming: Int? = nil
     @State private var renameText = ""
 
@@ -409,7 +411,11 @@ private struct ArrangementStrip: View {
                 }
                 .onChange(of: songStore.selectedSection) { index in
                     guard songStore.song.sections.indices.contains(index) else { return }
-                    withAnimation { proxy.scrollTo(songStore.song.sections[index].id, anchor: .center) }
+                    if reduceMotion {
+                        proxy.scrollTo(songStore.song.sections[index].id, anchor: .center)
+                    } else {
+                        withAnimation { proxy.scrollTo(songStore.song.sections[index].id, anchor: .center) }
+                    }
                 }
             }
 
@@ -451,7 +457,7 @@ private struct ArrangementStrip: View {
             TextField("Name", text: $renameText)
             Button("Rename") {
                 if let i = renaming, songStore.song.sections.indices.contains(i) {
-                    songStore.song.sections[i].name = renameText
+                    songStore.song.sections[i].name = String(renameText.prefix(SongValidator.maximumNameLength))
                 }
                 renaming = nil
             }
@@ -530,7 +536,7 @@ private struct SectionSettingsBar: View {
                 Divider().frame(height: 20)
 
                 Text("Bars").font(.caption).foregroundStyle(.secondary)
-                Stepper(value: $songStore.song.sections[sel].numberOfBars, in: 1...32) {
+                Stepper(value: $songStore.song.sections[sel].numberOfBars, in: 1...256) {
                     Text("\(songStore.song.sections[sel].numberOfBars)")
                         .font(.caption.monospacedDigit()).frame(minWidth: 18)
                 }
@@ -613,11 +619,15 @@ private struct SongTrackRowView: View {
     @State private var showDeleteAlert = false
     @State private var stepsBaseline: Song?
     @State private var noteParametersBaseline: Song?
+    @State private var stepsSectionID: UUID?
+    @State private var noteParametersSectionID: UUID?
+    @State private var scaleSectionID: UUID?
     @State private var selectAllName = false
     // A proposed key/scale change waiting on confirmation because it would drop notes.
-    @State private var pendingKeyScale: (key: Int, scale: MusicalScale)?
+    @State private var pendingKeyScale: (sectionID: UUID, key: Int, scale: MusicalScale)?
     @State private var conflictCount = 0
     @State private var showKeyConflict = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
 
@@ -627,8 +637,36 @@ private struct SongTrackRowView: View {
     }
 
     /// Notes in the pool that would fall outside the given key/scale.
-    private func offendingNotes(key: Int, scale: MusicalScale) -> [Int] {
-        part.notePool.map(\.midiNote).filter { !inScale($0, key: key, scale: scale) }
+    private var selectedSectionID: UUID? {
+        let index = songStore.selectedSection
+        guard songStore.song.sections.indices.contains(index) else { return nil }
+        return songStore.song.sections[index].id
+    }
+
+    /// Sheets and delayed confirmations use a section identity captured when they
+    /// open. Playback may continue following the playhead without rebinding an open
+    /// editor to a different section underneath the user's hands.
+    private func pinnedPartBinding(sectionID: UUID) -> Binding<Part> {
+        Binding(
+            get: {
+                guard let sectionIndex = songStore.song.sections.firstIndex(where: { $0.id == sectionID }),
+                      let value = songStore.song.sections[sectionIndex].parts.first(where: { $0.trackID == track.id })
+                else { return Part(trackID: track.id) }
+                return value
+            },
+            set: { newValue in
+                guard let sectionIndex = songStore.song.sections.firstIndex(where: { $0.id == sectionID }) else { return }
+                if let partIndex = songStore.song.sections[sectionIndex].parts.firstIndex(where: { $0.trackID == track.id }) {
+                    songStore.song.sections[sectionIndex].parts[partIndex] = newValue
+                } else {
+                    songStore.song.sections[sectionIndex].parts.append(newValue)
+                }
+            }
+        )
+    }
+
+    private func offendingNotes(in target: Part, key: Int, scale: MusicalScale) -> [Int] {
+        target.notePool.map(\.midiNote).filter { !inScale($0, key: key, scale: scale) }
     }
 
     /// Apply a key/scale change and drop the out-of-key notes from the pool. No step is
@@ -637,9 +675,11 @@ private struct SongTrackRowView: View {
     /// keep playing — e.g. Play 1,2,3,4 with note 2 removed becomes Play 1,2,3 (the old
     /// notes 1,3,4). A Play that referenced only removed notes stays as a step but plays
     /// nothing. Other step types carry no pool positions and are untouched.
-    private func applyKeyScaleDroppingNotes(key: Int, scale: MusicalScale) {
+    private func applyKeyScaleDroppingNotes(sectionID: UUID, key: Int, scale: MusicalScale) {
         songStore.checkpointForUndo()
-        let old = part.notePool
+        let targetBinding = pinnedPartBinding(sectionID: sectionID)
+        var target = targetBinding.wrappedValue
+        let old = target.notePool
         // old 0-based index → new 0-based index among survivors (nil = note removed).
         var oldToNew: [Int: Int] = [:]
         var next = 0
@@ -649,8 +689,8 @@ private struct SongTrackRowView: View {
         }
         let newCount = next
 
-        for i in part.steps.indices where part.steps[i].type == .play {
-            var step = part.steps[i]
+        for i in target.steps.indices where target.steps[i].type == .play {
+            var step = target.steps[i]
             // Positions this Play references (chord list, else the single-note n).
             let refs = step.chordPositions.count > 1 ? step.chordPositions : [step.n]
             // Keep surviving references, remapped to new 1-based positions; drop removed.
@@ -671,25 +711,29 @@ private struct SongTrackRowView: View {
                 step.chordPositions = []
                 step.n = newCount + 1
             }
-            part.steps[i] = step
+            target.steps[i] = step
         }
 
-        part.key = key
-        part.scale = scale
-        part.notePool = old.filter { inScale($0.midiNote, key: key, scale: scale) }
+        target.key = key
+        target.scale = scale
+        target.notePool = old.filter { inScale($0.midiNote, key: key, scale: scale) }
+        targetBinding.wrappedValue = target
     }
 
     /// Apply a key/scale change immediately if no selected note falls outside it;
     /// otherwise stash it and raise a confirmation (removing those notes is destructive).
-    private func proposeKeyScale(key: Int, scale: MusicalScale) {
-        let bad = offendingNotes(key: key, scale: scale)
+    private func proposeKeyScale(sectionID: UUID, key: Int, scale: MusicalScale) {
+        let targetBinding = pinnedPartBinding(sectionID: sectionID)
+        var target = targetBinding.wrappedValue
+        let bad = offendingNotes(in: target, key: key, scale: scale)
         if bad.isEmpty {
-            guard part.key != key || part.scale != scale else { return }
+            guard target.key != key || target.scale != scale else { return }
             songStore.checkpointForUndo()
-            part.key = key
-            part.scale = scale
+            target.key = key
+            target.scale = scale
+            targetBinding.wrappedValue = target
         } else {
-            pendingKeyScale = (key, scale)
+            pendingKeyScale = (sectionID, key, scale)
             conflictCount = bad.count
             // Defer so the alert reliably appears after the scale sheet finishes
             // dismissing (presenting both in the same runloop can drop the alert).
@@ -701,11 +745,24 @@ private struct SongTrackRowView: View {
     // change is simply never applied, so the picker snaps back to the current value.
     private var keyBinding: Binding<Int> {
         Binding(get: { part.key },
-                set: { proposeKeyScale(key: $0, scale: part.scale) })
+                set: { newKey in
+                    guard let sectionID = selectedSectionID else { return }
+                    let target = pinnedPartBinding(sectionID: sectionID).wrappedValue
+                    proposeKeyScale(sectionID: sectionID, key: newKey, scale: target.scale)
+                })
     }
     private var scaleBinding: Binding<MusicalScale> {
-        Binding(get: { part.scale },
-                set: { proposeKeyScale(key: part.key, scale: $0) })
+        Binding(
+            get: {
+                guard let sectionID = scaleSectionID else { return part.scale }
+                return pinnedPartBinding(sectionID: sectionID).wrappedValue.scale
+            },
+            set: { newScale in
+                guard let sectionID = scaleSectionID else { return }
+                let target = pinnedPartBinding(sectionID: sectionID).wrappedValue
+                proposeKeyScale(sectionID: sectionID, key: target.key, scale: newScale)
+            }
+        )
     }
 
     var body: some View {
@@ -739,26 +796,39 @@ private struct SongTrackRowView: View {
         .sheet(isPresented: $showSteps, onDismiss: {
             if let baseline = stepsBaseline { songStore.recordUndoSnapshot(baseline) }
             stepsBaseline = nil
+            stepsSectionID = nil
         }) {
-            StepsView(steps: $part.steps, noteCount: part.notePool.count)
+            if let sectionID = stepsSectionID {
+                let target = pinnedPartBinding(sectionID: sectionID)
+                StepsView(steps: target.steps, noteCount: target.wrappedValue.notePool.count)
+            }
         }
         .sheet(isPresented: $showNoteParams, onDismiss: {
             if let baseline = noteParametersBaseline { songStore.recordUndoSnapshot(baseline) }
             noteParametersBaseline = nil
+            noteParametersSectionID = nil
         }) {
-            NoteParametersView(notePool: $part.notePool)
+            if let sectionID = noteParametersSectionID {
+                NoteParametersView(notePool: pinnedPartBinding(sectionID: sectionID).notePool)
+            }
         }
-        .sheet(isPresented: $showScalePicker) {
+        .sheet(isPresented: $showScalePicker, onDismiss: {
+            if pendingKeyScale == nil { scaleSectionID = nil }
+        }) {
             ScalePickerView(selectedScale: scaleBinding)
         }
         .alert("Notes outside new key", isPresented: $showKeyConflict) {
             Button("Remove \(conflictCount) note\(conflictCount == 1 ? "" : "s")", role: .destructive) {
                 if let p = pendingKeyScale {
-                    applyKeyScaleDroppingNotes(key: p.key, scale: p.scale)
+                    applyKeyScaleDroppingNotes(sectionID: p.sectionID, key: p.key, scale: p.scale)
                 }
                 pendingKeyScale = nil
+                scaleSectionID = nil
             }
-            Button("Cancel", role: .cancel) { pendingKeyScale = nil }
+            Button("Cancel", role: .cancel) {
+                pendingKeyScale = nil
+                scaleSectionID = nil
+            }
         } message: {
             if let p = pendingKeyScale {
                 Text("\(conflictCount) selected note\(conflictCount == 1 ? " is" : "s are") not in \(noteNames[p.key]) \(p.scale.rawValue). \(conflictCount == 1 ? "It" : "They") will be removed from this track. Steps keep running, and Play chords drop just the removed note\(conflictCount == 1 ? "" : "s") while their other notes keep playing. Cancel to keep the current key.")
@@ -781,13 +851,22 @@ private struct SongTrackRowView: View {
 
     // Compact one-line row shown when the track is collapsed.
     private var collapsedBar: some View {
+        ViewThatFits(in: .horizontal) {
+            collapsedWideBar.fixedSize(horizontal: true, vertical: false)
+            collapsedCompactBar
+        }
+    }
+
+    private var collapsedWideBar: some View {
         HStack(spacing: 10) {
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) { isCollapsed = false }
+                if reduceMotion { isCollapsed = false }
+                else { withAnimation(.easeInOut(duration: 0.2)) { isCollapsed = false } }
             } label: {
                 Image(systemName: "chevron.right").iconHitTarget(34)
             }
             .buttonStyle(.plain).foregroundStyle(.secondary)
+            .accessibilityLabel("Expand \(track.name)")
 
             Text(track.name).font(.subheadline.bold()).lineLimit(1)
 
@@ -813,12 +892,60 @@ private struct SongTrackRowView: View {
 
             Image(systemName: "speaker.wave.1").font(.system(size: 9)).foregroundStyle(.secondary)
             Slider(value: $track.mixer.volume, in: 0...1).frame(width: 70)
+                .accessibilityLabel("\(track.name) volume")
             SongTrackMeter(trackID: track.id)
 
             Divider().frame(height: 16)
 
             Toggle("M", isOn: $track.mixer.isMuted).toggleStyle(.button).tint(.orange).font(.caption2.bold())
+                .accessibilityLabel("Mute \(track.name)")
             Toggle("S", isOn: $track.mixer.isSoloed).toggleStyle(.button).tint(.yellow).font(.caption2.bold())
+                .accessibilityLabel("Solo \(track.name)")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    private var collapsedCompactBar: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Button {
+                    if reduceMotion { isCollapsed = false }
+                    else { withAnimation(.easeInOut(duration: 0.2)) { isCollapsed = false } }
+                } label: {
+                    Image(systemName: "chevron.right").iconHitTarget(34)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Expand \(track.name)")
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(track.name).font(.subheadline.bold()).lineLimit(1)
+                    Text(track.pluginInfo?.name ?? "Built-in Sound")
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Toggle("M", isOn: $track.mixer.isMuted)
+                    .toggleStyle(.button).tint(.orange).font(.caption2.bold())
+                    .accessibilityLabel("Mute \(track.name)")
+                Toggle("S", isOn: $track.mixer.isSoloed)
+                    .toggleStyle(.button).tint(.yellow).font(.caption2.bold())
+                    .accessibilityLabel("Solo \(track.name)")
+            }
+            HStack(spacing: 8) {
+                Text(part.tempoDivision.abbreviation).font(.caption2).foregroundStyle(.secondary)
+                if !part.steps.isEmpty {
+                    SongMiniSteps(trackID: track.id, steps: part.steps)
+                } else {
+                    Text("\(part.notePool.count) notes").font(.caption2).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "speaker.wave.1").font(.caption2).foregroundStyle(.secondary)
+                Slider(value: $track.mixer.volume, in: 0...1)
+                    .frame(minWidth: 70, maxWidth: 150)
+                    .accessibilityLabel("\(track.name) volume")
+                SongTrackMeter(trackID: track.id)
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -829,7 +956,8 @@ private struct SongTrackRowView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 2) {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { isCollapsed = true }
+                    if reduceMotion { isCollapsed = true }
+                    else { withAnimation(.easeInOut(duration: 0.2)) { isCollapsed = true } }
                 } label: {
                     Image(systemName: "chevron.down").iconHitTarget(34)
                 }
@@ -849,11 +977,13 @@ private struct SongTrackRowView: View {
                     Image(systemName: "chevron.up").iconHitTarget(34)
                 }
                 .buttonStyle(.plain).disabled(index == 0)
+                .accessibilityLabel("Move \(track.name) up")
 
                 Button { songStore.moveTrackDown(track.id) } label: {
                     Image(systemName: "chevron.down").iconHitTarget(34)
                 }
                 .buttonStyle(.plain).disabled(index == trackCount - 1)
+                .accessibilityLabel("Move \(track.name) down")
 
                 Button { songStore.duplicateTrack(track.id) } label: {
                     Image(systemName: "plus.square.on.square").iconHitTarget(34)
@@ -866,6 +996,7 @@ private struct SongTrackRowView: View {
                     Image(systemName: "trash").foregroundColor(.red).iconHitTarget(34)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Delete \(track.name)")
             }
 
             Button { showPluginPicker = true } label: {
@@ -924,29 +1055,34 @@ private struct SongTrackRowView: View {
     // Right — section-level: this track's note data for the selected section.
     private var noteZone: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Text("Rate").font(.caption2).foregroundStyle(.secondary)
-                Picker("", selection: $part.tempoDivision) {
-                    ForEach(TempoDivision.allCases, id: \.self) { Text($0.abbreviation).tag($0) }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    Text("Rate").font(.caption2).foregroundStyle(.secondary)
+                    Picker("", selection: $part.tempoDivision) {
+                        ForEach(TempoDivision.allCases, id: \.self) { Text($0.abbreviation).tag($0) }
+                    }
+                    .pickerStyle(.menu).fixedSize()
+
+                    Divider().frame(height: 16)
+
+                    Text("Key").font(.caption2).foregroundStyle(.secondary)
+                    Picker("", selection: keyBinding) {
+                        ForEach(0..<12, id: \.self) { Text(noteNames[$0]).tag($0) }
+                    }
+                    .pickerStyle(.menu).fixedSize()
+
+                    Button {
+                        guard let sectionID = selectedSectionID else { return }
+                        scaleSectionID = sectionID
+                        showScalePicker = true
+                    } label: {
+                        Text(part.scale.rawValue).font(.caption2).lineLimit(1)
+                    }
+                    .buttonStyle(.bordered).controlSize(.small)
+
+                    Text("\(part.notePool.count) notes").font(.caption2).foregroundStyle(.secondary)
                 }
-                .pickerStyle(.menu).fixedSize()
-
-                Divider().frame(height: 16)
-
-                Text("Key").font(.caption2).foregroundStyle(.secondary)
-                Picker("", selection: keyBinding) {
-                    ForEach(0..<12, id: \.self) { Text(noteNames[$0]).tag($0) }
-                }
-                .pickerStyle(.menu).fixedSize()
-
-                Button { showScalePicker = true } label: {
-                    Text(part.scale.rawValue).font(.caption2).lineLimit(1)
-                }
-                .buttonStyle(.bordered).controlSize(.small)
-
-                Spacer()
-
-                Text("\(part.notePool.count) notes").font(.caption2).foregroundStyle(.secondary)
+                .fixedSize(horizontal: true, vertical: false)
             }
 
             if !part.steps.isEmpty {
@@ -968,9 +1104,12 @@ private struct SongTrackRowView: View {
                 }
             )
 
-            HStack(spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
                 Button {
+                    guard let sectionID = selectedSectionID else { return }
                     noteParametersBaseline = songStore.song
+                    noteParametersSectionID = sectionID
                     showNoteParams = true
                 } label: {
                     Label("Note Params", systemImage: "slider.vertical.3").font(.caption)
@@ -978,13 +1117,17 @@ private struct SongTrackRowView: View {
                 .buttonStyle(.bordered).disabled(part.notePool.isEmpty)
 
                 Button {
+                    guard let sectionID = selectedSectionID else { return }
                     stepsBaseline = songStore.song
+                    stepsSectionID = sectionID
                     showSteps = true
                 } label: {
                     Label(part.steps.isEmpty ? "Steps" : "Steps (\(part.steps.count))",
                           systemImage: "list.number").font(.caption)
                 }
                 .buttonStyle(.bordered)
+                }
+                .fixedSize(horizontal: true, vertical: false)
             }
         }
     }
@@ -1020,6 +1163,7 @@ private struct SongMiniSteps: View {
     let steps: [Step]
     var compact: Bool = true
     @EnvironmentObject var playback: PlaybackMonitor
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let activeStep = playback.activeSteps[trackID]
@@ -1034,7 +1178,7 @@ private struct SongMiniSteps: View {
                         .padding(.horizontal, 4).padding(.vertical, 2)
                         .background(isActive ? Color.accentColor : Color.secondary.opacity(0.15),
                                     in: RoundedRectangle(cornerRadius: 3))
-                        .animation(.easeInOut(duration: 0.08), value: isActive)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.08), value: isActive)
                 }
             }
             .padding(.horizontal, 2)
@@ -1062,6 +1206,7 @@ private struct SongBarCounter: View {
 struct SongTrackMeter: View {
     let trackID: UUID
     @EnvironmentObject var levels: LevelMonitor
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         let level = levels.trackLevels[trackID] ?? 0
@@ -1071,7 +1216,7 @@ struct SongTrackMeter: View {
                 RoundedRectangle(cornerRadius: 2)
                     .fill(level > 0.85 ? Color.red : level > 0.6 ? .orange : level > 0.3 ? .yellow : .green)
                     .frame(width: geo.size.width * CGFloat(min(1, level)))
-                    .animation(.easeOut(duration: 0.08), value: level)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: level)
             }
         }
         .frame(width: 40, height: 6)

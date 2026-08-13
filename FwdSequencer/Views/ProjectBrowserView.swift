@@ -96,7 +96,8 @@ struct ProjectBrowserView: View {
             TextField("Name", text: $renameText)
             Button("Save") {
                 if var s = songRenameTarget {
-                    s.name = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    s.name = String(renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+                        .prefix(SongValidator.maximumNameLength))
                     if !s.name.isEmpty,
                        case .failure(let error) = SongStorage.saveResult(s) {
                         notice = error.localizedDescription
@@ -223,34 +224,36 @@ struct ProjectBrowserView: View {
                 if !failedFiles.isEmpty {
                     Section("Needs Attention") {
                         ForEach(failedFiles) { failure in
-                            HStack {
+                            VStack(alignment: .leading, spacing: 8) {
                                 Label {
                                     VStack(alignment: .leading) {
-                                        Text("Unreadable song: \(failure.filename)")
-                                        Text(failure.message).font(.caption).foregroundStyle(.secondary)
+                                        Text("Unreadable song: \(failure.filename)").lineLimit(2)
+                                        Text(failure.message).font(.caption).foregroundStyle(.secondary).lineLimit(4)
                                     }
                                 } icon: {
                                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                                 }
-                                Spacer()
-                                if failure.canRestoreBackup {
-                                    Button("Restore Backup") { restoreBackup(failure) }
-                                        .buttonStyle(.borderedProminent)
-                                }
-                                Menu {
-                                    Button { exportOriginal(failure) } label: {
-                                        Label("Export Original", systemImage: "square.and.arrow.up")
+                                HStack {
+                                    Spacer(minLength: 0)
+                                    if failure.canRestoreBackup {
+                                        Button("Restore Backup") { restoreBackup(failure) }
+                                            .buttonStyle(.borderedProminent)
                                     }
-                                    Button(role: .destructive) {
-                                        failedRemovalTarget = failure
+                                    Menu {
+                                        Button { exportOriginal(failure) } label: {
+                                            Label("Export Original", systemImage: "square.and.arrow.up")
+                                        }
+                                        Button(role: .destructive) {
+                                            failedRemovalTarget = failure
+                                        } label: {
+                                            Label("Remove from Library", systemImage: "archivebox")
+                                        }
                                     } label: {
-                                        Label("Remove from Library", systemImage: "archivebox")
+                                        Image(systemName: "ellipsis.circle")
+                                            .frame(width: 44, height: 44)
                                     }
-                                } label: {
-                                    Image(systemName: "ellipsis.circle")
-                                        .frame(width: 44, height: 44)
+                                    .accessibilityLabel("Actions for unreadable song \(failure.filename)")
                                 }
-                                .accessibilityLabel("Actions for unreadable song \(failure.filename)")
                             }
                         }
                     }
@@ -293,16 +296,19 @@ struct ProjectBrowserView: View {
                 if !trashedSongs.isEmpty {
                     Section("Recently Deleted") {
                         ForEach(trashedSongs) { item in
-                            HStack(spacing: 8) {
-                                Label(item.song.name, systemImage: "trash")
-                                Spacer()
-                                Button("Restore") { restore(item) }
+                            VStack(alignment: .leading, spacing: 8) {
+                                Label(item.song.name, systemImage: "trash").lineLimit(2)
+                                HStack {
+                                    Spacer(minLength: 0)
+                                    Button("Restore") { restore(item) }
+                                        .buttonStyle(.bordered)
+                                    Button(role: .destructive) { trashPurgeTarget = item } label: {
+                                        Image(systemName: "trash")
+                                    }
                                     .buttonStyle(.bordered)
-                                Button(role: .destructive) { trashPurgeTarget = item } label: {
-                                    Image(systemName: "trash")
+                                    .tint(.red)
+                                    .accessibilityLabel("Delete \(item.song.name) permanently")
                                 }
-                                .buttonStyle(.bordered)
-                                .tint(.red)
                             }
                             .contextMenu {
                                 Button("Restore") { restore(item) }
@@ -436,12 +442,15 @@ struct ProjectRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(project.name)
                     .font(.headline)
-                HStack(spacing: 12) {
-                    Label("\(project.tracks.count) track\(project.tracks.count == 1 ? "" : "s")",
-                          systemImage: "slider.horizontal.3")
-                    Label("\(Int(project.tempo)) BPM", systemImage: "metronome")
-                    Label("\(project.timeSignature.numerator)/\(project.timeSignature.denominator)",
-                          systemImage: "music.note")
+                    .lineLimit(2)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        projectMetadata
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    VStack(alignment: .leading, spacing: 3) {
+                        projectMetadata
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -454,6 +463,15 @@ struct ProjectRow: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var projectMetadata: some View {
+        Label("\(project.tracks.count) track\(project.tracks.count == 1 ? "" : "s")",
+              systemImage: "slider.horizontal.3")
+        Label("\(Int(project.tempo)) BPM", systemImage: "metronome")
+        Label("\(project.timeSignature.numerator)/\(project.timeSignature.denominator)",
+              systemImage: "music.note")
     }
 }
 
@@ -472,12 +490,15 @@ struct SongRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(song.name)
                     .font(.headline)
-                HStack(spacing: 12) {
-                    Label("\(song.tracks.count) track\(song.tracks.count == 1 ? "" : "s")",
-                          systemImage: "slider.horizontal.3")
-                    Label("\(song.sections.count) section\(song.sections.count == 1 ? "" : "s")",
-                          systemImage: "square.stack")
-                    Label("\(Int(song.tempo)) BPM", systemImage: "metronome")
+                    .lineLimit(2)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        songMetadata
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    VStack(alignment: .leading, spacing: 3) {
+                        songMetadata
+                    }
                 }
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -490,5 +511,14 @@ struct SongRow: View {
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 4)
+    }
+
+    @ViewBuilder
+    private var songMetadata: some View {
+        Label("\(song.tracks.count) track\(song.tracks.count == 1 ? "" : "s")",
+              systemImage: "slider.horizontal.3")
+        Label("\(song.sections.count) section\(song.sections.count == 1 ? "" : "s")",
+              systemImage: "square.stack")
+        Label("\(Int(song.tempo)) BPM", systemImage: "metronome")
     }
 }

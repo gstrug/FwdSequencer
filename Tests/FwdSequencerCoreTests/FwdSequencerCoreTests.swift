@@ -13,11 +13,18 @@ final class FwdSequencerCoreTests: XCTestCase {
     private final class RecordingAudioOutput: SequencerAudioOutput {
         private let lock = NSLock()
         private var _playedNotes = 0
+        private var _stoppedNotes = 0
         var onFirstNote: (() -> Void)?
+        var onSecondStop: (() -> Void)?
 
         var playedNotes: Int {
             lock.lock(); defer { lock.unlock() }
             return _playedNotes
+        }
+
+        var stoppedNotes: Int {
+            lock.lock(); defer { lock.unlock() }
+            return _stoppedNotes
         }
 
         func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8) {
@@ -29,7 +36,14 @@ final class FwdSequencerCoreTests: XCTestCase {
             callback?()
         }
 
-        func stopNote(trackID: UUID, midiNote: UInt8) {}
+        func stopNote(trackID: UUID, midiNote: UInt8) {
+            let callback: (() -> Void)?
+            lock.lock()
+            _stoppedNotes += 1
+            callback = _stoppedNotes == 2 ? onSecondStop : nil
+            lock.unlock()
+            callback?()
+        }
         func allNotesOff() {}
     }
 
@@ -256,6 +270,22 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertThrowsError(try SongValidator.validateAndNormalize(song))
     }
 
+    func testValidatorRejectsOversizedTrackAndPluginLabels() {
+        var song = SongTemplate.bassPulse.makeSong()
+        song.tracks[0].name = String(repeating: "T", count: SongValidator.maximumNameLength + 1)
+        XCTAssertThrowsError(try SongValidator.validateAndNormalize(song))
+
+        song.tracks[0].name = "Track"
+        song.tracks[0].pluginInfo = PluginInfo(
+            name: String(repeating: "P", count: SongValidator.maximumPluginLabelLength + 1),
+            manufacturerName: "Maker",
+            componentType: 1,
+            componentSubType: 2,
+            componentManufacturer: 3
+        )
+        XCTAssertThrowsError(try SongValidator.validateAndNormalize(song))
+    }
+
     func testSectionVariationsRoundTrip() throws {
         var song = SongTemplate.ambientCanon.makeSong()
         song.sections[0].variations = [
@@ -318,6 +348,25 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(noteOffs.map(\.tick), [2_400])
     }
 
+    func testMIDIExportSplitsVeryLongEmptyTrackDeltas() throws {
+        let track = SongTrack(name: "Silent")
+        let part = Part(trackID: track.id)
+        let sections = (0..<18).map {
+            SongSection(name: "Long \($0)", numberOfBars: 256, parts: [part])
+        }
+        let song = Song(
+            name: "Long Export",
+            tempo: 120,
+            timeSignature: TimeSignature(numerator: 32, denominator: 1),
+            tracks: [track],
+            sections: sections,
+            randomSeed: 1
+        )
+
+        let events = try channelEvents(in: SongMIDIExporter.data(for: song), track: 1)
+        XCTAssertTrue(events.isEmpty)
+    }
+
     func testPauseCancelsAlreadyScheduledRatchets() {
         let output = RecordingAudioOutput()
         let firstNote = expectation(description: "Initial note played")
@@ -352,6 +401,39 @@ final class FwdSequencerCoreTests: XCTestCase {
         // initial note. It must not fire once the pause barrier has completed.
         Thread.sleep(forTimeInterval: 0.45)
         XCTAssertEqual(output.playedNotes, countAtPause)
+        engine.stop()
+    }
+
+    func testNextStepStopsAnOverlappingRatchet() {
+        let output = RecordingAudioOutput()
+        let bothNotesStopped = expectation(description: "Initial note and ratchet stopped")
+        output.onSecondStop = { bothNotesStopped.fulfill() }
+
+        let trackID = UUID()
+        let track = PlayTrack(
+            id: trackID,
+            tempoDivision: .quarter,
+            notePool: [NoteEntry(midiNote: 60)],
+            steps: [
+                Step(type: .play, gate: 1.8, ratchets: 2),
+                Step(type: .pause)
+            ],
+            isMuted: false,
+            isSoloed: false
+        )
+        let engine = SequencerEngine()
+        engine.audioEngine = output
+        engine.startSong(
+            sections: [SequencerSection(id: UUID(), numberOfBars: 1, tracks: [track])],
+            tempo: 240,
+            timeSignature: TimeSignature(),
+            trackIDs: [trackID],
+            loop: true
+        )
+
+        wait(for: [bothNotesStopped], timeout: 1)
+        XCTAssertEqual(output.playedNotes, 2)
+        XCTAssertEqual(output.stoppedNotes, 2)
         engine.stop()
     }
 
@@ -399,5 +481,31 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: unreadableURL.path))
         let quarantine = root.appendingPathComponent("Quarantine", isDirectory: true)
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: quarantine.path).count, 2)
+    }
+
+    func testSavingOverCorruptPrimaryPreservesLastKnownGoodBackup() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)
+        SongStorage.directoryOverrideForTesting = root
+        defer {
+            SongStorage.directoryOverrideForTesting = nil
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        var song = SongTemplate.bassPulse.makeSong()
+        song.name = "First"
+        guard case .success = SongStorage.saveResult(song) else { return XCTFail("Initial save failed") }
+        song.name = "Last Known Good"
+        guard case .success = SongStorage.saveResult(song) else { return XCTFail("Backup save failed") }
+
+        try Data("corrupt-primary".utf8).write(to: SongStorage.url(for: song.id), options: .atomic)
+        song.name = "Replacement"
+        guard case .success = SongStorage.saveResult(song) else { return XCTFail("Replacement save failed") }
+
+        try Data("corrupt-again".utf8).write(to: SongStorage.url(for: song.id), options: .atomic)
+        let snapshot = try SongStorage.loadLibrary().get()
+        let failure = try XCTUnwrap(snapshot.failedFiles.first)
+        let restored = try SongStorage.restoreBackup(failure).get()
+        XCTAssertEqual(restored.name, "First")
     }
 }

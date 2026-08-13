@@ -75,6 +75,7 @@ struct MasterVUMeter: View {
 
 struct VUMeter: View {
     let level: Float
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geo in
@@ -89,7 +90,7 @@ struct VUMeter: View {
                         endPoint: .top
                     ))
                     .frame(height: geo.size.height * CGFloat(max(0, min(1, level))))
-                    .animation(.linear(duration: 0.05), value: level)
+                    .animation(reduceMotion ? nil : .linear(duration: 0.05), value: level)
             }
         }
     }

@@ -204,7 +204,7 @@ nonisolated struct Step: Codable, Identifiable, Equatable {
     /// Play step only: 1-indexed pool positions played simultaneously (a chord).
     /// Empty = single-note behaviour driven by `n`.
     var chordPositions: [Int] = []
-    /// Per-step articulation, 0.05–1.0. Scales how long this step's note(s) sustain
+    /// Per-step articulation, 0.01–8.0. Scales how long this step's note(s) sustain
     /// (multiplies each note's own gate). 1.0 = full note gates (default).
     var gate: Double = 1.0
     /// Deterministic chance that this step sounds. Traversal still advances when a

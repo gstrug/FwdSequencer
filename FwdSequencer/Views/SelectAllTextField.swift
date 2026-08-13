@@ -8,6 +8,7 @@ struct SelectAllTextField: UIViewRepresentable {
     @Binding var text: String
     var placeholder: String = ""
     var font: UIFont = .preferredFont(forTextStyle: .subheadline)
+    var maximumLength: Int = SongValidator.maximumNameLength
     /// Flip to true to focus the field and select all its text; it resets itself.
     @Binding var selectAllTrigger: Bool
 
@@ -59,7 +60,18 @@ struct SelectAllTextField: UIViewRepresentable {
         var parent: SelectAllTextField
         init(_ parent: SelectAllTextField) { self.parent = parent }
 
-        @objc func editingChanged(_ tf: UITextField) { parent.text = tf.text ?? "" }
+        @objc func editingChanged(_ tf: UITextField) {
+            let value = String((tf.text ?? "").prefix(parent.maximumLength))
+            if tf.text != value { tf.text = value }
+            parent.text = value
+        }
+
+        func textField(_ textField: UITextField, shouldChangeCharactersIn range: NSRange,
+                       replacementString string: String) -> Bool {
+            guard let current = textField.text,
+                  let swiftRange = Range(range, in: current) else { return true }
+            return current.replacingCharacters(in: swiftRange, with: string).count <= parent.maximumLength
+        }
 
         func textFieldShouldReturn(_ tf: UITextField) -> Bool {
             tf.resignFirstResponder()

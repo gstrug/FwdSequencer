@@ -7,6 +7,7 @@ nonisolated enum SongMIDIExporter {
     static let ticksPerQuarter = 480
     private static let baseTick = ticksPerQuarter / 8 // live engine's 32nd-note clock
     private static let maximumNoteEvents = 1_000_000
+    private static let maximumVariableLength = 0x0FFF_FFFF
 
     enum ExportError: LocalizedError {
         case tooLarge
@@ -364,7 +365,12 @@ nonisolated enum SongMIDIExporter {
     }
 
     private static func metaText(_ type: UInt8, _ text: String) -> [UInt8] {
-        let bytes = Array(text.utf8.prefix(255))
+        var bytes: [UInt8] = []
+        for scalar in text.unicodeScalars {
+            let encoded = Array(String(scalar).utf8)
+            guard bytes.count + encoded.count <= 255 else { break }
+            bytes.append(contentsOf: encoded)
+        }
         return [0xFF, type] + variableLength(bytes.count) + bytes
     }
 
@@ -377,17 +383,30 @@ nonisolated enum SongMIDIExporter {
         var body = Data()
         var previousTick = 0
         for event in sorted {
-            body.append(contentsOf: variableLength(max(0, event.tick - previousTick)))
+            appendDelta(max(0, event.tick - previousTick), to: &body)
             body.append(contentsOf: event.bytes)
             previousTick = event.tick
         }
-        body.append(contentsOf: variableLength(max(0, endTick - previousTick)))
+        appendDelta(max(0, endTick - previousTick), to: &body)
         body.append(contentsOf: [0xFF, 0x2F, 0x00])
 
         var chunk = Data([0x4D, 0x54, 0x72, 0x6B]) // MTrk
         appendUInt32(UInt32(body.count), to: &chunk)
         chunk.append(body)
         return chunk
+    }
+
+    /// An SMF variable-length quantity is limited to four bytes. Long imported
+    /// arrangements can leave an otherwise-empty track with a larger final rest;
+    /// split it with harmless zero-length sequencer-specific meta events.
+    private static func appendDelta(_ input: Int, to data: inout Data) {
+        var remaining = max(0, input)
+        while remaining > maximumVariableLength {
+            data.append(contentsOf: variableLength(maximumVariableLength))
+            data.append(contentsOf: [0xFF, 0x7F, 0x00])
+            remaining -= maximumVariableLength
+        }
+        data.append(contentsOf: variableLength(remaining))
     }
 
     private static func variableLength(_ input: Int) -> [UInt8] {

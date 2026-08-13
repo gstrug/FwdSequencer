@@ -128,63 +128,83 @@ struct StepRow: View {
     }
 
     private var stepperRange: ClosedRange<Int> {
-        switch step.type {
-        case .rep:  return 1...32
-        case .play: return 1...128
-        default:    return 1...16
+        1...4_096
+    }
+
+    private var positionLabel: some View {
+        Text("\(index + 1)")
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .frame(width: 22, alignment: .trailing)
+    }
+
+    private var typeButton: some View {
+        Button { showTypePicker = true } label: {
+            HStack(spacing: 4) {
+                Text(step.type.rawValue).font(.body)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
+            .foregroundStyle(.primary)
         }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $showTypePicker) {
+            StepTypePickerSheet(selectedType: $step.type)
+        }
+        .accessibilityLabel("Step \(index + 1) type, \(step.type.rawValue)")
+    }
+
+    @ViewBuilder
+    private var valueEditor: some View {
+        if step.type == .play {
+            TextField("1,3,5", text: $chordText)
+                .textFieldStyle(.roundedBorder)
+                .keyboardType(.numbersAndPunctuation)
+                .frame(minWidth: 100, maxWidth: 180)
+                .onChange(of: chordText) { newValue in
+                    let parsed = parseChord(newValue)
+                    step.chordPositions = parsed.count > 1 ? parsed : []
+                    step.n = parsed.first ?? step.n
+                }
+                .accessibilityLabel("Pool note positions")
+        } else if let label = stepperLabel {
+            Stepper(label, value: $step.n, in: stepperRange)
+                .frame(minWidth: 120, maxWidth: 190)
+        }
+    }
+
+    private var deleteButton: some View {
+        Button(role: .destructive, action: onDelete) {
+            Image(systemName: "minus.circle.fill")
+                .foregroundColor(.red)
+                .frame(minWidth: 44, minHeight: 44)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Delete step \(index + 1)")
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 12) {
-                Text("\(index + 1)")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 22, alignment: .trailing)
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 12) {
+                    positionLabel
+                    typeButton
+                    valueEditor
+                    deleteButton
+                }
+                .fixedSize(horizontal: true, vertical: false)
 
-                Button {
-                    showTypePicker = true
-                } label: {
-                    HStack(spacing: 4) {
-                        Text(step.type.rawValue)
-                            .font(.body)
-                        Image(systemName: "chevron.up.chevron.down")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 8) {
+                        positionLabel
+                        typeButton
+                        Spacer(minLength: 4)
+                        deleteButton
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 7))
-                    .foregroundStyle(.primary)
+                    valueEditor
                 }
-                .buttonStyle(.plain)
-                .sheet(isPresented: $showTypePicker) {
-                    StepTypePickerSheet(selectedType: $step.type)
-                }
-
-                if step.type == .play {
-                    TextField("1,3,5", text: $chordText)
-                        .textFieldStyle(.roundedBorder)
-                        .keyboardType(.numbersAndPunctuation)
-                        .frame(maxWidth: 150)
-                        .onChange(of: chordText) { newVal in
-                            let parsed = parseChord(newVal)
-                            step.chordPositions = parsed.count > 1 ? parsed : []
-                            step.n = parsed.first ?? step.n
-                        }
-                } else if let label = stepperLabel {
-                    Stepper(label, value: $step.n, in: stepperRange)
-                        .frame(maxWidth: 150)
-                }
-
-                Spacer()
-
-                Button(role: .destructive, action: onDelete) {
-                    Image(systemName: "minus.circle.fill")
-                        .foregroundColor(.red)
-                }
-                .buttonStyle(.plain)
             }
 
             Text(currentDescription)
@@ -198,7 +218,7 @@ struct StepRow: View {
                 VStack(spacing: 5) {
                     HStack(spacing: 8) {
                         Text("Gate").font(.caption2).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
-                        Slider(value: $step.gate, in: 0.05...1.0)
+                        Slider(value: $step.gate, in: 0.01...8.0)
                         Text("\(Int(step.gate * 100))%")
                             .font(.caption2).monospacedDigit().frame(width: 38)
                     }

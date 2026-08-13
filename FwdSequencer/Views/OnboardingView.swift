@@ -2,6 +2,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var completed: Bool
     @State private var page = 0
 
@@ -45,6 +46,7 @@ struct OnboardingView: View {
                 Spacer()
                 Button(page == pages.count - 1 ? "Choose a Template" : "Next") {
                     if page == pages.count - 1 { finish() }
+                    else if reduceMotion { page += 1 }
                     else { withAnimation { page += 1 } }
                 }
                 .buttonStyle(.borderedProminent)

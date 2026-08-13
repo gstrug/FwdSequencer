@@ -54,33 +54,62 @@ struct PlayDockView: View {
 
     // Instrument picker + Edit Sound + volume + close.
     private var header: some View {
+        ViewThatFits(in: .horizontal) {
+            wideHeader.fixedSize(horizontal: true, vertical: false)
+            compactHeader
+        }
+    }
+
+    private var wideHeader: some View {
         HStack(spacing: 12) {
-            Button { showPluginPicker = true } label: {
-                Label(perf?.pluginInfo?.name ?? "Built-in GM Sound",
-                      systemImage: "pianokeys")
-                    .font(.subheadline.bold()).lineLimit(1)
-            }
-            .buttonStyle(.bordered)
-            .tint(perf?.pluginInfo == nil ? nil : .accentColor)
-
-            if perf?.pluginInfo != nil {
-                Button { showPluginEditor = true } label: {
-                    Label("Edit Sound", systemImage: "slider.horizontal.3").font(.caption)
-                }
-                .buttonStyle(.bordered).tint(.purple)
-            }
-
-            if perf != nil {
-                Divider().frame(height: 20)
-                Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
-                Slider(value: volumeBinding, in: 0...1)
-                    .frame(width: 120)
-                    .accessibilityLabel("Manual keyboard volume")
-                if let id = perf?.id { SongTrackMeter(trackID: id) }
-            }
-
-            Spacer()
+            instrumentButton
+            editSoundButton
+            volumeControls
             closeButton
+        }
+    }
+
+    private var compactHeader: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                instrumentButton
+                Spacer(minLength: 4)
+                closeButton
+            }
+            HStack(spacing: 8) {
+                editSoundButton
+                volumeControls
+            }
+        }
+    }
+
+    private var instrumentButton: some View {
+        Button { showPluginPicker = true } label: {
+            Label(perf?.pluginInfo?.name ?? "Built-in GM Sound", systemImage: "pianokeys")
+                .font(.subheadline.bold()).lineLimit(1)
+        }
+        .buttonStyle(.bordered)
+        .tint(perf?.pluginInfo == nil ? nil : .accentColor)
+    }
+
+    @ViewBuilder
+    private var editSoundButton: some View {
+        if perf?.pluginInfo != nil {
+            Button { showPluginEditor = true } label: {
+                Label("Edit Sound", systemImage: "slider.horizontal.3").font(.caption)
+            }
+            .buttonStyle(.bordered).tint(.purple)
+        }
+    }
+
+    @ViewBuilder
+    private var volumeControls: some View {
+        if perf != nil {
+            Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
+            Slider(value: volumeBinding, in: 0...1)
+                .frame(minWidth: 80, maxWidth: 160)
+                .accessibilityLabel("Manual keyboard volume")
+            if let id = perf?.id { SongTrackMeter(trackID: id) }
         }
     }
 
@@ -118,6 +147,7 @@ struct PlayDockView: View {
 private struct PlayableKeyboard: View {
     let onNoteOn: (UInt8) -> Void
     let onNoteOff: (UInt8) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let lowMidi = 36    // C2
     private static let highMidi = 84   // C6 (≈4 octaves; ~3 visible at a time)
@@ -179,7 +209,10 @@ private struct PlayableKeyboard: View {
                 .frame(height: keyH)
                 .clipped()
                 .onAppear { proxy.scrollTo(centerC, anchor: .center) }
-                .onChange(of: centerC) { c in withAnimation { proxy.scrollTo(c, anchor: .center) } }
+                .onChange(of: centerC) { c in
+                    if reduceMotion { proxy.scrollTo(c, anchor: .center) }
+                    else { withAnimation { proxy.scrollTo(c, anchor: .center) } }
+                }
             }
         }
     }

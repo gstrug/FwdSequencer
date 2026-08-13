@@ -79,7 +79,7 @@ struct NoteStrip: View {
             VStack(spacing: 4) {
                 Text(String(format: "%.0f%%", entry.gateLength * 100))
                     .font(.caption2).monospacedDigit()
-                Slider(value: $entry.gateLength, in: 0.05...1.0)
+                Slider(value: $entry.gateLength, in: 0.01...8.0)
                     .frame(width: 130)
                     .rotationEffect(.degrees(-90))
                     .frame(width: 36, height: 130)

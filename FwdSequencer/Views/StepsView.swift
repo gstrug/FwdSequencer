@@ -7,6 +7,7 @@ struct StepsView: View {
     // Set when a step is appended; the List's onChange scrolls to it once the row
     // actually exists (scrolling in the same runloop as append is unreliable).
     @State private var scrollTarget: UUID?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationStack {
@@ -20,9 +21,14 @@ struct StepsView: View {
                         Spacer()
                     } else {
                         List {
-                            ForEach(Array(steps.enumerated()), id: \.element.id) { idx, _ in
-                                StepRow(step: $steps[idx], index: idx, noteCount: noteCount) {
-                                    steps.remove(at: idx)
+                            ForEach($steps) { $step in
+                                let stepID = step.id
+                                StepRow(
+                                    step: $step,
+                                    index: steps.firstIndex(where: { $0.id == stepID }) ?? 0,
+                                    noteCount: noteCount
+                                ) {
+                                    steps.removeAll { $0.id == stepID }
                                 }
                             }
                             .onMove { from, to in steps.move(fromOffsets: from, toOffset: to) }
@@ -32,7 +38,11 @@ struct StepsView: View {
                         .onChange(of: steps.count) { _ in
                             guard let target = scrollTarget else { return }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                                withAnimation { proxy.scrollTo(target, anchor: .bottom) }
+                                if reduceMotion {
+                                    proxy.scrollTo(target, anchor: .bottom)
+                                } else {
+                                    withAnimation { proxy.scrollTo(target, anchor: .bottom) }
+                                }
                                 scrollTarget = nil
                             }
                         }

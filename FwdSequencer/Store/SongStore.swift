@@ -332,16 +332,19 @@ class SongStore: ObservableObject {
     /// on every debounced save pokes every plugin's state machinery ~1×/sec, which can
     /// destabilise a fragile AUv3 the user is actively editing. Live state is captured
     /// separately, only at safe moments (see captureAllPluginStates).
-    func saveNow() {
+    @discardableResult
+    func saveNow() -> Bool {
         // Don't persist the empty default song that exists before any song is opened.
-        guard hasActiveSong else { return }
+        guard hasActiveSong else { return true }
         // Snapshot copy — never mutate self.song here or didSet → scheduleSave would loop.
         let snapshot = song
         switch SongStorage.saveResult(snapshot) {
         case .success:
             DispatchQueue.main.async { self.savedSignal.send() }
+            return true
         case .failure(let error):
             notice = error.localizedDescription
+            return false
         }
     }
 
@@ -472,12 +475,11 @@ class SongStore: ObservableObject {
     /// Release this song's instruments (call when leaving the song view). Captures live
     /// plugin state and persists BEFORE tearing the instruments down (they must still be
     /// loaded to read their state), so the sounds you were editing are saved.
-    func close(completion: (() -> Void)? = nil) {
-        if isRecording {
-            audioEngine.stopRecording()
-            if let recordingURL { try? FileManager.default.removeItem(at: recordingURL) }
-            recordingURL = nil
-            isRecording = false
+    func close(completion: ((Bool) -> Void)? = nil) {
+        guard !isRecording else {
+            notice = "Stop and export the current recording before leaving this song."
+            completion?(false)
+            return
         }
         if midiClockEnabled { audioEngine.stopMIDIClock() }
         isPlaying = false
@@ -490,9 +492,15 @@ class SongStore: ObservableObject {
         // Do not capture AU state until the queue has cancelled its timer, ratchets,
         // and note releases. The completion returns to main for model/UI work.
         sequencer.stop { [weak self] in
-            guard let self else { completion?(); return }
+            guard let self else { completion?(false); return }
             captureAllPluginStates()
-            saveNow()
+            // Keep the document and its instruments alive when the final save fails.
+            // SongView remains visible, so `notice` can explain the failure and the
+            // user can retry instead of silently losing the latest edits.
+            guard saveNow() else {
+                completion?(false)
+                return
+            }
             pendingPluginLoads.cancelAll()
             pluginStatuses.removeAll()
             isLoading = false
@@ -500,7 +508,7 @@ class SongStore: ObservableObject {
             if let performance = song.performance { audioEngine.removeTrack(id: performance.id) }
             // No song is open anymore — a later background save must not re-persist this.
             hasActiveSong = false
-            completion?()
+            completion?(true)
         }
     }
 

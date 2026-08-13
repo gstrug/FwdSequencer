@@ -359,11 +359,6 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         var stepsPerBar = max(1, frame.timeSignature.numerator * 32 / frame.timeSignature.denominator)
         var totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
 
-        // Fire bar-change callback at the start of each new bar
-        if globalStep % stepsPerBar == 0 {
-            onBarChange?(globalStep / stepsPerBar)
-        }
-
         // Loop point: end of the current pattern/section.
         if globalStep >= totalSteps {
             // A Hold/Pause still dwelling at the boundary carries into the next
@@ -420,7 +415,12 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                     totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
                 }
             }
-            onBarChange?(0)
+        }
+
+        // Fire after resolving a section boundary so the UI never briefly receives
+        // an out-of-range value such as "bar 5 of 4" from the previous section.
+        if globalStep % stepsPerBar == 0 {
+            onBarChange?(globalStep / stepsPerBar)
         }
 
         // Beat indicator — fires every beat; true = downbeat (beat 1 of bar)
@@ -543,7 +543,13 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
             audioEngine?.stopNote(trackID: trackID, midiNote: midiNote)
-            states[trackID]?.lastMidiNotes.removeAll { $0 == noteInt }
+            // Repeated ratchets of the same pitch overlap. Remove only the note-on
+            // paired with this release; removing every occurrence loses ownership of
+            // a later ratchet and can leave it sounding when the next step cancels
+            // its queued note-off.
+            if let index = states[trackID]?.lastMidiNotes.firstIndex(of: noteInt) {
+                states[trackID]?.lastMidiNotes.remove(at: index)
+            }
             pendingNoteOffs[trackID]?.removeValue(forKey: offID)
             if pendingNoteOffs[trackID]?.isEmpty == true { pendingNoteOffs.removeValue(forKey: trackID) }
         }
@@ -565,6 +571,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                 pendingNoteOffs.removeValue(forKey: trackID)
             }
             audioEngine?.playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
+            states[trackID]?.lastMidiNotes.append(Int(midiNote))
             scheduleNoteOff(trackID: trackID, midiNote: midiNote, delay: gateDuration)
         }
         pendingNoteOffs[trackID, default: [:]][eventID] = item
