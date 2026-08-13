@@ -171,6 +171,48 @@ final class FwdSequencerCoreTests: XCTestCase {
         }
     }
 
+    func testMidnightCurrentIsACompleteDeterministicShowcase() throws {
+        let song = SongTemplate.midnightCurrent.makeSong()
+        let validated = try SongValidator.validateAndNormalize(song)
+        let steps = song.sections.flatMap { $0.parts }.flatMap { $0.steps }
+        let operations = Set(steps.map { $0.type.rawValue })
+
+        XCTAssertEqual(song.name, "Midnight Current — Demo")
+        XCTAssertEqual(song.tempo, 104)
+        XCTAssertEqual(song.tracks.count, 3)
+        XCTAssertEqual(song.sections.map(\.name),
+                       ["Nightfall", "Open Water", "Still Point", "Home Lights"])
+        XCTAssertEqual(song.sections.reduce(0) { $0 + $1.numberOfBars }, 24)
+        XCTAssertEqual(operations, Set(StepType.allCases.map(\.rawValue)))
+        XCTAssertTrue(steps.contains { $0.isChord })
+        XCTAssertTrue(steps.contains { $0.probability < 1 })
+        XCTAssertTrue(steps.contains { $0.ratchets > 1 })
+        XCTAssertNotNil(song.performance)
+        XCTAssertEqual(validated, song)
+        XCTAssertGreaterThan(try SongMIDIExporter.data(for: song).count, 1_000)
+
+        // Creating another copy for the New Song menu must never identify as the
+        // preinstalled document or overwrite a user's edited demo.
+        XCTAssertNotEqual(song.id, SongTemplate.midnightCurrent.makeSong().id)
+    }
+
+    func testMidnightCurrentRoundTripsThroughSongLibrary() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FwdSequencer-MidnightCurrent-\(UUID().uuidString)", isDirectory: true)
+        SongStorage.directoryOverrideForTesting = root
+        defer {
+            SongStorage.directoryOverrideForTesting = nil
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let song = SongTemplate.midnightCurrent.makeSong()
+        try SongStorage.saveResult(song).get()
+
+        let snapshot = try SongStorage.loadLibrary().get()
+        XCTAssertEqual(snapshot.songs, [song])
+        XCTAssertTrue(snapshot.failedFiles.isEmpty)
+    }
+
     func testValidatorRejectsZeroTimeSignatureDenominator() {
         var song = SongTemplate.ambientCanon.makeSong()
         song.timeSignature.denominator = 0

@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct ProjectBrowserView: View {
     @EnvironmentObject var songStore: SongStore
     @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding = false
+    @AppStorage("didInstallMidnightCurrentDemoV1") private var didInstallMidnightCurrentDemo = false
     @State private var songs: [Song] = []
     @State private var showingSong = false
     @State private var songDeleteTarget: Song? = nil
@@ -58,6 +59,7 @@ struct ProjectBrowserView: View {
         }
         .onAppear {
             reload()
+            installBundledDemoIfNeeded()
             if !didCompleteOnboarding { showingOnboarding = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
@@ -209,8 +211,8 @@ struct ProjectBrowserView: View {
             VStack(spacing: 18) {
                 emptyState(icon: "music.note.list", title: "Make something move",
                            subtitle: "Start from a playable example, then change its notes and steps.")
-                Button { createSongAndOpen(.ambientCanon) } label: {
-                    Label("Play Ambient Canon", systemImage: "play.fill")
+                Button { createSongAndOpen(.midnightCurrent) } label: {
+                    Label("Play Midnight Current", systemImage: "play.fill")
                 }
                 .buttonStyle(.borderedProminent)
                 Button { createSongAndOpen(.starter) } label: {
@@ -345,6 +347,21 @@ struct ProjectBrowserView: View {
             notice = error.localizedDescription
         }
         trashedSongs = SongStorage.trashedSongs()
+    }
+
+    /// Install the bundled example exactly once through the same validated,
+    /// atomic save path as a user-created song. A fresh UUID keeps it separate
+    /// from every existing document; after installation it is an ordinary song
+    /// that can be edited, duplicated, exported, or deleted without returning.
+    private func installBundledDemoIfNeeded() {
+        guard !didInstallMidnightCurrentDemo else { return }
+        switch SongStorage.saveResult(SongTemplate.midnightCurrent.makeSong()) {
+        case .success:
+            didInstallMidnightCurrentDemo = true
+            reload()
+        case .failure(let error):
+            notice = "The example song could not be installed. \(error.localizedDescription)"
+        }
     }
 
     private func openSong(_ song: Song) {
