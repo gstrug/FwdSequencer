@@ -1,5 +1,5 @@
 import Foundation
-import AVFoundation
+@preconcurrency import AVFoundation
 import AudioToolbox
 import CoreMIDI
 
@@ -42,7 +42,9 @@ nonisolated enum AudioRecordingError: LocalizedError {
     }
 }
 
-nonisolated class AudioEngineManager: SequencerAudioOutput {
+/// Audio graph access is protected by `auLock`; MIDI-clock state is confined to
+/// `midiClockQueue`; recording writes are protected by `recordingLock`.
+nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sendable {
     // One shared audio engine / session for the whole app. Pattern playback and
     // song playback both route through it (only one document plays at a time).
     static let shared = AudioEngineManager()
