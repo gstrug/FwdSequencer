@@ -10,7 +10,9 @@ and Rest—then arranges independent parts into song sections.
 - Paid standalone app; no accounts, analytics, advertising, or backend
 - Built-in GM fallback sound and hosted AUv3 music-device instruments
 - Local `.fwdsong` documents with import, export, backup, and Recently Deleted
-- Background audio, deterministic Random steps, and local-only preferences
+- Background audio, deterministic Random/chance steps, ratchets, and section variations
+- Type-1 MIDI export, real-time master recording, and optional CoreMIDI clock output
+- Searchable AUv3 instruments with local favorites and explicit GM replacement fallback
 
 The v1 goal is a focused composition instrument, not a full DAW. Effects chains,
 cloud collaboration, and broad automation should be driven by validated user need.
@@ -50,7 +52,8 @@ Pull requests and pushes to `main` run both gates in GitHub Actions.
 
 - `Models/`: backward-compatible song, section, track, note, and step documents
 - `Engine/SequencerEngine.swift`: queue-owned real-time scheduling and step traversal
-- `Engine/AudioEngineManager.swift`: audio session, limiter, AUv3 graph, MIDI, and recovery
+- `Engine/AudioEngineManager.swift`: audio session, AUv3 graph, recording, MIDI, and recovery
+- `Engine/SongMIDIExporter.swift`: deterministic Standard MIDI File rendering
 - `Store/SongStore.swift`: interaction, playback coordination, undo, and save lifecycle
 - `Store/SongPersistence.swift`: atomic files, backups, import/export, and recovery
 - `Views/`: SwiftUI browser, onboarding, transport, arrangement, editor, and mixer
@@ -67,5 +70,7 @@ Before release, test at least:
 - Background/foreground while playing and while stopped
 - Media Services Reset from iOS Developer settings
 - Save/reopen, failed plugin fallback, and state restoration
+- Master recording export and MIDI file import in another music app
+- MIDI clock Start/Continue/Stop and tempo following in a second app
 
 See `RELEASE_CHECKLIST.md` for the complete shipping gate.

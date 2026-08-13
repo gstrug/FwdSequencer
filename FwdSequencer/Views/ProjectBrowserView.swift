@@ -17,6 +17,9 @@ struct ProjectBrowserView: View {
     @State private var exportingSong = false
     @State private var exportDocument: SongDocument? = nil
     @State private var exportFilename = "FWD Song"
+    @State private var exportingMIDI = false
+    @State private var midiDocument: MIDIFileDocument? = nil
+    @State private var midiFilename = "FWD Song"
     @State private var showingOnboarding = false
 
     var body: some View {
@@ -129,6 +132,13 @@ struct ProjectBrowserView: View {
             if case .failure(let error) = result { notice = error.localizedDescription }
             exportDocument = nil
         }
+        .fileExporter(isPresented: $exportingMIDI,
+                      document: midiDocument,
+                      contentType: .standardMIDI,
+                      defaultFilename: midiFilename) { result in
+            if case .failure(let error) = result { notice = error.localizedDescription }
+            midiDocument = nil
+        }
         .sheet(isPresented: $showingOnboarding) {
             OnboardingView(completed: $didCompleteOnboarding)
         }
@@ -149,6 +159,16 @@ struct ProjectBrowserView: View {
         exportDocument = SongDocument(song: song)
         exportFilename = sanitizedFilename(song.name)
         exportingSong = true
+    }
+
+    private func exportMIDI(_ song: Song) {
+        do {
+            midiDocument = MIDIFileDocument(data: try SongMIDIExporter.data(for: song))
+            midiFilename = sanitizedFilename(song.name)
+            exportingMIDI = true
+        } catch {
+            notice = "MIDI export failed. \(error.localizedDescription)"
+        }
     }
 
     private func beginRename(_ song: Song) {
@@ -179,13 +199,20 @@ struct ProjectBrowserView: View {
                 if !failedFiles.isEmpty {
                     Section("Needs Attention") {
                         ForEach(failedFiles) { failure in
-                            Label {
-                                VStack(alignment: .leading) {
-                                    Text("Unreadable song: \(failure.filename)")
-                                    Text(failure.message).font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Label {
+                                    VStack(alignment: .leading) {
+                                        Text("Unreadable song: \(failure.filename)")
+                                        Text(failure.message).font(.caption).foregroundStyle(.secondary)
+                                    }
+                                } icon: {
+                                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
                                 }
-                            } icon: {
-                                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                                Spacer()
+                                if failure.canRestoreBackup {
+                                    Button("Restore Backup") { restoreBackup(failure) }
+                                        .buttonStyle(.borderedProminent)
+                                }
                             }
                         }
                     }
@@ -212,7 +239,12 @@ struct ProjectBrowserView: View {
                             Button { openSong(song) } label: { Label("Open", systemImage: "play.fill") }
                             Button { beginRename(song) } label: { Label("Rename", systemImage: "pencil") }
                             Button { duplicateSong(song) } label: { Label("Duplicate", systemImage: "doc.on.doc") }
-                            Button { exportSong(song) } label: { Label("Export", systemImage: "square.and.arrow.up") }
+                            Button { exportSong(song) } label: {
+                                Label("Export FWD Project", systemImage: "square.and.arrow.up")
+                            }
+                            Button { exportMIDI(song) } label: {
+                                Label("Export MIDI", systemImage: "music.note.list")
+                            }
                             Divider()
                             Button(role: .destructive) { songDeleteTarget = song } label: {
                                 Label("Delete", systemImage: "trash")
@@ -288,7 +320,7 @@ struct ProjectBrowserView: View {
             let url = try result.get()
             let accessed = url.startAccessingSecurityScopedResource()
             defer { if accessed { url.stopAccessingSecurityScopedResource() } }
-            let imported = try JSONDecoder().decode(Song.self, from: Data(contentsOf: url))
+            let imported = try SongStorage.decodeDocument(Data(contentsOf: url))
             switch SongStorage.importSong(imported) {
             case .success:
                 reload()
@@ -309,6 +341,13 @@ struct ProjectBrowserView: View {
 
     private func permanentlyDelete(_ item: TrashedSong) {
         if case .failure(let error) = SongStorage.permanentlyDelete(item) {
+            notice = error.localizedDescription
+        }
+        reload()
+    }
+
+    private func restoreBackup(_ failure: FailedSongFile) {
+        if case .failure(let error) = SongStorage.restoreBackup(failure) {
             notice = error.localizedDescription
         }
         reload()

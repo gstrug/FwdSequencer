@@ -430,7 +430,16 @@ class SequencerEngine {
             }
 
             let shouldSound = !track.isMuted && (!anySoloed || track.isSoloed)
-            let (poolIndices, stopPrev, stepGate) = executeStep(track: track, state: &state)
+            let isCarrying = state.carry != nil
+            let activeStep = track.steps.isEmpty ? nil : track.steps[state.stepIndex % track.steps.count]
+            var (poolIndices, stopPrev, stepGate) = executeStep(track: track, state: &state)
+            let probability = isCarrying ? 1 : min(1, max(0, activeStep?.probability ?? 1))
+            let ratchets = min(8, max(1, activeStep?.ratchets ?? 1))
+            let passesProbability = probability >= 1 || random.nextUnitInterval() < probability
+            if !passesProbability {
+                poolIndices.removeAll()
+                stopPrev = true
+            }
 
             let stepDuration = interval * Double(triggerEvery)
 
@@ -463,7 +472,19 @@ class SequencerEngine {
                     audioEngine?.playNote(trackID: track.id, midiNote: midiNote, velocity: UInt8(entry.velocity))
                     notes.append(entry.midiNote)
                     let noteGate = max(0.01, entry.gateLength * stepGate)
-                    scheduleNoteOff(trackID: track.id, midiNote: midiNote, delay: noteGate * stepDuration)
+                    let subdivision = stepDuration / Double(ratchets)
+                    scheduleNoteOff(trackID: track.id, midiNote: midiNote, delay: noteGate * subdivision)
+                    if ratchets > 1 {
+                        for ratchet in 1..<ratchets {
+                            scheduleRatchet(
+                                trackID: track.id,
+                                midiNote: midiNote,
+                                velocity: UInt8(entry.velocity),
+                                delay: Double(ratchet) * subdivision,
+                                gateDuration: noteGate * subdivision
+                            )
+                        }
+                    }
                 }
                 state.lastMidiNotes = notes
                 onNotePlayed?(track.id, notes)   // highlight every note in the chord
@@ -503,6 +524,26 @@ class SequencerEngine {
             if pendingNoteOffs[trackID]?.isEmpty == true { pendingNoteOffs.removeValue(forKey: trackID) }
         }
         pendingNoteOffs[trackID, default: [:]][offID] = item
+        sequencerQueue.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    /// Queue a later note-on as a cancellable sequencer event. Reusing the pending
+    /// event map means stop, rewind, section changes, and track deletion cannot leave
+    /// a delayed ratchet firing after playback has moved on.
+    private func scheduleRatchet(trackID: UUID, midiNote: UInt8, velocity: UInt8,
+                                 delay: Double, gateDuration: Double) {
+        noteOffSeq += 1
+        let eventID = noteOffSeq
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            pendingNoteOffs[trackID]?.removeValue(forKey: eventID)
+            if pendingNoteOffs[trackID]?.isEmpty == true {
+                pendingNoteOffs.removeValue(forKey: trackID)
+            }
+            audioEngine?.playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
+            scheduleNoteOff(trackID: trackID, midiNote: midiNote, delay: gateDuration)
+        }
+        pendingNoteOffs[trackID, default: [:]][eventID] = item
         sequencerQueue.asyncAfter(deadline: .now() + delay, execute: item)
     }
 
@@ -560,7 +601,10 @@ class SequencerEngine {
         guard noteCount > 0 else { return ([], true, 1.0) }
 
         guard stepCount > 0 else {
-            return ([state.notePtr % noteCount], true, 1.0)
+            let index = state.notePtr % noteCount
+            state.notePtr = (index + 1) % noteCount
+            state.hasPlayed = true
+            return ([index], true, 1.0)
         }
 
         state.notePtr = state.notePtr % noteCount

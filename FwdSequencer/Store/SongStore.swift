@@ -54,12 +54,27 @@ class SongStore: ObservableObject {
     @Published var pluginStatuses: [UUID: TrackPluginStatus] = [:]
     @Published var audioStatus: AudioEngineStatus = .recovering
     @Published var notice: String? = nil
+    @Published private(set) var isRecording = false
     @Published private(set) var canUndo = false
     @Published private(set) var canRedo = false
     /// When off (default), the song plays once to the end and stops; on, it loops.
     @Published var loopEnabled: Bool = false {
         didSet {
             if isPlaying || isPaused { updateLiveSong() }
+        }
+    }
+    /// Keep the editor on the sounding section. This is a local workflow preference,
+    /// not song data, so collaborators opening the document keep their own setting.
+    @Published var followsPlayhead: Bool = UserDefaults.standard.object(
+        forKey: "FollowsSongPlayhead"
+    ) as? Bool ?? true {
+        didSet { UserDefaults.standard.set(followsPlayhead, forKey: "FollowsSongPlayhead") }
+    }
+    @Published var midiClockEnabled: Bool = UserDefaults.standard.bool(forKey: "MIDIClockOutputEnabled") {
+        didSet {
+            UserDefaults.standard.set(midiClockEnabled, forKey: "MIDIClockOutputEnabled")
+            if !midiClockEnabled { audioEngine.stopMIDIClock() }
+            else if isPlaying { audioEngine.startMIDIClock(tempo: song.tempo) }
         }
     }
 
@@ -74,7 +89,8 @@ class SongStore: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var saveWorkItem: DispatchWorkItem?
-    private var pendingPluginLoads: Set<UUID> = []
+    private var pendingPluginLoads = PluginLoadTracker()
+    private var recordingURL: URL?
     /// True only once a song has actually been opened/created. The store's default
     /// `song` is an empty Song() with a fresh UUID at launch; without this guard a
     /// background save (captureAndSave) would persist that empty default as a new
@@ -96,6 +112,12 @@ class SongStore: ObservableObject {
         }
         audioEngine.onRecoveryRequired = { [weak self] in
             self?.reloadAudioGraph()
+        }
+        audioEngine.onRecordingError = { [weak self] detail in
+            if let url = self?.recordingURL { try? FileManager.default.removeItem(at: url) }
+            self?.isRecording = false
+            self?.recordingURL = nil
+            self?.notice = AudioRecordingError.writeFailed(detail).localizedDescription
         }
 
         sequencer.onNotePlayed = { [weak self] trackID, notes in
@@ -122,12 +144,13 @@ class SongStore: ObservableObject {
                 // Follow the playhead so the note editor (blue selected keys, steps,
                 // section settings) reflects the section currently sounding. Fires
                 // only during playback, so manual selection is untouched when stopped.
-                self?.selectedSection = index
+                if self?.followsPlayhead == true { self?.selectedSection = index }
             }
         }
         sequencer.onSongFinished = { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }
+                if self.midiClockEnabled { self.audioEngine.stopMIDIClock() }
                 self.isPlaying = false
                 self.isPaused = false
                 self.currentSection = 0
@@ -141,6 +164,15 @@ class SongStore: ObservableObject {
             .map(\.masterVolume)
             .removeDuplicates()
             .sink { [weak self] vol in self?.audioEngine.setMasterVolume(vol) }
+            .store(in: &cancellables)
+
+        $song
+            .map(\.tempo)
+            .removeDuplicates()
+            .sink { [weak self] tempo in
+                guard let self, midiClockEnabled, isPlaying else { return }
+                audioEngine.updateMIDIClockTempo(tempo)
+            }
             .store(in: &cancellables)
 
         // Push volume/pan to mixer nodes only when a value actually changed.
@@ -212,21 +244,31 @@ class SongStore: ObservableObject {
 
     /// Open a song: tear down any previously loaded instruments and load this
     /// song's instruments once (concurrently — open time ≈ one plugin's load).
-    func open(_ song: Song) {
+    func open(_ song: Song, preserveHistory: Bool = false) {
+        let safeSong: Song
+        do {
+            safeSong = try SongValidator.validateAndNormalize(song)
+        } catch {
+            notice = error.localizedDescription
+            return
+        }
         stop()
+        pendingPluginLoads.cancelAll()
+        pluginStatuses.removeAll()
+        isLoading = false
         for t in self.song.tracks { audioEngine.removeTrack(id: t.id) }
+        if let performance = self.song.performance { audioEngine.removeTrack(id: performance.id) }
 
         // A song must always have at least one section — note data lives in a section's
         // Part, so with zero sections note edits have nowhere to go and silently fail.
         // (An older saved song can decode with an empty section list.)
-        var song = song
-        if song.sections.isEmpty {
-            song.addEmptySection(named: "Section 1")
+        let song = safeSong
+
+        if !preserveHistory {
+            undoStack.removeAll()
+            redoStack.removeAll()
+            updateHistoryAvailability()
         }
-        if song.randomSeed == nil {
-            song.randomSeed = Self.seed(from: song.id)
-        }
-        song.formatVersion = 2
 
         self.song = song
         hasActiveSong = true
@@ -250,17 +292,19 @@ class SongStore: ObservableObject {
         }
     }
 
-    private func loadPlugin(_ info: PluginInfo, for trackID: UUID, stateData: Data? = nil) {
-        pendingPluginLoads.insert(trackID)
-        pluginStatuses[trackID] = .loading(info.name)
+    private func loadPlugin(_ info: PluginInfo?, for trackID: UUID, stateData: Data? = nil) {
+        let token = pendingPluginLoads.begin(for: trackID)
+        pluginStatuses[trackID] = .loading(info?.name ?? "Built-in Sound")
         isLoading = true
         audioEngine.loadPlugin(info, for: trackID, stateData: stateData) { [weak self] result in
             guard let self else { return }
-            pendingPluginLoads.remove(trackID)
+            guard pendingPluginLoads.finish(for: trackID, token: token) else { return }
             isLoading = !pendingPluginLoads.isEmpty
             switch result {
             case .success:
                 pluginStatuses[trackID] = .ready
+            case .failure(.cancelled):
+                pluginStatuses.removeValue(forKey: trackID)
             case .failure(let error):
                 let message = error.localizedDescription
                 pluginStatuses[trackID] = .failed(message)
@@ -342,10 +386,12 @@ class SongStore: ObservableObject {
             loop: loopEnabled,
             randomSeed: song.randomSeed ?? Self.seed(from: song.id)
         )
+        if midiClockEnabled { audioEngine.startMIDIClock(tempo: song.tempo) }
     }
 
     func pause() {
         sequencer.pause()
+        if midiClockEnabled { audioEngine.stopMIDIClock() }
         isPlaying = false
         isPaused = true
         playback.playingNotes.removeAll()
@@ -357,12 +403,14 @@ class SongStore: ObservableObject {
     func resume() {
         updateLiveSong()
         sequencer.resume(tempo: song.tempo)
+        if midiClockEnabled { audioEngine.startMIDIClock(tempo: song.tempo, continuing: true) }
         isPlaying = true
         isPaused = false
     }
 
     func stop() {
         sequencer.stop()
+        if midiClockEnabled { audioEngine.stopMIDIClock() }
         isPlaying = false
         isPaused = false
         currentSection = 0
@@ -373,6 +421,7 @@ class SongStore: ObservableObject {
 
     func rewind() {
         sequencer.rewind()
+        if midiClockEnabled && isPlaying { audioEngine.startMIDIClock(tempo: song.tempo) }
         currentSection = 0
         playback.currentBar = 0
         playback.playingNotes.removeAll()
@@ -381,6 +430,7 @@ class SongStore: ObservableObject {
 
     func midiPanic() {
         sequencer.stop()
+        if midiClockEnabled { audioEngine.stopMIDIClock() }
         audioEngine.allNotesOff()
         isPlaying = false
         isPaused = false
@@ -388,13 +438,43 @@ class SongStore: ObservableObject {
         playback.activeSteps.removeAll()
     }
 
+    func beginRecording() throws {
+        guard !isRecording else { return }
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FWD-\(UUID().uuidString).caf")
+        try audioEngine.startRecording(to: url)
+        recordingURL = url
+        isRecording = true
+    }
+
+    func finishRecording() throws -> Data {
+        guard isRecording, let url = recordingURL else {
+            throw AudioRecordingError.unavailable
+        }
+        audioEngine.stopRecording()
+        isRecording = false
+        recordingURL = nil
+        defer { try? FileManager.default.removeItem(at: url) }
+        do { return try Data(contentsOf: url) }
+        catch { throw AudioRecordingError.writeFailed(error.localizedDescription) }
+    }
+
     /// Release this song's instruments (call when leaving the song view). Captures live
     /// plugin state and persists BEFORE tearing the instruments down (they must still be
     /// loaded to read their state), so the sounds you were editing are saved.
     func close() {
+        if isRecording {
+            audioEngine.stopRecording()
+            if let recordingURL { try? FileManager.default.removeItem(at: recordingURL) }
+            recordingURL = nil
+            isRecording = false
+        }
         stop()
         captureAllPluginStates()
         saveNow()
+        pendingPluginLoads.cancelAll()
+        pluginStatuses.removeAll()
+        isLoading = false
         for t in song.tracks { audioEngine.removeTrack(id: t.id) }
         if let perf = song.performance { audioEngine.removeTrack(id: perf.id) }
         // No song is open anymore — a later background save must not re-persist this.
@@ -418,8 +498,7 @@ class SongStore: ObservableObject {
         if let info {
             loadPlugin(info, for: perf.id)
         } else {
-            audioEngine.loadPlugin(nil, for: perf.id)
-            pluginStatuses[perf.id] = .ready
+            loadPlugin(nil, for: perf.id)
         }
     }
 
@@ -443,16 +522,25 @@ class SongStore: ObservableObject {
         // Every section gains an (empty) part for the new track.
         for i in song.sections.indices {
             song.sections[i].parts.append(Part(trackID: track.id))
+            for variationIndex in song.sections[i].variations.indices {
+                song.sections[i].variations[variationIndex].parts.append(Part(trackID: track.id))
+            }
         }
         audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
     }
 
     func deleteTrack(_ trackID: UUID) {
         checkpointForUndo()
+        pendingPluginLoads.cancel(for: trackID)
+        pluginStatuses.removeValue(forKey: trackID)
+        isLoading = !pendingPluginLoads.isEmpty
         audioEngine.removeTrack(id: trackID)
         song.tracks.removeAll { $0.id == trackID }
         for i in song.sections.indices {
             song.sections[i].parts.removeAll { $0.trackID == trackID }
+            for variationIndex in song.sections[i].variations.indices {
+                song.sections[i].variations[variationIndex].parts.removeAll { $0.trackID == trackID }
+            }
         }
     }
 
@@ -482,6 +570,12 @@ class SongStore: ObservableObject {
             var newPart = song.sections[s].parts.first(where: { $0.trackID == trackID }) ?? Part(trackID: copy.id)
             newPart.trackID = copy.id
             song.sections[s].parts.append(newPart)
+            for variationIndex in song.sections[s].variations.indices {
+                var variationPart = song.sections[s].variations[variationIndex].parts
+                    .first(where: { $0.trackID == trackID }) ?? Part(trackID: copy.id)
+                variationPart.trackID = copy.id
+                song.sections[s].variations[variationIndex].parts.append(variationPart)
+            }
         }
 
         audioEngine.addTrack(id: copy.id, volume: copy.mixer.volume, pan: copy.mixer.pan)
@@ -492,19 +586,14 @@ class SongStore: ObservableObject {
 
     func setPlugin(_ info: PluginInfo?, for trackID: UUID) {
         guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        // NOTE: do NOT early-return when song.tracks[idx].pluginInfo already == info.
-        // The plugin picker binds straight to $track.pluginInfo, so by the time the
-        // onChange fires this call the model is already updated — an equality guard
-        // here would always be true and skip the actual engine load (old instrument
-        // stays, new one never loads / plays). onChange only fires on a real change.
+        guard song.tracks[idx].pluginInfo != info else { return }
         checkpointForUndo()
         song.tracks[idx].pluginInfo = info
         song.tracks[idx].pluginStateData = nil
         if let info {
             loadPlugin(info, for: trackID)
         } else {
-            audioEngine.loadPlugin(nil, for: trackID)
-            pluginStatuses[trackID] = .ready
+            loadPlugin(nil, for: trackID)
         }
     }
 
@@ -590,6 +679,35 @@ class SongStore: ObservableObject {
         }
     }
 
+    func captureVariation() {
+        guard song.sections.indices.contains(selectedSection),
+              song.sections[selectedSection].variations.count < 32 else { return }
+        checkpointForUndo()
+        let number = song.sections[selectedSection].variations.count + 1
+        let snapshot = SectionVariation(
+            name: "Variation \(number)",
+            parts: song.sections[selectedSection].parts
+        )
+        song.sections[selectedSection].variations.append(snapshot)
+    }
+
+    func applyVariation(_ variationID: UUID) {
+        guard song.sections.indices.contains(selectedSection),
+              let variation = song.sections[selectedSection].variations
+                .first(where: { $0.id == variationID }),
+              variation.parts != song.sections[selectedSection].parts else { return }
+        checkpointForUndo()
+        song.sections[selectedSection].parts = variation.parts
+    }
+
+    func deleteVariation(_ variationID: UUID) {
+        guard song.sections.indices.contains(selectedSection),
+              song.sections[selectedSection].variations.contains(where: { $0.id == variationID })
+        else { return }
+        checkpointForUndo()
+        song.sections[selectedSection].variations.removeAll { $0.id == variationID }
+    }
+
     private static func seed(from id: UUID) -> UInt64 {
         withUnsafeBytes(of: id.uuid) { bytes in
             bytes.reduce(UInt64(0x465744)) { partial, byte in
@@ -599,7 +717,19 @@ class SongStore: ObservableObject {
     }
 
     func checkpointForUndo() {
+        guard undoStack.last != song else { return }
         undoStack.append(song)
+        if undoStack.count > 30 { undoStack.removeFirst() }
+        redoStack.removeAll()
+        updateHistoryAvailability()
+    }
+
+    /// Record an editor's pre-presentation value after the editor closes, but only if
+    /// it actually changed the song. Binding-driven sheets become one meaningful undo
+    /// transaction instead of creating an entry for every slider tick.
+    func recordUndoSnapshot(_ snapshot: Song) {
+        guard snapshot != song, undoStack.last != snapshot else { return }
+        undoStack.append(snapshot)
         if undoStack.count > 30 { undoStack.removeFirst() }
         redoStack.removeAll()
         updateHistoryAvailability()
@@ -608,14 +738,14 @@ class SongStore: ObservableObject {
     func undo() {
         guard let previous = undoStack.popLast() else { return }
         redoStack.append(song)
-        open(previous)
+        open(previous, preserveHistory: true)
         updateHistoryAvailability()
     }
 
     func redo() {
         guard let next = redoStack.popLast() else { return }
         undoStack.append(song)
-        open(next)
+        open(next, preserveHistory: true)
         updateHistoryAvailability()
     }
 
@@ -639,8 +769,9 @@ class SongStore: ObservableObject {
 
     private func reloadAudioGraph() {
         pauseForAudioInterruption("The audio system restarted. Instruments are being reloaded.")
-        pendingPluginLoads.removeAll()
+        pendingPluginLoads.cancelAll()
         pluginStatuses.removeAll()
+        isLoading = false
         for track in song.tracks {
             audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
             if let plugin = track.pluginInfo {

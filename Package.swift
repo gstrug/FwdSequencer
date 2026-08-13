@@ -25,8 +25,11 @@ let package = Package(
             ],
             sources: [
                 "Models/Models.swift",
+                "Models/SongValidation.swift",
                 "Models/SongTemplates.swift",
-                "Engine/SequencerRandom.swift"
+                "Engine/SequencerRandom.swift",
+                "Engine/PluginLoadTracker.swift",
+                "Engine/SongMIDIExporter.swift"
             ]
         ),
         .testTarget(

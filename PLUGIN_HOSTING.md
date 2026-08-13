@@ -16,8 +16,8 @@ playback and persistence. (The song data model itself is documented in
 ```
 AVAudioEngine
  per instrument:  AVAudioUnitSampler (GM fallback)  ─┐
-                  …or AUv3 instrument               ─┼─▶ AVAudioMixerNode ─▶ mainMixerNode ─▶ masterLimiter ─▶ output
-                                                     ┘   (per-track vol/pan/meter tap)         (AUPeakLimiter)
+                  …or AUv3 instrument               ─┼─▶ AVAudioMixerNode ─▶ mainMixerNode ─▶ output
+                                                     ┘   (per-track vol/pan/meter tap)   (meter/record tap)
 ```
 
 - Each instrument (keyed by `SongTrack.id` in `AudioEngineManager`) owns one
@@ -25,10 +25,10 @@ AVAudioEngine
   `AVAudioUnitSampler` (GM fallback) or a loaded AUv3 unit. `swapInstrument`
   disconnects the old node and connects the new one to the same mixer, so
   volume/pan/metering survive instrument changes.
-- A **master peak limiter** (`AUPeakLimiter`) sits between `mainMixerNode` and the
-  output — a transparent safety that stops hot plugins (or dense chords) pushing the
-  mix past 0 dBFS and clipping. Meters read the *pre-limiter* mix, so they still show
-  when a signal is hot.
+- The main mixer connects directly to the output. A limiter was removed after physical-
+  device testing showed that it added CPU pressure and audible crackle with heavy
+  sampled instruments. Users retain per-track and master headroom controls; release
+  testing must check dense arrangements for clipping.
 - The AUv3 → mixer connection uses `format: nil` so `AVAudioEngine` negotiates the
   plugin's preferred format rather than forcing stereo (some synths go silent under a
   mismatched format).
@@ -55,11 +55,12 @@ the requested plugin loaded.
 
 ### Loading protection (don't interrupt a plugin mid-load)
 
-Instantiation + state restore is asynchronous. Interacting with a fragile plugin
-during that window can corrupt it. `SongStore` therefore derives `isLoading` from a
-set of pending track IDs, and `SongView` renders a blocking **Loading instruments…**
-overlay until every real completion arrives. There is no guessed two-second window.
-Each load has a 15-second timeout and explicit GM fallback.
+Instantiation + state restore is asynchronous. Interacting with a half-restored
+plugin can corrupt it. `SongStore` therefore tracks generation-tokened requests and
+the engine suspends MIDI only for each loading track. `SongView` keeps a visible
+**Restoring instruments…** banner while navigation and ready tracks remain usable.
+There is no guessed two-second window. Each load has a 15-second timeout and explicit
+GM fallback.
 
 ---
 
@@ -237,13 +238,14 @@ Other performance notes:
 
 | File | Responsibility |
 |------|----------------|
-| `Engine/AudioEngineManager.swift` | Audio graph, master limiter, plugin load/swap, state save/restore, MIDI out |
+| `Engine/AudioEngineManager.swift` | Audio graph, plugin load/swap, state save/restore, master recording, MIDI + clock out |
 | `Engine/SequencerEngine.swift`    | Real-time step sequencer (dispatch-timer tick, section sequencing, chord voicings) |
+| `Engine/SongMIDIExporter.swift`   | Deterministic type-1 MIDI rendering with tempo, meter, markers, chance, and ratchets |
 | `Engine/PluginManager.swift`      | Scans the device for installed AUv3 instruments |
 | `Store/SongStore.swift`           | Song playback, live loading protection, debounced persistence |
 | `Store/SongPersistence.swift`     | Song file storage (`Songs/*.fwdsong`) |
 | `Store/PlaybackMonitor.swift`     | Isolated high-frequency telemetry (`LevelMonitor`, `PlaybackMonitor`) |
-| `Views/SongView.swift`            | Song editor: transport, arrangement strip, track rows, loading overlay |
+| `Views/SongView.swift`            | Song editor: transport, arrangement strip, adaptive track rows, loading banner |
 | `Views/PlayDockView.swift`        | Manual Play dock (its own performance instrument + scrollable keyboard) |
 | `Views/SongMixerView.swift` / `MixerComponents.swift` | Mixer sheet + shared fader/VU components |
 | `Views/PluginEditorView.swift`    | Native plugin UI hosting + preset fallback |

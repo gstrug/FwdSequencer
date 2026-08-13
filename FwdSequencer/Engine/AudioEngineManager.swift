@@ -12,6 +12,7 @@ enum AudioEngineStatus: Equatable {
 
 enum PluginLoadError: LocalizedError {
     case trackUnavailable
+    case cancelled
     case timedOut(String)
     case instantiationFailed(String, String)
 
@@ -19,10 +20,24 @@ enum PluginLoadError: LocalizedError {
         switch self {
         case .trackUnavailable:
             return "The track is no longer available."
+        case .cancelled:
+            return "Instrument loading was cancelled."
         case .timedOut(let name):
             return "\(name) took too long to load. The GM instrument is active instead."
         case .instantiationFailed(let name, let detail):
-            return "\(name) could not be loaded. \(detail)"
+            return "\(name) could not be loaded. The built-in GM sound is active instead. \(detail)"
+        }
+    }
+}
+
+enum AudioRecordingError: LocalizedError {
+    case unavailable
+    case writeFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .unavailable: return "Add a track before recording the mix."
+        case .writeFailed(let detail): return "The recording could not be written. \(detail)"
         }
     }
 }
@@ -34,21 +49,30 @@ class AudioEngineManager {
 
     private var engine = AVAudioEngine()
     private var masterTapInstalled = false
+    private let recordingLock = NSLock()
+    private var recordingFile: AVAudioFile?
+    private let midiClockQueue = DispatchQueue(label: "com.fwd.midi-clock", qos: .userInteractive)
+    private var midiClient = MIDIClientRef()
+    private var midiClockSource = MIDIEndpointRef()
+    private var midiClockTimer: DispatchSourceTimer?
     private var samplers: [UUID: AVAudioUnitSampler] = [:]
     private var auv3Units: [UUID: AVAudioUnit] = [:]
     private var trackMixers: [UUID: AVAudioMixerNode] = [:]
-    private var levelTimestamps: [UUID: Double] = [:]
 
     var onLevelUpdate: ((UUID, Float) -> Void)?
     var onMasterLevelUpdate: ((Float) -> Void)?
     var onStatusChange: ((AudioEngineStatus) -> Void)?
     var onPlaybackInterrupted: ((String) -> Void)?
     var onRecoveryRequired: (() -> Void)?
-    private var masterLevelTimestamp: Double = 0
+    var onRecordingError: ((String) -> Void)?
     private var status: AudioEngineStatus = .recovering
     var currentStatus: AudioEngineStatus { status }
     private var sessionObservers: [NSObjectProtocol] = []
-    private var loadRequests: [UUID: UUID] = [:]
+    private struct PluginLoadRequest {
+        let id: UUID
+        let completion: (Result<Void, PluginLoadError>) -> Void
+    }
+    private var loadRequests: [UUID: PluginLoadRequest] = [:]
 
     // All access to the node dictionaries and to a hosted AU's state/MIDI is serialised
     // through this lock. The sequencer tick sends MIDI from a background queue while the
@@ -87,6 +111,7 @@ class AudioEngineManager {
     }
 
     init() {
+        configureMIDIClockSource()
         registerForAudioSessionEvents()
         do {
             try configureAudioSession()
@@ -99,6 +124,68 @@ class AudioEngineManager {
 
     deinit {
         for observer in sessionObservers { NotificationCenter.default.removeObserver(observer) }
+        midiClockTimer?.cancel()
+        if midiClockSource != 0 { MIDIEndpointDispose(midiClockSource) }
+        if midiClient != 0 { MIDIClientDispose(midiClient) }
+    }
+
+    private func configureMIDIClockSource() {
+        guard MIDIClientCreate("FWD Sequencer" as CFString, nil, nil, &midiClient) == noErr else { return }
+        if MIDISourceCreate(midiClient, "FWD Sequencer Clock" as CFString, &midiClockSource) != noErr {
+            MIDIClientDispose(midiClient)
+            midiClient = 0
+        }
+    }
+
+    func startMIDIClock(tempo: Double, continuing: Bool = false) {
+        midiClockQueue.async { [weak self] in
+            guard let self else { return }
+            stopMIDIClockTimer()
+            sendMIDIRealtime(continuing ? 0xFB : 0xFA)
+            installMIDIClockTimer(tempo: tempo)
+        }
+    }
+
+    func updateMIDIClockTempo(_ tempo: Double) {
+        midiClockQueue.async { [weak self] in
+            guard let self, midiClockTimer != nil else { return }
+            stopMIDIClockTimer()
+            installMIDIClockTimer(tempo: tempo)
+        }
+    }
+
+    func stopMIDIClock() {
+        midiClockQueue.async { [weak self] in
+            guard let self else { return }
+            stopMIDIClockTimer()
+            sendMIDIRealtime(0xFC)
+        }
+    }
+
+    private func installMIDIClockTimer(tempo: Double) {
+        let interval = 60.0 / min(400, max(20, tempo)) / 24.0
+        let timer = DispatchSource.makeTimerSource(queue: midiClockQueue)
+        timer.schedule(deadline: .now() + interval, repeating: interval,
+                       leeway: .microseconds(200))
+        timer.setEventHandler { [weak self] in self?.sendMIDIRealtime(0xF8) }
+        timer.resume()
+        midiClockTimer = timer
+    }
+
+    private func stopMIDIClockTimer() {
+        midiClockTimer?.setEventHandler {}
+        midiClockTimer?.cancel()
+        midiClockTimer = nil
+    }
+
+    private func sendMIDIRealtime(_ status: UInt8) {
+        guard midiClockSource != 0 else { return }
+        var packet = MIDIPacket()
+        packet.timeStamp = 0
+        packet.length = 1
+        packet.data.0 = status
+        var list = MIDIPacketList(numPackets: 1, packet: packet)
+        MIDIReceived(midiClockSource, &list)
     }
 
     private func configureAudioSession() throws {
@@ -129,6 +216,12 @@ class AudioEngineManager {
     private func setStatus(_ newStatus: AudioEngineStatus) {
         status = newStatus
         DispatchQueue.main.async { [weak self] in self?.onStatusChange?(newStatus) }
+    }
+
+    private func deliver(_ result: Result<Void, PluginLoadError>,
+                         to completion: @escaping (Result<Void, PluginLoadError>) -> Void) {
+        if Thread.isMainThread { completion(result) }
+        else { DispatchQueue.main.async { completion(result) } }
     }
 
     private func startEngineIfNeeded() -> Bool {
@@ -208,16 +301,26 @@ class AudioEngineManager {
 
     private func rebuildAfterMediaServicesReset() {
         setStatus(.recovering)
-        withLock {
+        var recordingWasInterrupted = false
+        let cancelled = withLock { () -> [(Result<Void, PluginLoadError>) -> Void] in
             engine.stop()
             samplers.removeAll()
             auv3Units.removeAll()
             trackMixers.removeAll()
             suspended.removeAll()
+            let completions = loadRequests.values.map(\.completion)
             loadRequests.removeAll()
-            levelTimestamps.removeAll()
             engine = AVAudioEngine()
             masterTapInstalled = false
+            recordingLock.lock()
+            recordingWasInterrupted = recordingFile != nil
+            recordingFile = nil
+            recordingLock.unlock()
+            return completions
+        }
+        cancelled.forEach { deliver(.failure(.cancelled), to: $0) }
+        if recordingWasInterrupted {
+            onRecordingError?("The audio system restarted before the recording finished.")
         }
 
         do {
@@ -238,15 +341,49 @@ class AudioEngineManager {
         guard !masterTapInstalled else { return }
         let main = engine.mainMixerNode
         guard main.numberOfInputs > 0 else { return }
+        var lastLevelTimestamp: Double = 0
         main.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
             guard let self else { return }
+            recordingLock.lock()
+            if let file = recordingFile {
+                do { try file.write(from: buffer) }
+                catch {
+                    recordingFile = nil
+                    DispatchQueue.main.async { [weak self] in
+                        self?.onRecordingError?(error.localizedDescription)
+                    }
+                }
+            }
+            recordingLock.unlock()
             let level = self.rms(buffer)
             let now = CACurrentMediaTime()
-            guard now - self.masterLevelTimestamp > 0.05 else { return }
-            self.masterLevelTimestamp = now
+            guard now - lastLevelTimestamp > 0.05 else { return }
+            lastLevelTimestamp = now
             self.onMasterLevelUpdate?(level)
         }
         masterTapInstalled = true
+    }
+
+    func startRecording(to url: URL) throws {
+        guard masterTapInstalled else { throw AudioRecordingError.unavailable }
+        let format = engine.mainMixerNode.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            throw AudioRecordingError.unavailable
+        }
+        do {
+            let file = try AVAudioFile(forWriting: url, settings: format.settings)
+            recordingLock.lock()
+            recordingFile = file
+            recordingLock.unlock()
+        } catch {
+            throw AudioRecordingError.writeFailed(error.localizedDescription)
+        }
+    }
+
+    func stopRecording() {
+        recordingLock.lock()
+        recordingFile = nil
+        recordingLock.unlock()
     }
 
     func addTrack(id: UUID, volume: Float = 0.8, pan: Float = 0.0) {
@@ -277,9 +414,10 @@ class AudioEngineManager {
     }
 
     func removeTrack(id: UUID) {
+        var cancelled: ((Result<Void, PluginLoadError>) -> Void)?
         withLock {
             suspended.remove(id)
-            loadRequests.removeValue(forKey: id)
+            cancelled = loadRequests.removeValue(forKey: id)?.completion
             if let mixer = trackMixers.removeValue(forKey: id) {
                 mixer.removeTap(onBus: 0)
                 engine.detach(mixer)
@@ -291,6 +429,7 @@ class AudioEngineManager {
                 engine.detach(sampler)
             }
         }
+        if let cancelled { deliver(.failure(.cancelled), to: cancelled) }
     }
 
     // Swap the instrument on a track. Completion fires only after state restoration or
@@ -298,12 +437,15 @@ class AudioEngineManager {
     func loadPlugin(_ pluginInfo: PluginInfo?, for trackID: UUID, stateData: Data? = nil,
                     completion: @escaping (Result<Void, PluginLoadError>) -> Void = { _ in }) {
         let requestID = UUID()
-        let mixer: AVAudioMixerNode? = withLock {
-            loadRequests[trackID] = requestID
-            return trackMixers[trackID]
+        let result: (mixer: AVAudioMixerNode?, cancelled: ((Result<Void, PluginLoadError>) -> Void)?) = withLock {
+            let oldCompletion = loadRequests.removeValue(forKey: trackID)?.completion
+            guard let mixer = trackMixers[trackID] else { return (nil, oldCompletion) }
+            loadRequests[trackID] = PluginLoadRequest(id: requestID, completion: completion)
+            return (mixer, oldCompletion)
         }
-        guard let mixer else {
-            DispatchQueue.main.async { completion(.failure(.trackUnavailable)) }
+        if let cancelled = result.cancelled { deliver(.failure(.cancelled), to: cancelled) }
+        guard let mixer = result.mixer else {
+            deliver(.failure(.trackUnavailable), to: completion)
             return
         }
 
@@ -331,20 +473,17 @@ class AudioEngineManager {
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                                 guard self.isCurrentLoad(requestID, for: trackID) else { return }
                                 self.applyPluginState(data, for: trackID)
-                                self.finishPluginLoad(requestID, for: trackID,
-                                                      result: .success(()), completion: completion)
+                                self.finishPluginLoad(requestID, for: trackID, result: .success(()))
                             }
                         } else {
-                            self.finishPluginLoad(requestID, for: trackID,
-                                                  result: .success(()), completion: completion)
+                            self.finishPluginLoad(requestID, for: trackID, result: .success(()))
                         }
                     } else {
                         let detail = error?.localizedDescription ?? "The Audio Unit returned no instrument."
                         self.attachSampler(for: trackID, mixer: mixer)
                         self.finishPluginLoad(
                             requestID, for: trackID,
-                            result: .failure(.instantiationFailed(pluginInfo.name, detail)),
-                            completion: completion
+                            result: .failure(.instantiationFailed(pluginInfo.name, detail))
                         )
                     }
                 }
@@ -354,30 +493,27 @@ class AudioEngineManager {
                 guard let self, isCurrentLoad(requestID, for: trackID) else { return }
                 attachSampler(for: trackID, mixer: mixer)
                 finishPluginLoad(requestID, for: trackID,
-                                 result: .failure(.timedOut(pluginInfo.name)),
-                                 completion: completion)
+                                 result: .failure(.timedOut(pluginInfo.name)))
             }
         } else {
             attachSampler(for: trackID, mixer: mixer)
-            finishPluginLoad(requestID, for: trackID, result: .success(()), completion: completion)
+            finishPluginLoad(requestID, for: trackID, result: .success(()))
         }
     }
 
     private func isCurrentLoad(_ requestID: UUID, for trackID: UUID) -> Bool {
-        withLock { loadRequests[trackID] == requestID && trackMixers[trackID] != nil }
+        withLock { loadRequests[trackID]?.id == requestID && trackMixers[trackID] != nil }
     }
 
     private func finishPluginLoad(_ requestID: UUID, for trackID: UUID,
-                                  result: Result<Void, PluginLoadError>,
-                                  completion: @escaping (Result<Void, PluginLoadError>) -> Void) {
-        let shouldFinish = withLock { () -> Bool in
-            guard loadRequests[trackID] == requestID else { return false }
-            loadRequests.removeValue(forKey: trackID)
-            return true
+                                  result: Result<Void, PluginLoadError>) {
+        let completion = withLock { () -> ((Result<Void, PluginLoadError>) -> Void)? in
+            guard loadRequests[trackID]?.id == requestID else { return nil }
+            return loadRequests.removeValue(forKey: trackID)?.completion
         }
-        guard shouldFinish else { return }
+        guard let completion else { return }
         resumeTrack(trackID)
-        completion(result)
+        deliver(result, to: completion)
     }
 
     // Return the live AVAudioUnit for a track (nil if using GM sampler).
@@ -557,12 +693,13 @@ class AudioEngineManager {
     }
 
     private func installLevelTap(id: UUID, node: AVAudioMixerNode) {
+        var lastLevelTimestamp: Double = 0
         node.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
             guard let self else { return }
             let level = self.rms(buffer)
             let now = CACurrentMediaTime()
-            guard now - (self.levelTimestamps[id] ?? 0) > 0.05 else { return }
-            self.levelTimestamps[id] = now
+            guard now - lastLevelTimestamp > 0.05 else { return }
+            lastLevelTimestamp = now
             self.onLevelUpdate?(id, level)
         }
     }
