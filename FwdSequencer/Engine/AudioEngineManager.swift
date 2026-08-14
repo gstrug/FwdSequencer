@@ -457,7 +457,11 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                 engine.detach(mixer)
             }
             if let auv3 = auv3Units.removeValue(forKey: id) {
+                // Orderly teardown, as in retireInstrument — stop the extension's render
+                // resources before detaching, and release it after this render cycle.
+                auv3.auAudioUnit.deallocateRenderResources()
                 engine.detach(auv3)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { _ = auv3 }
             }
             if let sampler = samplers.removeValue(forKey: id) {
                 engine.detach(sampler)
@@ -692,15 +696,30 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
+    /// Remove whatever instrument currently feeds `mixer` for this track.
+    ///
+    /// An AUv3 is torn down in an ORDERLY sequence: disconnect from the render graph,
+    /// `deallocateRenderResources()` so the (out-of-process) extension stops cleanly,
+    /// then detach. Finally the last strong reference is held until a later runloop
+    /// turn, so the extension connection is not deallocated inside this lock while the
+    /// engine is still rendering. Doing all of that synchronously mid-render is what
+    /// kills fragile plugins (GeoShred) when swapping instruments during playback.
+    private func retireInstrument(for trackID: UUID, mixer: AVAudioMixerNode) {
+        if let auv3 = auv3Units.removeValue(forKey: trackID) {
+            engine.disconnectNodeInput(mixer)
+            auv3.auAudioUnit.deallocateRenderResources()
+            engine.detach(auv3)
+            // Keep the unit alive past this lock/render cycle, then let it go.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { _ = auv3 }
+        } else if let sampler = samplers.removeValue(forKey: trackID) {
+            engine.disconnectNodeInput(mixer)
+            engine.detach(sampler)
+        }
+    }
+
     private func swapInstrument(_ newUnit: AVAudioUnit, for trackID: UUID, mixer: AVAudioMixerNode) {
         withLock {
-            if let auv3 = auv3Units.removeValue(forKey: trackID) {
-                engine.disconnectNodeInput(mixer)
-                engine.detach(auv3)
-            } else if let sampler = samplers.removeValue(forKey: trackID) {
-                engine.disconnectNodeInput(mixer)
-                engine.detach(sampler)
-            }
+            retireInstrument(for: trackID, mixer: mixer)
             engine.attach(newUnit)
             engine.connect(newUnit, to: mixer, format: nil)
             auv3Units[trackID] = newUnit
@@ -710,13 +729,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
     private func attachSampler(for trackID: UUID, mixer: AVAudioMixerNode) {
         withLock {
-            if let auv3 = auv3Units.removeValue(forKey: trackID) {
-                engine.disconnectNodeInput(mixer)
-                engine.detach(auv3)
-            } else if let sampler = samplers.removeValue(forKey: trackID) {
-                engine.disconnectNodeInput(mixer)
-                engine.detach(sampler)
-            }
+            retireInstrument(for: trackID, mixer: mixer)
             let sampler = AVAudioUnitSampler()
             engine.attach(sampler)
             engine.connect(sampler, to: mixer, format: nil)
