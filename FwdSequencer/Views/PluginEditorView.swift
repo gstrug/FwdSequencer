@@ -292,6 +292,11 @@ struct PluginEditorView: View {
     @State private var userPresets:    [AUAudioUnitPreset] = []
     @State private var currentPreset:  AUAudioUnitPreset?  = nil
     @State private var showPresets = false
+    /// The editor owns exactly ONE suspension of this track. Both onViewReady and
+    /// onDisappear can fire, so the release is guarded — an extra resume would lift
+    /// somebody else's gate (e.g. an in-flight plugin load) and let MIDI reach a
+    /// half-instantiated plugin. See AudioEngineManager.suspendCounts.
+    @State private var releasedSuspension = false
 
     // The audio engine is a shared singleton, so the editor needs no store.
     private var engine: AudioEngineManager { .shared }
@@ -316,7 +321,7 @@ struct PluginEditorView: View {
                             // endAppearanceTransition (image/asset loading).
                             onViewReady: {
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                                    engine.resumeTrack(trackID)
+                                    releaseSuspension()
                                 }
                             }
                         )
@@ -372,11 +377,19 @@ struct PluginEditorView: View {
         // main thread is still in loadViewIfRequired. Resumed by onViewReady above, and
         // unconditionally on disappear so a track can never be left silent.
         .onAppear {
+            releasedSuspension = false
             engine.suspendTrack(trackID)
             setup()
         }
-        .onDisappear { engine.resumeTrack(trackID) }
+        .onDisappear { releaseSuspension() }
         .sheet(isPresented: $showPresets) { presetSheet }
+    }
+
+    /// Release the editor's single suspension, at most once.
+    private func releaseSuspension() {
+        guard !releasedSuspension else { return }
+        releasedSuspension = true
+        engine.resumeTrack(trackID)
     }
 
     // MARK: - Preset fallback

@@ -140,7 +140,16 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     }
     // Tracks whose instrument is mid-load/swap/restore. MIDI to a suspended track is
     // dropped so the tick can't hit a half-attached node or a not-yet-restored preset.
-    private var suspended: Set<UUID> = []
+    //
+    // REFERENCE COUNTED, deliberately. Suspension has independent owners — a plugin
+    // load, and the open plugin editor — and with a plain flag whichever one resumed
+    // first opened the gate for everyone. That is a real crash: closing the editor
+    // during a load cleared the load's suspend, and a note-on reached GeoShred before
+    // its extension had finished instantiating (diag: "FIRST MIDI 90 3C 60
+    // suspended=false" logged BEFORE "instantiate OK"). Each owner must balance its own
+    // suspend/resume; the gate lifts only when the last one releases.
+    private var suspendCounts: [UUID: Int] = [:]
+    private func isSuspended(_ id: UUID) -> Bool { suspendCounts[id] != nil }
     /// Instruments that have finished their settle window and may be sent MIDI. An AUv3
     /// is NOT in this set between attach and the end of `instrumentSettleDelay`.
     ///
@@ -161,13 +170,17 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// swap/restore; balance with `resumeTrack`.
     func suspendTrack(_ id: UUID) {
         withLock {
-            suspended.insert(id)
+            suspendCounts[id, default: 0] += 1
             stopAllNotesLocked(on: id)
         }
     }
 
     func resumeTrack(_ id: UUID) {
-        withLock { _ = suspended.remove(id) }
+        withLock {
+            guard let count = suspendCounts[id] else { return }   // ignore unbalanced resume
+            if count <= 1 { suspendCounts.removeValue(forKey: id) }
+            else { suspendCounts[id] = count - 1 }
+        }
     }
 
     // Caller must hold auLock.
@@ -386,7 +399,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             samplers.removeAll()
             auv3Units.removeAll()
             trackMixers.removeAll()
-            suspended.removeAll()
+            suspendCounts.removeAll()
             let completions = loadRequests.values.map(\.completion)
             loadRequests.removeAll()
             engine = AVAudioEngine()
@@ -496,7 +509,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     func removeTrack(id: UUID) {
         var cancelled: ((Result<Void, PluginLoadError>) -> Void)?
         withLock {
-            suspended.remove(id)
+            suspendCounts.removeValue(forKey: id)
             settledInstruments.remove(id)
             cancelled = loadRequests.removeValue(forKey: id)?.completion
             if let mixer = trackMixers.removeValue(forKey: id) {
@@ -845,7 +858,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
     func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8) {
         withLock {
-            guard !suspended.contains(trackID) else { return }
+            guard !isSuspended(trackID) else { return }
             activeNotes[trackID, default: []].insert(midiNote)
             if let unit = auv3Units[trackID] {
                 sendMIDI(to: unit, bytes: [0x90, midiNote, velocity])
@@ -862,7 +875,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             // segfaults in PerformanceHandler_runMidiEvent on a null handler). Nothing
             // hangs, because suspendTrack() flushes all notes with a direct all-notes-off
             // before the gate closes, and the unit is silent for the whole window.
-            guard !suspended.contains(trackID) else { return }
+            guard !isSuspended(trackID) else { return }
             activeNotes[trackID]?.remove(midiNote)
             if let unit = auv3Units[trackID] {
                 sendMIDI(to: unit, bytes: [0x80, midiNote, 0])
@@ -875,7 +888,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     private func sendMIDI(to unit: AVAudioUnit, bytes: [UInt8]) {
         if let id = auv3Units.first(where: { $0.value === unit })?.key,
            firstMIDILogged.insert(id).inserted {
-            diag("FIRST MIDI -> track=\(id.uuidString.prefix(8)) bytes=\(bytes.map { String(format: "%02X", $0) }.joined(separator: " ")) settled=\(settledInstruments.contains(id)) suspended=\(suspended.contains(id))")
+            diag("FIRST MIDI -> track=\(id.uuidString.prefix(8)) bytes=\(bytes.map { String(format: "%02X", $0) }.joined(separator: " ")) settled=\(settledInstruments.contains(id)) suspended=\(isSuspended(id))")
         }
         let au = unit.auAudioUnit
         if let legacyBlock = au.scheduleMIDIEventBlock {
