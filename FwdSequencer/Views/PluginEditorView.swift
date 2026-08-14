@@ -91,11 +91,18 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         // scene a quiet frame to establish in.
         guard !hasRequestedView else { return }
         hasRequestedView = true
-        AUViewControllerHelper.requestViewController(for: audioUnit) { [weak self] vc in
-            DispatchQueue.main.async {
-                guard let self else { return }
-                guard let vc else { self.onNoUI?(); self.signalViewReady(); return }
-                self.embed(vc)
+        // Let the presentation settle before asking for the view. Requesting it in the
+        // same turn as viewDidAppear left heavy plugins blank on first open, while the
+        // Reload path — identical except that it asks ~2s later — always succeeds. The
+        // hosted UIScene needs the host's window hierarchy quiet and laid out first.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            guard let self else { return }
+            AUViewControllerHelper.requestViewController(for: audioUnit) { [weak self] vc in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    guard let vc else { self.onNoUI?(); self.signalViewReady(); return }
+                    self.embed(vc)
+                }
             }
         }
     }
