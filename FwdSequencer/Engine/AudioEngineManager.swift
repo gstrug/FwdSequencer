@@ -129,6 +129,16 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     // Tracks whose instrument is mid-load/swap/restore. MIDI to a suspended track is
     // dropped so the tick can't hit a half-attached node or a not-yet-restored preset.
     private var suspended: Set<UUID> = []
+    /// Instruments that have finished their settle window and may be sent MIDI. An AUv3
+    /// is NOT in this set between attach and the end of `instrumentSettleDelay`.
+    ///
+    /// This gates the all-notes-off flushes too, which bypass `suspended` because they
+    /// call `sendMIDI` directly. That matters: a flush is 129 MIDI events, and delivering
+    /// even one to an unsettled plugin crashes it (GeoShred:
+    /// `PerformanceHandler_runMidiEvent` on a null handler) — which happened just by
+    /// opening its editor, with the sequencer stopped. Skipping the flush is always safe
+    /// for an unsettled unit: MIDI was gated the whole time, so it has no ringing notes.
+    private var settledInstruments: Set<UUID> = []
 
     /// Gate MIDI to a track and silence anything ringing on it. Call around a plugin
     /// swap/restore; balance with `resumeTrack`.
@@ -146,6 +156,9 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     // Caller must hold auLock.
     private func stopAllNotesLocked(on id: UUID) {
         if let unit = auv3Units[id] {
+            // Never flush an unsettled plugin — see settledInstruments. It cannot have
+            // ringing notes, and the flush itself would crash it.
+            guard settledInstruments.contains(id) else { return }
             for n in 0...127 { sendMIDI(to: unit, bytes: [0x80, UInt8(n), 0]) }
             sendMIDI(to: unit, bytes: [0xB0, 123, 0])
         } else if let sampler = samplers[id] {
@@ -447,6 +460,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             loadGMBank(sampler)
             samplers[id] = sampler
             trackMixers[id] = mixerNode
+            settledInstruments.insert(id)   // GM sampler is in-process, always safe
             if !engine.isRunning {
                 _ = startEngineIfNeeded()
                 installMasterTap()
@@ -463,6 +477,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         var cancelled: ((Result<Void, PluginLoadError>) -> Void)?
         withLock {
             suspended.remove(id)
+            settledInstruments.remove(id)
             cancelled = loadRequests.removeValue(forKey: id)?.completion
             if let mixer = trackMixers.removeValue(forKey: id) {
                 mixer.removeTap(onBus: 0)
@@ -490,6 +505,8 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         let requestID = UUID()
         let result: (mixer: AVAudioMixerNode?, cancelled: ((Result<Void, PluginLoadError>) -> Void)?) = withLock {
             let oldCompletion = loadRequests.removeValue(forKey: trackID)?.completion
+            // The incoming instrument is unsettled until its settle window completes.
+            settledInstruments.remove(trackID)
             guard let mixer = trackMixers[trackID] else { return (nil, oldCompletion) }
             loadRequests[trackID] = PluginLoadRequest(id: requestID, completion: completion)
             return (mixer, oldCompletion)
@@ -563,6 +580,9 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                                   result: Result<Void, PluginLoadError>) {
         let completion = withLock { () -> ((Result<Void, PluginLoadError>) -> Void)? in
             guard loadRequests[trackID]?.id == requestID else { return nil }
+            // The settle window has elapsed (or a GM sampler took over, which is
+            // in-process and always safe): MIDI, including flushes, may flow again.
+            settledInstruments.insert(trackID)
             return loadRequests.removeValue(forKey: trackID)?.completion
         }
         guard let completion else { return }
@@ -721,6 +741,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// engine is still rendering. Doing all of that synchronously mid-render is what
     /// kills fragile plugins (GeoShred) when swapping instruments during playback.
     private func retireInstrument(for trackID: UUID, mixer: AVAudioMixerNode) {
+        settledInstruments.remove(trackID)
         if let auv3 = auv3Units.removeValue(forKey: trackID) {
             engine.disconnectNodeInput(mixer)
             auv3.auAudioUnit.deallocateRenderResources()
@@ -852,17 +873,20 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
     func allNotesOff() {
         withLock {
+            // Only settled AUv3s are addressed — an unsettled one has no ringing notes
+            // (its MIDI was gated) and would crash on the flush. See settledInstruments.
+            let targets = auv3Units.filter { settledInstruments.contains($0.key) }.map(\.value)
             for note in 0...127 {
                 let midi = UInt8(note)
                 for (id, _) in samplers {
                     samplers[id]?.stopNote(midi, onChannel: 0)
                 }
-                for (_, unit) in auv3Units {
+                for unit in targets {
                     sendMIDI(to: unit, bytes: [0x80, midi, 0])
                 }
             }
             // Also send All Notes Off CC (123) to AUv3 units
-            for (_, unit) in auv3Units {
+            for unit in targets {
                 sendMIDI(to: unit, bytes: [0xB0, 123, 0])
             }
         }
