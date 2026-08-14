@@ -692,8 +692,20 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         withLock {
             guard let unit = auv3Units[id] else { return }
             let au = unit.auAudioUnit
-            guard au.currentPreset == nil, let preset = au.factoryPresets?.first else { return }
-            au.currentPreset = preset
+            guard au.currentPreset == nil else { return }
+            if let preset = au.factoryPresets?.first {
+                au.currentPreset = preset
+                return
+            }
+            // No factory presets to select. Fall back to writing the plugin's own
+            // current document state straight back to it — the same call the working
+            // (restore) path makes, which is the only observed difference between an
+            // instrument that initialises and one that does not.
+            if let state = au.fullStateForDocument {
+                au.fullStateForDocument = state
+            } else if let state = au.fullState {
+                au.fullState = state
+            }
         }
     }
 
