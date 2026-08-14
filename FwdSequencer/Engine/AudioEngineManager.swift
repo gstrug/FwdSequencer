@@ -118,8 +118,8 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// initialised: across GeoShred crash logs the crash time tracked this value almost
     /// exactly (1.0 s → died 4.1 s after launch; 4.0 s → died 7.6 s), i.e. it always died
     /// on the first MIDI event it received, whenever that was. The real cure for that
-    /// case is `primeFreshInstrument`, not waiting. This delay still serves its original
-    /// purpose — letting the extension finish attaching before state restore and MIDI.
+    /// case was our own all-notes-off flush, not waiting. This delay still serves its
+    /// original purpose — letting the extension finish attaching before state and MIDI.
     static let instrumentSettleDelay: TimeInterval = 1.5
 
     // MARK: - Load diagnostics
@@ -151,6 +151,11 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// opening its editor, with the sequencer stopped. Skipping the flush is always safe
     /// for an unsettled unit: MIDI was gated the whole time, so it has no ringing notes.
     private var settledInstruments: Set<UUID> = []
+    /// Notes currently sounding per track, so a quiesce can send note-offs ONLY for
+    /// what is actually ringing. Previously every suspend blasted 128 note-offs + CC123
+    /// at the plugin; opening GeoShred's editor did exactly that and killed it
+    /// (first event `80 00 00`). With nothing ringing this now sends nothing at all.
+    private var activeNotes: [UUID: Set<UInt8>] = [:]
 
     /// Gate MIDI to a track and silence anything ringing on it. Call around a plugin
     /// swap/restore; balance with `resumeTrack`.
@@ -167,14 +172,17 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
     // Caller must hold auLock.
     private func stopAllNotesLocked(on id: UUID) {
+        let ringing = activeNotes[id] ?? []
+        activeNotes[id] = []
+        guard !ringing.isEmpty else { return }   // nothing sounding → send NOTHING
         if let unit = auv3Units[id] {
-            // Never flush an unsettled plugin — see settledInstruments. It cannot have
-            // ringing notes, and the flush itself would crash it.
+            // Never address an unsettled plugin (see settledInstruments), and only ever
+            // release notes we actually started. A blanket 0...127 sweep is 129 MIDI
+            // events into a plugin that may not tolerate them.
             guard settledInstruments.contains(id) else { return }
-            for n in 0...127 { sendMIDI(to: unit, bytes: [0x80, UInt8(n), 0]) }
-            sendMIDI(to: unit, bytes: [0xB0, 123, 0])
+            for n in ringing { sendMIDI(to: unit, bytes: [0x80, n, 0]) }
         } else if let sampler = samplers[id] {
-            for n in 0...127 { sampler.stopNote(UInt8(n), onChannel: 0) }
+            for n in ringing { sampler.stopNote(n, onChannel: 0) }
         }
     }
 
@@ -567,9 +575,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                             if let data = stateData {
                                 self.diag("settle elapsed -> applyPluginState (\(data.count) bytes)")
                                 self.applyPluginState(data, for: trackID)
-                            } else {
-                                self.diag("settle elapsed -> primeFreshInstrument")
-                                self.primeFreshInstrument(for: trackID)
                             }
                             self.finishPluginLoad(requestID, for: trackID, result: .success(()))
                         }
@@ -693,41 +698,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             format: .binary,
             options: 0
         )
-    }
-
-    /// Initialise an instrument that loaded with NO saved state.
-    ///
-    /// A restore (`applyPluginState`) is what normally brings a plugin's internal engine
-    /// up. With no state we previously did nothing at all, leaving some plugins
-    /// half-constructed: GeoShred then segfaults in `PerformanceHandler_runMidiEvent`
-    /// on the FIRST MIDI event it ever receives — which is why a track with saved state
-    /// works while a new track or a plugin change (state cleared) does not, and why
-    /// increasing the settle delay only moved the crash later rather than preventing it.
-    ///
-    /// Selecting the first factory preset is what a host UI does when you add an
-    /// instrument. It is safe *only* on this path: setting `currentPreset` during a
-    /// restore fires async internal resets that wipe freshly-applied parameters (see
-    /// PLUGIN_HOSTING.md), but here there is no restored state to wipe — the two paths
-    /// are mutually exclusive.
-    private func primeFreshInstrument(for id: UUID) {
-        withLock {
-            guard let unit = auv3Units[id] else { return }
-            let au = unit.auAudioUnit
-            guard au.currentPreset == nil else { return }
-            if let preset = au.factoryPresets?.first {
-                au.currentPreset = preset
-                return
-            }
-            // No factory presets to select. Fall back to writing the plugin's own
-            // current document state straight back to it — the same call the working
-            // (restore) path makes, which is the only observed difference between an
-            // instrument that initialises and one that does not.
-            if let state = au.fullStateForDocument {
-                au.fullStateForDocument = state
-            } else if let state = au.fullState {
-                au.fullState = state
-            }
-        }
     }
 
     // Restore a previously serialised plugin state.
@@ -876,6 +846,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8) {
         withLock {
             guard !suspended.contains(trackID) else { return }
+            activeNotes[trackID, default: []].insert(midiNote)
             if let unit = auv3Units[trackID] {
                 sendMIDI(to: unit, bytes: [0x90, midiNote, velocity])
             } else {
@@ -892,6 +863,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             // hangs, because suspendTrack() flushes all notes with a direct all-notes-off
             // before the gate closes, and the unit is silent for the whole window.
             guard !suspended.contains(trackID) else { return }
+            activeNotes[trackID]?.remove(midiNote)
             if let unit = auv3Units[trackID] {
                 sendMIDI(to: unit, bytes: [0x80, midiNote, 0])
             } else {
@@ -940,18 +912,19 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         withLock {
             // Only settled AUv3s are addressed — an unsettled one has no ringing notes
             // (its MIDI was gated) and would crash on the flush. See settledInstruments.
-            let targets = auv3Units.filter { settledInstruments.contains($0.key) }.map(\.value)
-            for note in 0...127 {
-                let midi = UInt8(note)
-                for (id, _) in samplers {
-                    samplers[id]?.stopNote(midi, onChannel: 0)
-                }
-                for unit in targets {
-                    sendMIDI(to: unit, bytes: [0x80, midi, 0])
+            // Release only notes we started; a 0...127 sweep is 129 events per plugin.
+            for (id, notes) in activeNotes {
+                guard !notes.isEmpty else { continue }
+                if let unit = auv3Units[id] {
+                    guard settledInstruments.contains(id) else { continue }
+                    for n in notes { sendMIDI(to: unit, bytes: [0x80, n, 0]) }
+                } else if let sampler = samplers[id] {
+                    for n in notes { sampler.stopNote(n, onChannel: 0) }
                 }
             }
-            // Also send All Notes Off CC (123) to AUv3 units
-            for unit in targets {
+            activeNotes.removeAll()
+            // CC123 as a genuine panic broadcast, to settled units only.
+            for (id, unit) in auv3Units where settledInstruments.contains(id) {
                 sendMIDI(to: unit, bytes: [0xB0, 123, 0])
             }
         }
