@@ -9,9 +9,13 @@ private struct AUPluginView: UIViewControllerRepresentable {
     let audioUnit: AUAudioUnit
     var onNoUI: (() -> Void)?
     var onWillDisappear: (() -> Void)?
+    /// Fired once the plugin's view controller is embedded (or known not to exist),
+    /// i.e. when it is safe to send the plugin MIDI again. See PluginEditorView.
+    var onViewReady: (() -> Void)?
 
     func makeUIViewController(context: Context) -> AUPluginHostController {
-        AUPluginHostController(audioUnit: audioUnit, onNoUI: onNoUI, onWillDisappear: onWillDisappear)
+        AUPluginHostController(audioUnit: audioUnit, onNoUI: onNoUI,
+                               onWillDisappear: onWillDisappear, onViewReady: onViewReady)
     }
 
     func updateUIViewController(_ uiViewController: AUPluginHostController, context: Context) {}
@@ -21,15 +25,25 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
     private let audioUnit: AUAudioUnit
     private var onNoUI: (() -> Void)?
     private var onWillDisappear: (() -> Void)?
+    private var onViewReady: (() -> Void)?
     private var pluginView: UIView?
     private let scrollView = UIScrollView()
     private var userHasZoomed = false
 
-    init(audioUnit: AUAudioUnit, onNoUI: (() -> Void)?, onWillDisappear: (() -> Void)?) {
+    init(audioUnit: AUAudioUnit, onNoUI: (() -> Void)?, onWillDisappear: (() -> Void)?,
+         onViewReady: (() -> Void)? = nil) {
         self.audioUnit = audioUnit
         self.onNoUI = onNoUI
         self.onWillDisappear = onWillDisappear
+        self.onViewReady = onViewReady
         super.init(nibName: nil, bundle: nil)
+    }
+
+    /// Call once the plugin UI is up (or absent). Idempotent — only the first call fires.
+    private func signalViewReady() {
+        guard let ready = onViewReady else { return }
+        onViewReady = nil
+        ready()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -66,7 +80,7 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         AUViewControllerHelper.requestViewController(for: audioUnit) { [weak self] vc in
             DispatchQueue.main.async {
                 guard let self else { return }
-                guard let vc else { self.onNoUI?(); return }
+                guard let vc else { self.onNoUI?(); self.signalViewReady(); return }
                 self.embed(vc)
             }
         }
@@ -96,6 +110,7 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
             ])
             vc.didMove(toParent: self)
             vc.endAppearanceTransition()
+            signalViewReady()
             return
         }
 
@@ -108,6 +123,7 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         pluginView = pv
         vc.didMove(toParent: self)
         vc.endAppearanceTransition()
+        signalViewReady()
         view.setNeedsLayout()
     }
 
@@ -291,7 +307,15 @@ struct PluginEditorView: View {
                         AUPluginView(
                             audioUnit: au,
                             onNoUI: { usePresetFallback = true; loadPresets() },
-                            onWillDisappear: { onCommitState?() }
+                            onWillDisappear: { onCommitState?() },
+                            // Its UI is built — safe to send MIDI again. Small settle
+                            // delay because view construction continues briefly after
+                            // endAppearanceTransition (image/asset loading).
+                            onViewReady: {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                                    engine.resumeTrack(trackID)
+                                }
+                            }
                         )
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
@@ -328,7 +352,16 @@ struct PluginEditorView: View {
                 }
             }
         }
-        .onAppear { setup() }
+        // Gate MIDI to this track while the plugin builds its UI. A plugin constructing
+        // its view controller is not ready to handle MIDI: GeoShred segfaults in
+        // PerformanceHandler_runMidiEvent (null handler) on its render thread while its
+        // main thread is still in loadViewIfRequired. Resumed by onViewReady above, and
+        // unconditionally on disappear so a track can never be left silent.
+        .onAppear {
+            engine.suspendTrack(trackID)
+            setup()
+        }
+        .onDisappear { engine.resumeTrack(trackID) }
         .sheet(isPresented: $showPresets) { presetSheet }
     }
 

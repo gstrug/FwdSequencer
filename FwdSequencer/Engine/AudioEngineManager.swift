@@ -786,7 +786,12 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
     func stopNote(trackID: UUID, midiNote: UInt8) {
         withLock {
-            // Note-offs are allowed even when suspended, so nothing hangs.
+            // Note-offs are gated too. A note-off is still a MIDI event: delivering one
+            // to a plugin that isn't ready crashes it exactly like a note-on (GeoShred
+            // segfaults in PerformanceHandler_runMidiEvent on a null handler). Nothing
+            // hangs, because suspendTrack() flushes all notes with a direct all-notes-off
+            // before the gate closes, and the unit is silent for the whole window.
+            guard !suspended.contains(trackID) else { return }
             if let unit = auv3Units[trackID] {
                 sendMIDI(to: unit, bytes: [0x80, midiNote, 0])
             } else {
