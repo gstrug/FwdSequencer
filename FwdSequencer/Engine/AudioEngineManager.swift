@@ -459,9 +459,10 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             if let auv3 = auv3Units.removeValue(forKey: id) {
                 // Orderly teardown, as in retireInstrument — stop the extension's render
                 // resources before detaching, and release it after this render cycle.
+                // Stop the extension's render resources cleanly, then release the unit
+                // synchronously — never hold it past this call (see retireInstrument).
                 auv3.auAudioUnit.deallocateRenderResources()
                 engine.detach(auv3)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { _ = auv3 }
             }
             if let sampler = samplers.removeValue(forKey: id) {
                 engine.detach(sampler)
@@ -709,8 +710,10 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             engine.disconnectNodeInput(mixer)
             auv3.auAudioUnit.deallocateRenderResources()
             engine.detach(auv3)
-            // Keep the unit alive past this lock/render cycle, then let it go.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { _ = auv3 }
+            // The old unit is released HERE, synchronously. Do not defer the release to
+            // keep it alive "past the render cycle": that overlaps the outgoing instance
+            // with the incoming one, and GeoShred is unstable with a second live instance
+            // (see §GeoShred) — it then fails to load on the new track entirely.
         } else if let sampler = samplers.removeValue(forKey: trackID) {
             engine.disconnectNodeInput(mixer)
             engine.detach(sampler)
