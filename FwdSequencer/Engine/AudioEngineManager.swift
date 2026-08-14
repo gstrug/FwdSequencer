@@ -110,6 +110,11 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     // main thread loads/swaps/removes instruments and reads plugin state — without it, a
     // dictionary mutated during a concurrent read (or MIDI sent to a node mid-swap) is a
     // hard crash. Recursive so a locked method can safely call another.
+    /// How long a newly instantiated AUv3 is left alone before it is sent MIDI (and
+    /// before saved state is restored). Covers the extension building its DSP; sending
+    /// MIDI inside this window crashes fragile plugins. See loadPlugin.
+    static let instrumentSettleDelay: TimeInterval = 1.0
+
     private let auLock = NSRecursiveLock()
     private func withLock<T>(_ body: () -> T) -> T {
         auLock.lock(); defer { auLock.unlock() }; return body()
@@ -506,15 +511,18 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                     guard self.isCurrentLoad(requestID, for: trackID) else { return }
                     if let unit = avAudioUnit {
                         self.swapInstrument(unit, for: trackID, mixer: mixer)
-                        // Delay state restore slightly — many AUv3 plugins need a run-loop
-                        // cycle to finish initialising before they accept fullState/fullStateForDocument.
-                        if let data = stateData {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                                guard self.isCurrentLoad(requestID, for: trackID) else { return }
-                                self.applyPluginState(data, for: trackID)
-                                self.finishPluginLoad(requestID, for: trackID, result: .success(()))
-                            }
-                        } else {
+                        // A freshly instantiated AUv3 is NOT ready for MIDI yet: its
+                        // extension process is still building its DSP. finishPluginLoad
+                        // resumes MIDI, so it must never run in the same turn as the
+                        // attach. GeoShred segfaults in PerformanceHandler_runMidiEvent
+                        // (null handler) ~2 s after its extension launches when a note
+                        // arrives that early — which is why loads WITH saved state used
+                        // to survive (this delay covered them) while a new track or a
+                        // plugin change (state cleared → nil) crashed immediately.
+                        // Both paths now settle for the same window before resuming.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + Self.instrumentSettleDelay) {
+                            guard self.isCurrentLoad(requestID, for: trackID) else { return }
+                            if let data = stateData { self.applyPluginState(data, for: trackID) }
                             self.finishPluginLoad(requestID, for: trackID, result: .success(()))
                         }
                     } else {
