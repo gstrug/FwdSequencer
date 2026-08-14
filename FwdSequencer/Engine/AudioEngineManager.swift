@@ -114,13 +114,13 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// before saved state is restored). Covers the extension building its DSP; sending
     /// MIDI inside this window crashes fragile plugins.
     ///
-    /// Sized from GeoShred crash logs: its extension segfaults in
-    /// `PerformanceHandler_runMidiEvent` (null handler) on the first MIDI event it
-    /// receives too early. With 1.0 s it still died ~4 s after the extension launched
-    /// — instantiating a plugin that large takes ~3 s on its own, so the timer expired
-    /// while it was still building internal state. The load overlay blocks input for
-    /// this whole window anyway, so a generous value costs responsiveness only at load.
-    static let instrumentSettleDelay: TimeInterval = 4.0
+    /// Kept modest deliberately. Raising it does NOT rescue a plugin that never
+    /// initialised: across GeoShred crash logs the crash time tracked this value almost
+    /// exactly (1.0 s → died 4.1 s after launch; 4.0 s → died 7.6 s), i.e. it always died
+    /// on the first MIDI event it received, whenever that was. The real cure for that
+    /// case is `primeFreshInstrument`, not waiting. This delay still serves its original
+    /// purpose — letting the extension finish attaching before state restore and MIDI.
+    static let instrumentSettleDelay: TimeInterval = 1.5
 
     private let auLock = NSRecursiveLock()
     private func withLock<T>(_ body: () -> T) -> T {
@@ -546,7 +546,12 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                         // Both paths now settle for the same window before resuming.
                         DispatchQueue.main.asyncAfter(deadline: .now() + Self.instrumentSettleDelay) {
                             guard self.isCurrentLoad(requestID, for: trackID) else { return }
-                            if let data = stateData { self.applyPluginState(data, for: trackID) }
+                            if let data = stateData {
+                                self.applyPluginState(data, for: trackID)
+                            } else {
+                                // No state to restore — bring the instrument up ourselves.
+                                self.primeFreshInstrument(for: trackID)
+                            }
                             self.finishPluginLoad(requestID, for: trackID, result: .success(()))
                         }
                     } else {
@@ -667,6 +672,29 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             format: .binary,
             options: 0
         )
+    }
+
+    /// Initialise an instrument that loaded with NO saved state.
+    ///
+    /// A restore (`applyPluginState`) is what normally brings a plugin's internal engine
+    /// up. With no state we previously did nothing at all, leaving some plugins
+    /// half-constructed: GeoShred then segfaults in `PerformanceHandler_runMidiEvent`
+    /// on the FIRST MIDI event it ever receives — which is why a track with saved state
+    /// works while a new track or a plugin change (state cleared) does not, and why
+    /// increasing the settle delay only moved the crash later rather than preventing it.
+    ///
+    /// Selecting the first factory preset is what a host UI does when you add an
+    /// instrument. It is safe *only* on this path: setting `currentPreset` during a
+    /// restore fires async internal resets that wipe freshly-applied parameters (see
+    /// PLUGIN_HOSTING.md), but here there is no restored state to wipe — the two paths
+    /// are mutually exclusive.
+    private func primeFreshInstrument(for id: UUID) {
+        withLock {
+            guard let unit = auv3Units[id] else { return }
+            let au = unit.auAudioUnit
+            guard au.currentPreset == nil, let preset = au.factoryPresets?.first else { return }
+            au.currentPreset = preset
+        }
     }
 
     // Restore a previously serialised plugin state.
