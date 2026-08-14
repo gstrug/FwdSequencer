@@ -697,10 +697,8 @@ class SongStore: ObservableObject {
     func reloadPlugin(for trackID: UUID) {
         guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }),
               let info = song.tracks[idx].pluginInfo else { return }
-        // Stop first, for the same reason the plugin picker asks to: a plugin loads and
-        // builds its UI reliably only when the sequencer is not running. This is the
-        // recovery path, so it stops without prompting.
-        stop()
+        // Does NOT stop playback: the theory that a plugin only loads cleanly with the
+        // sequencer stopped was disproven — Stop & Load produced an equally blank UI.
         loadPlugin(info, for: trackID, stateData: song.tracks[idx].pluginStateData)
     }
 

@@ -620,7 +620,6 @@ private struct SongTrackRowView: View {
     @EnvironmentObject var songStore: SongStore
 
     @State private var showPluginPicker = false
-    @State private var pendingPlugin: PendingPluginChoice? = nil
     @State private var showPluginEditor = false
     @State private var showSteps = false
     @State private var showNoteParams = false
@@ -798,23 +797,6 @@ private struct SongTrackRowView: View {
         .sheet(isPresented: $showPluginPicker) {
             PluginPickerView(selectedPlugin: pluginBinding)
         }
-        .alert("Stop playback to load?",
-               isPresented: Binding(get: { pendingPlugin != nil },
-                                    set: { if !$0 { pendingPlugin = nil } }),
-               presenting: pendingPlugin) { choice in
-            Button("Stop & Load") {
-                songStore.stop()
-                songStore.setPlugin(choice.info, for: track.id)
-                pendingPlugin = nil
-            }
-            Button("Load Anyway") {
-                songStore.setPlugin(choice.info, for: track.id)
-                pendingPlugin = nil
-            }
-            Button("Cancel", role: .cancel) { pendingPlugin = nil }
-        } message: { choice in
-            Text("\(choice.info?.name ?? "The built-in sound") loads most reliably with the sequencer stopped — some plugins show a blank interface otherwise. Load Anyway keeps playing.")
-        }
         .fullScreenCover(isPresented: $showPluginEditor) {
             PluginEditorView(trackID: track.id, trackName: track.name,
                              onCommitState: { songStore.capturePluginState(for: track.id) },
@@ -869,26 +851,10 @@ private struct SongTrackRowView: View {
         }
     }
 
-    /// A plugin choice waiting on confirmation to stop playback. Wrapped so that
-    /// choosing "no plugin" (nil) is still a distinguishable pending value.
-    struct PendingPluginChoice: Identifiable {
-        let id = UUID()
-        let info: PluginInfo?
-    }
-
     private var pluginBinding: Binding<PluginInfo?> {
         Binding(
             get: { track.pluginInfo },
-            set: { newInfo in
-                // Instantiating an AUv3 and standing up its UI while the sequencer is
-                // running is unreliable for heavy plugins (GeoShred comes up blank), so
-                // confirm stopping playback rather than losing the load.
-                if songStore.isPlaying {
-                    pendingPlugin = PendingPluginChoice(info: newInfo)
-                } else {
-                    songStore.setPlugin(newInfo, for: track.id)
-                }
-            }
+            set: { newInfo in songStore.setPlugin(newInfo, for: track.id) }
         )
     }
 

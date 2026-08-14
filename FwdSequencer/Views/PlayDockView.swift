@@ -14,7 +14,6 @@ struct PlayDockView: View {
 
     @State private var showPluginEditor = false
     @State private var showPluginPicker = false
-    @State private var pendingPlugin: PendingPluginChoice? = nil
     @State private var activeNotes = Set<UInt8>()
 
     private var perf: SongTrack? { songStore.song.performance }
@@ -44,23 +43,6 @@ struct PlayDockView: View {
         .onDisappear { releaseAll() }
         .sheet(isPresented: $showPluginPicker) {
             PluginPickerView(selectedPlugin: pluginBinding)
-        }
-        .alert("Stop playback to load?",
-               isPresented: Binding(get: { pendingPlugin != nil },
-                                    set: { if !$0 { pendingPlugin = nil } }),
-               presenting: pendingPlugin) { choice in
-            Button("Stop & Load") {
-                songStore.stop()
-                songStore.setPerformancePlugin(choice.info)
-                pendingPlugin = nil
-            }
-            Button("Load Anyway") {
-                songStore.setPerformancePlugin(choice.info)
-                pendingPlugin = nil
-            }
-            Button("Cancel", role: .cancel) { pendingPlugin = nil }
-        } message: { choice in
-            Text("\(choice.info?.name ?? "The built-in sound") loads most reliably with the sequencer stopped — some plugins show a blank interface otherwise. Load Anyway keeps playing.")
         }
         .fullScreenCover(isPresented: $showPluginEditor) {
             if let p = perf {
@@ -143,24 +125,9 @@ struct PlayDockView: View {
         .accessibilityLabel("Close manual keyboard")
     }
 
-    /// A plugin choice waiting on confirmation to stop playback. Wrapped so that
-    /// choosing "no plugin" (nil) is still a distinguishable pending value.
-    struct PendingPluginChoice: Identifiable {
-        let id = UUID()
-        let info: PluginInfo?
-    }
-
     private var pluginBinding: Binding<PluginInfo?> {
         Binding(get: { songStore.song.performance?.pluginInfo },
-                set: { newInfo in
-                    // Same reason as the track picker: loading an AUv3 and building its
-                    // UI while the sequencer runs is unreliable for heavy plugins.
-                    if songStore.isPlaying {
-                        pendingPlugin = PendingPluginChoice(info: newInfo)
-                    } else {
-                        songStore.setPerformancePlugin(newInfo)
-                    }
-                })
+                set: { newInfo in songStore.setPerformancePlugin(newInfo) })
     }
 
     private var volumeBinding: Binding<Float> {

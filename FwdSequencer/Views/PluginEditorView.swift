@@ -91,18 +91,29 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         // scene a quiet frame to establish in.
         guard !hasRequestedView else { return }
         hasRequestedView = true
-        // Let the presentation settle before asking for the view. Requesting it in the
-        // same turn as viewDidAppear left heavy plugins blank on first open, while the
-        // Reload path — identical except that it asks ~2s later — always succeeds. The
-        // hosted UIScene needs the host's window hierarchy quiet and laid out first.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
-            guard let self else { return }
-            AUViewControllerHelper.requestViewController(for: audioUnit) { [weak self] vc in
-                DispatchQueue.main.async {
-                    guard let self else { return }
-                    guard let vc else { self.onNoUI?(); self.signalViewReady(); return }
-                    self.embed(vc)
+        requestView(attempt: 1)
+    }
+
+    /// Ask the plugin for its view controller, discarding the FIRST one.
+    ///
+    /// The first view controller a heavy plugin hands back after being attached comes up
+    /// blank — its hosted UIScene never becomes usable. A second request always works,
+    /// which is why closing the editor and reopening it fixes the display without
+    /// touching the audio unit (the AU itself is fine; only the view is bad). Rather
+    /// than making the user do that, take the first one, drop it, and embed the second.
+    private func requestView(attempt: Int) {
+        AUViewControllerHelper.requestViewController(for: audioUnit) { [weak self] vc in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                guard let vc else { self.onNoUI?(); self.signalViewReady(); return }
+                if attempt == 1 {
+                    // Discard and ask again — see above. Give it a runloop turn to settle.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                        self?.requestView(attempt: 2)
+                    }
+                    return
                 }
+                self.embed(vc)
             }
         }
     }
