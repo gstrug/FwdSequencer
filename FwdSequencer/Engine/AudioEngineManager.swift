@@ -123,13 +123,17 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// before saved state is restored). Covers the extension building its DSP; sending
     /// MIDI inside this window crashes fragile plugins.
     ///
-    /// Kept modest deliberately. Raising it does NOT rescue a plugin that never
-    /// initialised: across GeoShred crash logs the crash time tracked this value almost
-    /// exactly (1.0 s → died 4.1 s after launch; 4.0 s → died 7.6 s), i.e. it always died
-    /// on the first MIDI event it received, whenever that was. The real cure for that
-    /// case was our own all-notes-off flush, not waiting. This delay still serves its
-    /// original purpose — letting the extension finish attaching before state and MIDI.
-    static let instrumentSettleDelay: TimeInterval = 1.5
+    /// 1.0 s — the value the codebase used throughout the period plugin hosting was
+    /// working, kept for its original purpose: many AUv3s need a runloop cycle after
+    /// being attached before they will accept `fullState`/`fullStateForDocument`.
+    ///
+    /// It is NOT a crash mitigation, despite having been raised to 4.0 s while chasing
+    /// one. Crash times tracked this value almost exactly (1.0 s → died 4.1 s after the
+    /// extension launched; 4.0 s → died 7.6 s), i.e. the plugin always died on the first
+    /// MIDI event it received, whenever that arrived. The actual causes were our own
+    /// all-notes-off flush and an unbalanced MIDI-gate release, both since fixed — so
+    /// there is nothing to buy by inflating this, only slower instrument loads.
+    static let instrumentSettleDelay: TimeInterval = 1.0
 
     private let auLock = NSRecursiveLock()
     private func withLock<T>(_ body: () -> T) -> T {
