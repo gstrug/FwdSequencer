@@ -112,8 +112,15 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     // hard crash. Recursive so a locked method can safely call another.
     /// How long a newly instantiated AUv3 is left alone before it is sent MIDI (and
     /// before saved state is restored). Covers the extension building its DSP; sending
-    /// MIDI inside this window crashes fragile plugins. See loadPlugin.
-    static let instrumentSettleDelay: TimeInterval = 1.0
+    /// MIDI inside this window crashes fragile plugins.
+    ///
+    /// Sized from GeoShred crash logs: its extension segfaults in
+    /// `PerformanceHandler_runMidiEvent` (null handler) on the first MIDI event it
+    /// receives too early. With 1.0 s it still died ~4 s after the extension launched
+    /// — instantiating a plugin that large takes ~3 s on its own, so the timer expired
+    /// while it was still building internal state. The load overlay blocks input for
+    /// this whole window anyway, so a generous value costs responsiveness only at load.
+    static let instrumentSettleDelay: TimeInterval = 4.0
 
     private let auLock = NSRecursiveLock()
     private func withLock<T>(_ body: () -> T) -> T {
