@@ -201,6 +201,16 @@ private struct SongTransportBar: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(songStore.isRecording ? "Stop and export recording" : "Record master output")
 
+                // MIDI panic — needs to be one tap on the transport, not buried in a
+                // menu: it is what you reach for when a note hangs mid-performance.
+                Button { songStore.midiPanic() } label: {
+                    Image(systemName: "exclamationmark.octagon.fill").iconHitTarget()
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.plain)
+                .help("Panic — stop all notes")
+                .accessibilityLabel("Panic, stop all notes")
+
                 Button { songStore.loopEnabled.toggle() } label: {
                     Image(systemName: "repeat").iconHitTarget()
                         .foregroundStyle(songStore.loopEnabled ? Color.accentColor : .secondary)
@@ -314,9 +324,6 @@ private struct SongTransportBar: View {
                     Divider()
                     Toggle(isOn: $songStore.midiClockEnabled) {
                         Label("MIDI Clock Output", systemImage: "cable.connector")
-                    }
-                    Button(role: .destructive) { songStore.midiPanic() } label: {
-                        Label("Stop All Notes", systemImage: "exclamationmark.octagon")
                     }
                 } label: {
                     Label("Settings", systemImage: "gearshape")

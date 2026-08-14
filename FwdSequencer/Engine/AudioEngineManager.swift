@@ -131,18 +131,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// original purpose — letting the extension finish attaching before state and MIDI.
     static let instrumentSettleDelay: TimeInterval = 1.5
 
-    // MARK: - Load diagnostics
-    //
-    // Temporary instrumentation for the GeoShred crash-on-fresh-load investigation.
-    // Everything is prefixed [FWD-DIAG] so it can be filtered in Xcode's console.
-    // Remove once the cause is confirmed.
-    private static let diagStart = CACurrentMediaTime()
-    private var firstMIDILogged: Set<UUID> = []
-    private func diag(_ message: @autoclosure () -> String) {
-        let t = String(format: "%7.3f", CACurrentMediaTime() - Self.diagStart)
-        print("[FWD-DIAG \(t)s] \(message())")
-    }
-
     private let auLock = NSRecursiveLock()
     private func withLock<T>(_ body: () -> T) -> T {
         auLock.lock(); defer { auLock.unlock() }; return body()
@@ -154,8 +142,8 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     // load, and the open plugin editor — and with a plain flag whichever one resumed
     // first opened the gate for everyone. That is a real crash: closing the editor
     // during a load cleared the load's suspend, and a note-on reached GeoShred before
-    // its extension had finished instantiating (diag: "FIRST MIDI 90 3C 60
-    // suspended=false" logged BEFORE "instantiate OK"). Each owner must balance its own
+    // its extension had finished instantiating: a note-on was delivered before the
+    // instantiate callback had even returned. Each owner must balance its own
     // suspend/resume; the gate lifts only when the last one releases.
     private var suspendCounts: [UUID: Int] = [:]
     private func isSuspended(_ id: UUID) -> Bool { suspendCounts[id] != nil }
@@ -556,8 +544,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             return
         }
 
-        diag("loadPlugin '\(pluginInfo?.name ?? "GM sampler")' track=\(trackID.uuidString.prefix(8)) hasSavedState=\(stateData != nil)")
-        withLock { firstMIDILogged.remove(trackID) }
 
         // Gate MIDI to this track until the new instrument is attached (and its state
         // restored). Prevents the tick from hitting a half-attached node mid-swap.
@@ -576,10 +562,8 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                 DispatchQueue.main.async {
                     guard self.isCurrentLoad(requestID, for: trackID) else { return }
                     if let unit = avAudioUnit {
-                        self.diag("instantiate OK -> attaching")
                         self.swapInstrument(unit, for: trackID, mixer: mixer)
                         let au = unit.auAudioUnit
-                        self.diag("caps: factoryPresets=\(au.factoryPresets?.count ?? -1) currentPreset=\(au.currentPreset?.name ?? "nil") fullStateForDocument=\(au.fullStateForDocument?.count ?? -1) fullState=\(au.fullState?.count ?? -1) renderResourcesAllocated=\(au.renderResourcesAllocated)")
                         // A freshly instantiated AUv3 is NOT ready for MIDI yet: its
                         // extension process is still building its DSP. finishPluginLoad
                         // resumes MIDI, so it must never run in the same turn as the
@@ -592,14 +576,12 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                         DispatchQueue.main.asyncAfter(deadline: .now() + Self.instrumentSettleDelay) {
                             guard self.isCurrentLoad(requestID, for: trackID) else { return }
                             if let data = stateData {
-                                self.diag("settle elapsed -> applyPluginState (\(data.count) bytes)")
                                 self.applyPluginState(data, for: trackID)
                             }
                             self.finishPluginLoad(requestID, for: trackID, result: .success(()))
                         }
                     } else {
                         let detail = error?.localizedDescription ?? "The Audio Unit returned no instrument."
-                        self.diag("instantiate FAILED: \(detail)")
                         self.attachSampler(for: trackID, mixer: mixer)
                         self.finishPluginLoad(
                             requestID, for: trackID,
@@ -635,7 +617,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             return loadRequests.removeValue(forKey: trackID)?.completion
         }
         guard let completion else { return }
-        diag("finishPluginLoad -> resuming MIDI for track=\(trackID.uuidString.prefix(8)) result=\(result)")
         resumeTrack(trackID)
         deliver(result, to: completion)
     }
@@ -894,10 +875,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     }
 
     private func sendMIDI(to unit: AVAudioUnit, bytes: [UInt8]) {
-        if let id = auv3Units.first(where: { $0.value === unit })?.key,
-           firstMIDILogged.insert(id).inserted {
-            diag("FIRST MIDI -> track=\(id.uuidString.prefix(8)) bytes=\(bytes.map { String(format: "%02X", $0) }.joined(separator: " ")) settled=\(settledInstruments.contains(id)) suspended=\(isSuspended(id))")
-        }
         let au = unit.auAudioUnit
         if let legacyBlock = au.scheduleMIDIEventBlock {
             bytes.withUnsafeBytes { ptr in
