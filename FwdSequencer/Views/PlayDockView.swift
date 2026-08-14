@@ -114,7 +114,7 @@ struct PlayDockView: View {
     private var editSoundButton: some View {
         if perf?.pluginInfo != nil {
             Button { showPluginEditor = true } label: {
-                Label("Edit Sound", systemImage: "slider.horizontal.3").font(.caption)
+                Label("Edit Instrument", systemImage: "slider.horizontal.3").font(.caption)
             }
             .buttonStyle(.bordered).tint(.purple)
         }

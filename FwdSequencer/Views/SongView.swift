@@ -1080,7 +1080,7 @@ private struct SongTrackRowView: View {
                     return true
                 }()
                 Button { showPluginEditor = true } label: {
-                    Label(isReady ? "Edit Sound" : "Loading…", systemImage: "slider.horizontal.3")
+                    Label(isReady ? "Edit Instrument" : "Loading…", systemImage: "slider.horizontal.3")
                         .font(.caption).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.bordered).tint(.purple)

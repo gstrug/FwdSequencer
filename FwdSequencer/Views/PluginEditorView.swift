@@ -311,6 +311,11 @@ struct PluginEditorView: View {
     /// somebody else's gate (e.g. an in-flight plugin load) and let MIDI reach a
     /// half-instantiated plugin. See AudioEngineManager.suspendCounts.
     @State private var releasedSuspension = false
+    /// Changing this rebuilds AUPluginView so a reloaded instrument gets a fresh hosted
+    /// view. Without it the editor kept showing the OLD unit's dead view after a reload,
+    /// which is why Reload appeared to do nothing while Done + reopen worked.
+    @State private var reloadToken = UUID()
+    @State private var isReloading = false
 
     // The audio engine is a shared singleton, so the editor needs no store.
     private var engine: AudioEngineManager { .shared }
@@ -339,6 +344,7 @@ struct PluginEditorView: View {
                                 }
                             }
                         )
+                        .id(reloadToken)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         ProgressView()
@@ -372,11 +378,24 @@ struct PluginEditorView: View {
                 if onReload != nil {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button {
+                            // Re-instantiate, then re-bind to the NEW unit and rebuild the
+                            // hosted view in place. Previously this dismissed the editor
+                            // while the view kept pointing at the retired unit.
+                            isReloading = true
+                            auUnit = nil
+                            usePresetFallback = false
                             onReload?()
-                            dismiss()
+                            DispatchQueue.main.asyncAfter(
+                                deadline: .now() + AudioEngineManager.instrumentSettleDelay + 0.5
+                            ) {
+                                reloadToken = UUID()
+                                setup()
+                                isReloading = false
+                            }
                         } label: {
                             Label("Reload", systemImage: "arrow.clockwise")
                         }
+                        .disabled(isReloading)
                         .help("Rebuild this instrument if its interface is blank")
                     }
                 }

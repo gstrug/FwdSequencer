@@ -527,11 +527,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                 engine.detach(mixer)
             }
             if let auv3 = auv3Units.removeValue(forKey: id) {
-                // Orderly teardown, as in retireInstrument — stop the extension's render
-                // resources before detaching, and release it after this render cycle.
-                // Stop the extension's render resources cleanly, then release the unit
-                // synchronously — never hold it past this call (see retireInstrument).
-                auv3.auAudioUnit.deallocateRenderResources()
+                // No deallocateRenderResources() here either — see retireInstrument.
                 engine.detach(auv3)
             }
             if let sampler = samplers.removeValue(forKey: id) {
@@ -788,22 +784,22 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
     /// Remove whatever instrument currently feeds `mixer` for this track.
     ///
-    /// An AUv3 is torn down in an ORDERLY sequence: disconnect from the render graph,
-    /// `deallocateRenderResources()` so the (out-of-process) extension stops cleanly,
-    /// then detach. Finally the last strong reference is held until a later runloop
-    /// turn, so the extension connection is not deallocated inside this lock while the
-    /// engine is still rendering. Doing all of that synchronously mid-render is what
-    /// kills fragile plugins (GeoShred) when swapping instruments during playback.
+    /// An AUv3 is disconnected and detached, and released synchronously.
+    ///
+    /// Deliberately does NOT call `deallocateRenderResources()` on the outgoing unit.
+    /// Tearing an out-of-process AU's render resources down immediately before another
+    /// is instantiated left the INCOMING plugin's hosted view blank: swapping
+    /// instrument -> GeoShred failed every time, while GeoShred on a fresh track — which
+    /// retires only the in-process GM sampler below — always worked. Build 13, the last
+    /// known-good build, never called it either.
+    ///
+    /// Nor is the release deferred to "outlive the render cycle": that overlaps the
+    /// outgoing instance with the incoming one, which broke loading in its own right.
     private func retireInstrument(for trackID: UUID, mixer: AVAudioMixerNode) {
         settledInstruments.remove(trackID)
         if let auv3 = auv3Units.removeValue(forKey: trackID) {
             engine.disconnectNodeInput(mixer)
-            auv3.auAudioUnit.deallocateRenderResources()
             engine.detach(auv3)
-            // The old unit is released HERE, synchronously. Do not defer the release to
-            // keep it alive "past the render cycle": that overlaps the outgoing instance
-            // with the incoming one, and GeoShred is unstable with a second live instance
-            // (see §GeoShred) — it then fails to load on the new track entirely.
         } else if let sampler = samplers.removeValue(forKey: trackID) {
             engine.disconnectNodeInput(mixer)
             engine.detach(sampler)
