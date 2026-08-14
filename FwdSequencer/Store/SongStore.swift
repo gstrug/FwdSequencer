@@ -126,7 +126,12 @@ class SongStore: ObservableObject {
             self?.notice = AudioRecordingError.writeFailed(detail).localizedDescription
         }
 
+        // Playback telemetry drives SwiftUI from the sequencer thread on every note,
+        // step and beat. It is suppressed while a plugin builds its UI (see
+        // AudioEngineManager.telemetryPaused) so that main-thread/CoreAnimation work
+        // does not compete with establishing an out-of-process plugin view.
         sequencer.onNotePlayed = { [weak self] trackID, notes in
+            guard self?.audioEngine.telemetryPaused == false else { return }
             DispatchQueue.main.async {
                 if notes.isEmpty {
                     self?.playback.playingNotes.removeValue(forKey: trackID)
@@ -136,12 +141,15 @@ class SongStore: ObservableObject {
             }
         }
         sequencer.onBarChange = { [weak self] bar in
+            guard self?.audioEngine.telemetryPaused == false else { return }
             DispatchQueue.main.async { self?.playback.currentBar = bar }
         }
         sequencer.onStepChange = { [weak self] trackID, stepIdx in
+            guard self?.audioEngine.telemetryPaused == false else { return }
             DispatchQueue.main.async { self?.playback.activeSteps[trackID] = stepIdx }
         }
         sequencer.onBeat = { [weak self] isDownbeat in
+            guard self?.audioEngine.telemetryPaused == false else { return }
             DispatchQueue.main.async { self?.beatSignal.send(isDownbeat) }
         }
         sequencer.onSectionChange = { [weak self] index in

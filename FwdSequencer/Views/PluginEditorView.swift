@@ -77,6 +77,20 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
             scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
+    }
+
+    private var hasRequestedView = false
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        // Deliberately NOT in viewDidLoad. Standing up an out-of-process AUv3 view is
+        // heavy (XPC + a hosted UIScene), and doing it during the editor's presentation
+        // animation put it in direct competition with that transition and with live
+        // audio rendering — a big plugin (GeoShred) then came up blank while the
+        // sequencer was running. Requesting once the transition has finished gives the
+        // scene a quiet frame to establish in.
+        guard !hasRequestedView else { return }
+        hasRequestedView = true
         AUViewControllerHelper.requestViewController(for: audioUnit) { [weak self] vc in
             DispatchQueue.main.async {
                 guard let self else { return }
