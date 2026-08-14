@@ -281,6 +281,9 @@ struct PluginEditorView: View {
     /// Called when the native plugin UI is about to close, so the host document
     /// (pattern or song) can capture the plugin's current state into its model.
     var onCommitState: (() -> Void)? = nil
+    /// Re-instantiate this track's instrument. Recovery when the hosted plugin view
+    /// comes up blank because its out-of-process scene or extension died.
+    var onReload: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     @State private var auUnit: AUAudioUnit? = nil
@@ -345,6 +348,17 @@ struct PluginEditorView: View {
                 if usePresetFallback && (!factoryPresets.isEmpty || !userPresets.isEmpty) {
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button("Presets") { showPresets = true }
+                    }
+                }
+                if onReload != nil {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button {
+                            onReload?()
+                            dismiss()
+                        } label: {
+                            Label("Reload", systemImage: "arrow.clockwise")
+                        }
+                        .help("Rebuild this instrument if its interface is blank")
                     }
                 }
                 ToolbarItem(placement: .confirmationAction) {

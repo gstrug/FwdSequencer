@@ -799,7 +799,8 @@ private struct SongTrackRowView: View {
         }
         .fullScreenCover(isPresented: $showPluginEditor) {
             PluginEditorView(trackID: track.id, trackName: track.name,
-                             onCommitState: { songStore.capturePluginState(for: track.id) })
+                             onCommitState: { songStore.capturePluginState(for: track.id) },
+                             onReload: { songStore.reloadPlugin(for: track.id) })
         }
         .sheet(isPresented: $showSteps, onDismiss: {
             if let baseline = stepsBaseline { songStore.recordUndoSnapshot(baseline) }
@@ -1037,11 +1038,19 @@ private struct SongTrackRowView: View {
             }
 
             if track.pluginInfo != nil {
+                // Embedding a plugin's UI while it is still loading is how a hosted
+                // scene ends up invalid (white view), so the editor stays shut until
+                // the instrument reports ready.
+                let isReady: Bool = {
+                    if case .loading = songStore.pluginStatuses[track.id] { return false }
+                    return true
+                }()
                 Button { showPluginEditor = true } label: {
-                    Label("Edit Sound", systemImage: "slider.horizontal.3")
+                    Label(isReady ? "Edit Sound" : "Loading…", systemImage: "slider.horizontal.3")
                         .font(.caption).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.bordered).tint(.purple)
+                .disabled(!isReady)
             }
 
             HStack(spacing: 6) {

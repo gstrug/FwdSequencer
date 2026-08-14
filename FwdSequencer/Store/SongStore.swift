@@ -660,6 +660,15 @@ class SongStore: ObservableObject {
         }
     }
 
+    /// Re-instantiate a track's existing instrument. Recovery for a plugin whose
+    /// out-of-process view or extension has died (blank editor): the AU is rebuilt from
+    /// scratch and its saved sound restored, without the user having to reassign it.
+    func reloadPlugin(for trackID: UUID) {
+        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }),
+              let info = song.tracks[idx].pluginInfo else { return }
+        loadPlugin(info, for: trackID, stateData: song.tracks[idx].pluginStateData)
+    }
+
     func capturePluginState(for trackID: UUID) {
         guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
         if let state = audioEngine.captureState(for: trackID) {
