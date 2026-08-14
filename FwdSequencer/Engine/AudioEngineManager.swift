@@ -98,6 +98,15 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         set { withCallbackLock { _onRecordingError = newValue } }
     }
     var currentStatus: AudioEngineStatus { withCallbackLock { status } }
+    private var _telemetryPaused = false
+    /// Suspends VU metering and level callbacks. Set while a plugin's UI is being
+    /// constructed: hosting an out-of-process AUv3 view is main-thread and CoreAnimation
+    /// heavy, and a big plugin (GeoShred) can fail to establish its hosted scene while we
+    /// are also pushing 20 Hz meter updates per track. Audio and MIDI are unaffected.
+    var telemetryPaused: Bool {
+        get { withCallbackLock { _telemetryPaused } }
+        set { withCallbackLock { _telemetryPaused = newValue } }
+    }
     private var sessionObservers: [NSObjectProtocol] = []
     private struct PluginLoadRequest {
         let id: UUID
@@ -447,11 +456,12 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                 }
             }
             recordingLock.unlock()
-            let level = self.rms(buffer)
+            // Recording (above) is unconditional; metering is throttled and pausable.
             let now = CACurrentMediaTime()
             guard now - lastLevelTimestamp > 0.05 else { return }
             lastLevelTimestamp = now
-            self.onMasterLevelUpdate?(level)
+            guard !self.telemetryPaused else { return }
+            self.onMasterLevelUpdate?(self.rms(buffer))
         }
         masterTapInstalled = true
     }
@@ -826,11 +836,13 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         var lastLevelTimestamp: Double = 0
         node.installTap(onBus: 0, bufferSize: 1024, format: nil) { [weak self] buffer, _ in
             guard let self else { return }
-            let level = self.rms(buffer)
+            // Throttle FIRST: rms() walks every sample, and this ran on the audio thread
+            // for every buffer even though the result is used 20×/sec.
             let now = CACurrentMediaTime()
             guard now - lastLevelTimestamp > 0.05 else { return }
             lastLevelTimestamp = now
-            self.onLevelUpdate?(id, level)
+            guard !self.telemetryPaused else { return }
+            self.onLevelUpdate?(id, self.rms(buffer))
         }
     }
 

@@ -379,9 +379,16 @@ struct PluginEditorView: View {
         .onAppear {
             releasedSuspension = false
             engine.suspendTrack(trackID)
+            // Quieten our own main-thread/CoreAnimation work while the plugin builds
+            // its (out-of-process) UI — a heavy plugin can otherwise fail to establish
+            // its hosted scene and come up blank.
+            engine.telemetryPaused = true
             setup()
         }
-        .onDisappear { releaseSuspension() }
+        .onDisappear {
+            engine.telemetryPaused = false
+            releaseSuspension()
+        }
         .sheet(isPresented: $showPresets) { presetSheet }
     }
 
