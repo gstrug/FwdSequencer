@@ -95,6 +95,11 @@ class SongStore: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var saveWorkItem: DispatchWorkItem?
+    /// Serial queue for document writes. A save reads the previous file back, decodes it,
+    /// copies it to the backup, then encodes and writes — far too much to run on the main
+    /// thread, which it did 1s after EVERY model change. Choosing an instrument is a model
+    /// change, so that stall landed while the plugin's hosted view was being established.
+    private let saveQueue = DispatchQueue(label: "com.fwd.song-save", qos: .utility)
     private var pendingPluginLoads = PluginLoadTracker()
     private var recordingURL: URL?
     /// True only once a song has actually been opened/created. The store's default
@@ -330,9 +335,27 @@ class SongStore: ObservableObject {
 
     private func scheduleSave() {
         saveWorkItem?.cancel()
-        let item = DispatchWorkItem { [weak self] in self?.saveNow() }
+        let item = DispatchWorkItem { [weak self] in self?.saveInBackground() }
         saveWorkItem = item
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: item)
+    }
+
+    /// Debounced autosave. Snapshots on the main thread, then does all file I/O off it.
+    /// Use `saveNow()` where the write must complete before proceeding (leaving the song,
+    /// backgrounding); this variant is for the routine 1s-after-an-edit save.
+    private func saveInBackground() {
+        guard hasActiveSong else { return }
+        let snapshot = song
+        saveQueue.async { [weak self] in
+            let result = SongStorage.saveResult(snapshot)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                switch result {
+                case .success: self.savedSignal.send()
+                case .failure(let error): self.notice = error.localizedDescription
+                }
+            }
+        }
     }
 
     /// Persist the model only — notes, arrangement, and whatever plugin-state blobs are

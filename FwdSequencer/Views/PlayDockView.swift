@@ -54,9 +54,13 @@ struct PlayDockView: View {
                 songStore.setPerformancePlugin(choice.info)
                 pendingPlugin = nil
             }
+            Button("Load Anyway") {
+                songStore.setPerformancePlugin(choice.info)
+                pendingPlugin = nil
+            }
             Button("Cancel", role: .cancel) { pendingPlugin = nil }
         } message: { choice in
-            Text("\(choice.info?.name ?? "The built-in sound") loads reliably only while the sequencer is stopped. Playback will stop, then the instrument loads.")
+            Text("\(choice.info?.name ?? "The built-in sound") loads most reliably with the sequencer stopped — some plugins show a blank interface otherwise. Load Anyway keeps playing.")
         }
         .fullScreenCover(isPresented: $showPluginEditor) {
             if let p = perf {
