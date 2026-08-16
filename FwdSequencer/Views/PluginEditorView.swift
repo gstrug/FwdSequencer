@@ -94,10 +94,7 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         AUViewControllerHelper.requestViewController(for: audioUnit) { [weak self] vc in
             DispatchQueue.main.async {
                 guard let self else { return }
-                guard let vc else {
-                    NSLog("[FWD-UI] requestViewController returned NIL — plugin has no UI")
-                    self.onNoUI?(); self.signalViewReady(); return
-                }
+                guard let vc else { self.onNoUI?(); self.signalViewReady(); return }
                 self.embed(vc)
             }
         }
@@ -107,9 +104,6 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         addChild(vc)
         let pv = vc.view!
         let declared = vc.preferredContentSize
-        NSLog("[FWD-UI] embed declared=%@ hostBounds=%@ vcClass=%@",
-              NSCoder.string(for: declared), NSCoder.string(for: view.bounds),
-              String(describing: type(of: vc)))
 
         // Large full-UI plugins (or ones with a degenerate declared size) are fitted by
         // RESIZING via Auto Layout — never by a zoom transform. Out-of-process/hosted
@@ -130,8 +124,6 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
             ])
             vc.didMove(toParent: self)
             vc.endAppearanceTransition()
-            NSLog("[FWD-UI] FILL path -> pluginFrame=%@ hidden=%d alpha=%.2f",
-                  NSCoder.string(for: pv.frame), pv.isHidden ? 1 : 0, pv.alpha)
             signalViewReady()
             return
         }
@@ -145,9 +137,6 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         pluginView = pv
         vc.didMove(toParent: self)
         vc.endAppearanceTransition()
-        NSLog("[FWD-UI] SCROLL path -> pluginFrame=%@ contentSize=%@ hidden=%d alpha=%.2f",
-              NSCoder.string(for: pv.frame), NSCoder.string(for: scrollView.contentSize),
-              pv.isHidden ? 1 : 0, pv.alpha)
         signalViewReady()
         view.setNeedsLayout()
     }
@@ -169,9 +158,6 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
             scrollView.setZoomScale(scale, animated: false)
         }
         centerContent()
-        NSLog("[FWD-UI] laidOut zoom=%.3f pluginFrame=%@ scrollBounds=%@",
-              scrollView.zoomScale, NSCoder.string(for: pv.frame),
-              NSCoder.string(for: scrollView.bounds))
     }
 
     private func centerContent() {
