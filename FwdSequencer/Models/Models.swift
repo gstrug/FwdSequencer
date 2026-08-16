@@ -185,7 +185,25 @@ nonisolated struct NoteEntry: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var midiNote: Int
     var velocity: Int = 100
+    /// How long this note sounds, as a fraction of its step, 0.05–1.0.
     var gateLength: Double = 0.5
+
+    init(id: UUID = UUID(), midiNote: Int, velocity: Int = 100, gateLength: Double = 0.5) {
+        self.id = id; self.midiNote = midiNote
+        self.velocity = velocity; self.gateLength = gateLength
+    }
+
+    // Tolerant decoder (the synthesised one throws on a missing key even where a
+    // default exists). Also clamps to the editable range: a wider 0.01–8.0 slider
+    // briefly allowed note gates up to 800%, sustaining a note across eight steps.
+    private enum CodingKeys: String, CodingKey { case id, midiNote, velocity, gateLength }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        midiNote = try c.decode(Int.self, forKey: .midiNote)
+        velocity = min(max(try c.decodeIfPresent(Int.self, forKey: .velocity) ?? 100, 0), 127)
+        gateLength = min(max(try c.decodeIfPresent(Double.self, forKey: .gateLength) ?? 0.5, 0.05), 1.0)
+    }
 }
 
 nonisolated struct MixerState: Codable, Equatable {

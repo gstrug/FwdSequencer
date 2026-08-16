@@ -83,7 +83,7 @@ enum SongTemplate: String, CaseIterable, Identifiable {
 
         let bassNotes = notes([38, 41, 43, 45, 48], velocity: 82, gate: 0.62)
         let chordNotes = notes([50, 53, 57, 58, 60, 65, 67, 69, 72],
-                               velocity: 72, gate: 1.35)
+                               velocity: 72, gate: 1.0)
         let leadNotes = notes([62, 65, 67, 69, 72, 74], velocity: 91, gate: 0.72)
 
         let nightfall = SongSection(name: "Nightfall", numberOfBars: 4, parts: [
