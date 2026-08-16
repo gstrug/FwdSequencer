@@ -39,7 +39,12 @@ struct PlayDockView: View {
         .background(.regularMaterial)
         .clipped()                           // keep the wide keyboard from spilling past the edges
         .overlay(alignment: .top) { Divider() }
-        .onAppear { songStore.ensurePerformanceInstrument() }
+        // Deferred: this creates the performance track, mutating @Published song state.
+        // Doing that straight from onAppear publishes a change during the view update
+        // that presented the dock.
+        .onAppear {
+            DispatchQueue.main.async { songStore.ensurePerformanceInstrument() }
+        }
         .onDisappear { releaseAll() }
         .sheet(isPresented: $showPluginPicker) {
             PluginPickerView(selectedPlugin: pluginBinding)

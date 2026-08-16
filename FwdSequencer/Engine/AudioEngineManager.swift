@@ -310,8 +310,13 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
     private func deliver(_ result: Result<Void, PluginLoadError>,
                          to completion: @escaping (Result<Void, PluginLoadError>) -> Void) {
-        if Thread.isMainThread { completion(result) }
-        else { DispatchQueue.main.async { completion(result) } }
+        // ALWAYS asynchronous, even when already on the main thread. Several load paths
+        // complete synchronously (no plugin, unavailable track, a superseded request),
+        // and choosing an instrument happens inside a SwiftUI binding setter — so a
+        // synchronous completion mutated @Published state (isLoading, pluginStatuses,
+        // notice) during a view update: "Publishing changes from within view updates is
+        // not allowed, this will cause undefined behavior."
+        DispatchQueue.main.async { completion(result) }
     }
 
     private func startEngineIfNeeded() -> Bool {
