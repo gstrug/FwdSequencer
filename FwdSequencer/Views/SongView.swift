@@ -871,6 +871,9 @@ private struct SongTrackRowView: View {
             collapsedWideBar.fixedSize(horizontal: true, vertical: false)
             collapsedCompactBar
         }
+        // The wide variant is fixed-size, so without this it floats in the centre of
+        // the row. Minimised tracks should line up with the expanded ones.
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var collapsedWideBar: some View {

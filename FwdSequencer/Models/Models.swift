@@ -204,7 +204,7 @@ nonisolated struct Step: Codable, Identifiable, Equatable {
     /// Play step only: 1-indexed pool positions played simultaneously (a chord).
     /// Empty = single-note behaviour driven by `n`.
     var chordPositions: [Int] = []
-    /// Per-step articulation, 0.01–8.0. Scales how long this step's note(s) sustain
+    /// Per-step articulation, 0.05–1.0. Scales how long this step's note(s) sustain
     /// (multiplies each note's own gate). 1.0 = full note gates (default).
     var gate: Double = 1.0
     /// Deterministic chance that this step sounds. Traversal still advances when a
@@ -234,7 +234,11 @@ nonisolated struct Step: Codable, Identifiable, Equatable {
         type = try c.decode(StepType.self, forKey: .type)
         n = try c.decodeIfPresent(Int.self, forKey: .n) ?? 1
         chordPositions = try c.decodeIfPresent([Int].self, forKey: .chordPositions) ?? []
-        gate = try c.decodeIfPresent(Double.self, forKey: .gate) ?? 1.0
+        // Clamped to the editable range. A wider 0.01–8.0 slider briefly allowed step
+        // gates up to 800%, which sustains a note across eight steps — easy to set by
+        // accident and not what the control is for. Values outside the range are
+        // corrected on load.
+        gate = min(max(try c.decodeIfPresent(Double.self, forKey: .gate) ?? 1.0, 0.05), 1.0)
         probability = try c.decodeIfPresent(Double.self, forKey: .probability) ?? 1.0
         ratchets = try c.decodeIfPresent(Int.self, forKey: .ratchets) ?? 1
     }

@@ -218,7 +218,7 @@ struct StepRow: View {
                 VStack(spacing: 5) {
                     HStack(spacing: 8) {
                         Text("Gate").font(.caption2).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
-                        Slider(value: $step.gate, in: 0.01...8.0)
+                        Slider(value: $step.gate, in: 0.05...1.0)
                         Text("\(Int(step.gate * 100))%")
                             .font(.caption2).monospacedDigit().frame(width: 38)
                     }
