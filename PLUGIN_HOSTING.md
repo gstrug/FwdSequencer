@@ -126,6 +126,41 @@ fragile ones.
 
 ### GeoShred — a cautionary note
 
+**Diagnosed conclusively (2026-08-16, build 52, from device console).** The blank
+white panel is NOT a hosting, layout, timing or MIDI-gating problem on our side.
+Instrumented output shows our embed doing exactly the right thing:
+
+    [FWD-UI] embed declared={810, 1080} hostBounds={{0,0},{810,917.5}}
+             vcClass=AUAudioUnitRemoteViewController
+    [FWD-UI] FILL path -> pluginFrame={{0,0},{810,1080}} hidden=0 alpha=1.00
+
+Correct size, fill path, visible, full alpha. Immediately *before* that, the
+extension is already gone:
+
+    personaAttributesForPersonaType ... com.apple.mobile.usermanagerd.xpc was invalidated
+    [GeoShredAUExtension] Connection to plugin interrupted while in use.
+    [GeoShredAUExtension] Connection to plugin invalidated while in use.
+    Invalid frame dimension (negative or non-finite).        (x14, from its own scene)
+    LaunchServices: ... Code=-54 "process may not map database"
+    Attempt to map database failed: permission was denied. This attempt will not be retried.
+    Ignoring update for invalidated scene: UIHostedScene-...GeoShredAUExtension...
+    Error acquiring assertion: "Specified target process 518 does not exist"
+
+So we embed a correct view belonging to a process that no longer exists. A host
+cannot revive a dead extension, which is why **Reload works** — it launches a new
+extension process — and why nothing else did.
+
+Do not attempt further host-side fixes for this. Things already tried and
+disproven, so they are not retried: request timing (viewDidLoad -> viewDidAppear
+-> +0.45s), discarding the first view controller, deallocateRenderResources on the
+outgoing unit, deferring its release, stopping playback before loading, pausing
+metering and playback telemetry, and enlarging the settle delay. Several were kept
+because they were correct on their own merits; none addressed this.
+
+Note also that device state dominates: GeoShred's behaviour changes across
+reboots, so any A/B test of our code must control for uptime and boot session or
+the result is meaningless.
+
 GeoShred was the single hardest plugin and, ultimately, is **not reliably hostable**
 as an AUv3 on-device. Its extension fails at the OS level — `LaunchServices … Code=-54
 "process may not map database"`, `fopen failed for data file`, and
