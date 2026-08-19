@@ -491,16 +491,22 @@ class SongStore: ObservableObject {
         isRecording = true
     }
 
-    func finishRecording() throws -> Data {
+    /// Stop recording and hand back the captured file. The caller chooses an export
+    /// format (see RecordingExporter) and must call `discardRecording` when done —
+    /// the file is NOT deleted here, because converting to WAV needs to read it.
+    func finishRecording() throws -> URL {
         guard isRecording, let url = recordingURL else {
             throw AudioRecordingError.unavailable
         }
         audioEngine.stopRecording()
         isRecording = false
         recordingURL = nil
-        defer { try? FileManager.default.removeItem(at: url) }
-        do { return try Data(contentsOf: url) }
-        catch { throw AudioRecordingError.writeFailed(error.localizedDescription) }
+        return url
+    }
+
+    /// Remove a finished recording's temporary file.
+    func discardRecording(at url: URL) {
+        try? FileManager.default.removeItem(at: url)
     }
 
     /// Release this song's instruments (call when leaving the song view). Captures live

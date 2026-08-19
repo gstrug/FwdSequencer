@@ -148,6 +148,9 @@ private struct SongTransportBar: View {
     @State private var selectAllSongName = false
     @State private var exportingRecording = false
     @State private var recordingDocument: AudioRecordingDocument?
+    /// A finished take waiting for the user to pick an export format.
+    @State private var finishedRecordingURL: URL?
+    @State private var recordingFormat: RecordingFormat = .wav
 
     private var beatCount: Int { songStore.song.timeSignature.numerator }
     private var currentSectionBars: Int {
@@ -344,10 +347,22 @@ private struct SongTransportBar: View {
         }
         .fileExporter(isPresented: $exportingRecording,
                       document: recordingDocument,
-                      contentType: .coreAudioRecording,
+                      contentType: recordingFormat.contentType,
                       defaultFilename: recordingFilename) { result in
             if case .failure(let error) = result { songStore.notice = error.localizedDescription }
             recordingDocument = nil
+        }
+        .confirmationDialog("Export recording as",
+                            isPresented: Binding(get: { finishedRecordingURL != nil },
+                                                 set: { if !$0 { discardFinishedRecording() } }),
+                            titleVisibility: .visible) {
+            ForEach(RecordingFormat.allCases) { format in
+                Button(format.displayName) { exportRecording(as: format) }
+            }
+            Button("Discard", role: .destructive) { discardFinishedRecording() }
+        } message: {
+            Text(RecordingFormat.allCases.map { "\($0.displayName) — \($0.detail)" }
+                    .joined(separator: "\n"))
         }
         .onReceive(songStore.savedSignal) {
             savedVisible = true
@@ -380,11 +395,38 @@ private struct SongTransportBar: View {
         return (name.isEmpty ? "FWD" : name) + " Recording"
     }
 
+    /// Convert the finished take to the chosen format and hand it to the exporter.
+    private func exportRecording(as format: RecordingFormat) {
+        guard let url = finishedRecordingURL else { return }
+        finishedRecordingURL = nil
+        do {
+            let prepared = try RecordingExporter.prepare(url, as: format)
+            recordingFormat = format
+            recordingDocument = AudioRecordingDocument(data: prepared.data)
+            exportingRecording = true
+            if prepared.didClip {
+                songStore.notice = String(
+                    format: "The mix peaked at %+.1f dBFS, so the exported %@ file is clipped. "
+                          + "Lower the master or track levels and record again, or export as CAF "
+                          + "to keep the take exactly as played.",
+                    prepared.peakDBFS, format.displayName)
+            }
+        } catch {
+            songStore.notice = error.localizedDescription
+        }
+        songStore.discardRecording(at: url)
+    }
+
+    private func discardFinishedRecording() {
+        if let url = finishedRecordingURL { songStore.discardRecording(at: url) }
+        finishedRecordingURL = nil
+    }
+
     private func toggleRecording() {
         do {
             if songStore.isRecording {
-                recordingDocument = AudioRecordingDocument(data: try songStore.finishRecording())
-                exportingRecording = true
+                // Ask which format before converting — see the confirmationDialog below.
+                finishedRecordingURL = try songStore.finishRecording()
             } else {
                 try songStore.beginRecording()
             }
