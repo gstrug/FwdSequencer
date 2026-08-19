@@ -20,11 +20,15 @@
 		</dict>
 	</array>
     <key>LSSupportsOpeningDocumentsInPlace</key>
-    <false/>
+    <true/>
     <key>UIBackgroundModes</key>
     <array>
         <string>audio</string>
     </array>
+    <!-- Exposes the app's Documents folder in Files as "FWD Sequencer", giving
+         exports (and the Exports subfolder) somewhere obvious to live. -->
+    <key>UIFileSharingEnabled</key>
+    <true/>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
     <key>UTExportedTypeDeclarations</key>

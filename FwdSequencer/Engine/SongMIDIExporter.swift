@@ -228,8 +228,14 @@ nonisolated enum SongMIDIExporter {
             }
         }
 
+        // Only tracks you can actually hear are written. Muted (or, when anything is
+        // soloed, non-soloed) tracks already produce no notes, but emitting an empty
+        // named track for each of them leaves confusing dead tracks in the DAW.
+        let soloing = song.tracks.contains { $0.mixer.isSoloed }
         var chunks: [Data] = [trackChunk(events: conductor, endTick: absoluteTick)]
         for (index, track) in song.tracks.enumerated() {
+            let audible = !track.mixer.isMuted && (!soloing || track.mixer.isSoloed)
+            guard audible else { continue }
             var events = trackEvents[index]
             events.append(event(0, -7, metaText(0x03, track.name)))
             chunks.append(trackChunk(events: events, endTick: absoluteTick))

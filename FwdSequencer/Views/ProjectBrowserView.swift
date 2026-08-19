@@ -19,6 +19,11 @@ struct ProjectBrowserView: View {
     @State private var exportDocument: SongDocument? = nil
     @State private var exportFilename = "FWD Song"
     @State private var exportingMIDI = false
+    /// Two-step export, mirroring the recording flow: choose a format, then name it.
+    @State private var exportFormatTarget: Song?
+    @State private var exportNameTarget: (song: Song, format: SongExportFormat)?
+    @State private var exportNameText = ""
+
     @State private var midiDocument: MIDIFileDocument? = nil
     @State private var midiFilename = "FWD Song"
     @State private var showingOnboarding = false
@@ -145,6 +150,28 @@ struct ProjectBrowserView: View {
         .fileImporter(isPresented: $importingSong, allowedContentTypes: [.fwdSong, .json]) { result in
             importSong(result)
         }
+        .confirmationDialog("Export song as",
+                            isPresented: Binding(get: { exportFormatTarget != nil },
+                                                 set: { if !$0 { exportFormatTarget = nil } }),
+                            titleVisibility: .visible) {
+            ForEach(SongExportFormat.allCases) { format in
+                Button(format.displayName) { beginExport(format) }
+            }
+        } message: {
+            Text(SongExportFormat.allCases.map { "\($0.displayName) — \($0.detail)" }
+                    .joined(separator: "\n"))
+        }
+        .alert("File name", isPresented: Binding(get: { exportNameTarget != nil },
+                                                 set: { if !$0 { exportNameTarget = nil } })) {
+            TextField("Name", text: $exportNameText)
+            Button("Export") { performExport() }
+            Button("Cancel", role: .cancel) { exportNameTarget = nil }
+        } message: {
+            if let target = exportNameTarget {
+                Text("Saved as a \(target.format.displayName) file. Choose FWD Sequencer in the "
+                     + "location picker to keep exports with the app.")
+            }
+        }
         .fileExporter(isPresented: $exportingSong,
                       document: exportDocument,
                       contentType: .fwdSong,
@@ -182,19 +209,33 @@ struct ProjectBrowserView: View {
         reload()
     }
 
-    private func exportSong(_ song: Song) {
-        exportDocument = SongDocument(song: song)
-        exportFilename = sanitizedFilename(song.name)
-        exportingSong = true
+    /// Step 1 → 2: format chosen, now ask for a name.
+    private func beginExport(_ format: SongExportFormat) {
+        guard let song = exportFormatTarget else { return }
+        exportFormatTarget = nil
+        exportNameText = sanitizedFilename(song.name)
+        exportNameTarget = (song, format)
     }
 
-    private func exportMIDI(_ song: Song) {
-        do {
-            midiDocument = MIDIFileDocument(data: try SongMIDIExporter.data(for: song))
-            midiFilename = sanitizedFilename(song.name)
-            exportingMIDI = true
-        } catch {
-            notice = "MIDI export failed. \(error.localizedDescription)"
+    /// Step 2 → done: build the document and hand it to the system exporter.
+    private func performExport() {
+        guard let target = exportNameTarget else { return }
+        exportNameTarget = nil
+        let name = sanitizedFilename(exportNameText)
+        SongStorage.prepareExportsFolder()   // so "Exports" exists in the Files app
+        switch target.format {
+        case .fwdSong:
+            exportDocument = SongDocument(song: target.song)
+            exportFilename = name
+            exportingSong = true
+        case .midi:
+            do {
+                midiDocument = MIDIFileDocument(data: try SongMIDIExporter.data(for: target.song))
+                midiFilename = name
+                exportingMIDI = true
+            } catch {
+                notice = "MIDI export failed. \(error.localizedDescription)"
+            }
         }
     }
 
@@ -271,7 +312,7 @@ struct ProjectBrowserView: View {
                             }
                         }
                         .swipeActions(edge: .leading) {
-                            Button { exportSong(song) } label: {
+                            Button { exportFormatTarget = song } label: {
                                 Label("Export", systemImage: "square.and.arrow.up")
                             }
                             .tint(.blue)
@@ -282,11 +323,8 @@ struct ProjectBrowserView: View {
                             Button { openSong(song) } label: { Label("Open", systemImage: "play.fill") }
                             Button { beginRename(song) } label: { Label("Rename", systemImage: "pencil") }
                             Button { duplicateSong(song) } label: { Label("Duplicate", systemImage: "doc.on.doc") }
-                            Button { exportSong(song) } label: {
-                                Label("Export FWD Song", systemImage: "square.and.arrow.up")
-                            }
-                            Button { exportMIDI(song) } label: {
-                                Label("Export MIDI", systemImage: "music.note.list")
+                            Button { exportFormatTarget = song } label: {
+                                Label("Export…", systemImage: "square.and.arrow.up")
                             }
                             Divider()
                             Button(role: .destructive) { songDeleteTarget = song } label: {

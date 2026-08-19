@@ -43,6 +43,28 @@ struct AudioRecordingDocument: FileDocument {
     }
 }
 
+/// What a song can be exported as, offered the same way the recording chooser is.
+nonisolated enum SongExportFormat: String, CaseIterable, Identifiable {
+    case fwdSong
+    case midi
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .fwdSong: return "FWD Song"
+        case .midi:    return "MIDI"
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .fwdSong: return "The whole song, to reopen here or share."
+        case .midi:    return "Notes only, for a DAW. Muted tracks are omitted."
+        }
+    }
+}
+
 struct SongDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.fwdSong, .json] }
     var song: Song
@@ -156,6 +178,18 @@ enum SongStorage {
         } catch {
             throw SongStorageError.directoryUnavailable(error.localizedDescription)
         }
+    }
+
+    /// A folder for exported files, created so it is visible in the Files app under
+    /// "FWD Sequencer" (see UIFileSharingEnabled in Info.plist). Exports still go
+    /// wherever the system picker is pointed; this just gives them a home.
+    static var exportsDirectory: URL {
+        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent("Exports", isDirectory: true)
+    }
+
+    static func prepareExportsFolder() {
+        try? fileManager.createDirectory(at: exportsDirectory, withIntermediateDirectories: true)
     }
 
     static func url(for id: UUID) -> URL {
