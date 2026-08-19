@@ -1,5 +1,30 @@
 import SwiftUI
 
+
+/// Latched clip state shared by both meter styles.
+///
+/// A clip indicator has to persist — an over lasts one buffer and would otherwise
+/// flash past unseen. It clears itself once the signal has stayed below full scale
+/// for a moment, so pulling a hot track down visibly resolves it, and it can also
+/// be cleared by tapping the meter.
+struct ClipLatch {
+    private(set) var isLit = false
+    private var lastOver = Date.distantPast
+    /// How long the signal must stay clean before the indicator clears itself.
+    static let clearAfter: TimeInterval = 2.0
+
+    mutating func update(with level: AudioLevel, now: Date = Date()) {
+        if level.isOver {
+            isLit = true
+            lastOver = now
+        } else if isLit, now.timeIntervalSince(lastOver) > Self.clearAfter {
+            isLit = false
+        }
+    }
+
+    mutating func clear() { isLit = false; lastOver = .distantPast }
+}
+
 /// Faders operate in decibels, not in linear gain.
 ///
 /// A linear 0...1 fader puts every useful mixing decision in the bottom of its
@@ -76,6 +101,8 @@ struct FaderWithMeter<Meter: View>: View {
                     .frame(width: faderHeight)
                     .rotationEffect(.degrees(-90))
                     .frame(width: 36, height: faderHeight)
+                    // Double-tap anywhere on the fader returns it to unity.
+                    .onTapGesture(count: 2) { value = 1.0 }
             }
 
             // VU meter alongside — an observing leaf so level ticks re-render
@@ -109,9 +136,7 @@ struct VUMeter: View {
     let level: AudioLevel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// Latches when the signal touches full scale, so a brief over is still visible
-    /// after it has passed. Tap the meter to clear it.
-    @State private var clipped = false
+    @State private var latch = ClipLatch()
     /// Highest recent peak, so a transient leaves a mark instead of flashing by.
     @State private var heldPeak: CGFloat = 0
     @State private var holdExpiry = Date.distantPast
@@ -150,7 +175,7 @@ struct VUMeter: View {
                     .opacity(heldPeak > 0 ? 1 : 0)
 
                 // Clip indicator, latched.
-                if clipped {
+                if latch.isLit {
                     RoundedRectangle(cornerRadius: 2)
                         .fill(Color.red)
                         .frame(height: 3)
@@ -158,11 +183,13 @@ struct VUMeter: View {
                 }
             }
             .contentShape(Rectangle())
-            .onTapGesture { clipped = false; heldPeak = 0 }
+            .onTapGesture { latch.clear(); heldPeak = 0 }
         }
         .onChange(of: level) { newValue in
-            if newValue.isOver { clipped = true }
             let now = Date()
+            latch.update(with: newValue, now: now)
+            // Peak marker follows a rise immediately and decays after a hold, so
+            // lowering a fader is reflected rather than leaving a stale high mark.
             if newValue.peakFraction >= heldPeak || now > holdExpiry {
                 heldPeak = newValue.peakFraction
                 holdExpiry = now.addingTimeInterval(1.5)
@@ -170,7 +197,7 @@ struct VUMeter: View {
         }
         .accessibilityLabel("Level")
         .accessibilityValue(level.peakDB.isFinite
-                            ? String(format: "%.0f decibels%@", level.peakDB, clipped ? ", clipping" : "")
+                            ? String(format: "%.0f decibels%@", level.peakDB, latch.isLit ? ", clipping" : "")
                             : "Silent")
     }
 }

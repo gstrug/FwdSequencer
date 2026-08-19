@@ -953,6 +953,7 @@ private struct SongTrackRowView: View {
 
             Image(systemName: "speaker.wave.1").font(.system(size: 9)).foregroundStyle(.secondary)
             Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB).frame(width: 70)
+                .onTapGesture(count: 2) { track.mixer.volume = 1.0 }   // reset to 0 dB
                 .accessibilityLabel("\(track.name) volume")
             SongTrackMeter(trackID: track.id)
 
@@ -1003,6 +1004,7 @@ private struct SongTrackRowView: View {
                 Spacer(minLength: 4)
                 Image(systemName: "speaker.wave.1").font(.caption2).foregroundStyle(.secondary)
                 Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB)
+                    .onTapGesture(count: 2) { track.mixer.volume = 1.0 }   // reset to 0 dB
                     .frame(minWidth: 70, maxWidth: 150)
                     .accessibilityLabel("\(track.name) volume")
                 SongTrackMeter(trackID: track.id)
@@ -1108,12 +1110,14 @@ private struct SongTrackRowView: View {
             HStack(spacing: 6) {
                 Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
                 Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB)
+                    .onTapGesture(count: 2) { track.mixer.volume = 1.0 }   // reset to 0 dB
                 SongTrackMeter(trackID: track.id)
             }
 
             HStack(spacing: 6) {
                 Text("Pan").font(.caption2).foregroundStyle(.secondary)
                 Slider(value: $track.mixer.pan, in: -1...1)
+                    .onTapGesture(count: 2) { track.mixer.pan = 0 }
                 Toggle("M", isOn: $track.mixer.isMuted)
                     .toggleStyle(.button).tint(.orange).font(.caption2.bold())
                     .accessibilityLabel("Mute \(track.name)")
@@ -1280,21 +1284,49 @@ struct SongTrackMeter: View {
     @EnvironmentObject var levels: LevelMonitor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    @State private var latch = ClipLatch()
+    @State private var heldPeak: CGFloat = 0
+    @State private var holdExpiry = Date.distantPast
+
     var body: some View {
         let level = levels.trackLevels[trackID] ?? .silent
-        // Same dBFS scale as the mixer meters: RMS fills the bar, and it turns red
-        // once peaks reach full scale so an over is visible from the track row.
+        // Same dBFS scale as the mixer meters: RMS fills the bar, a marker shows the
+        // recent peak, and the cap latches red on an over until the level settles.
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 2).fill(Color.secondary.opacity(0.2))
+
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(level.isOver ? Color.red
-                          : level.peakDB > -6 ? .orange
+                    .fill(level.peakDB > -6 ? Color.orange
                           : level.peakDB > -18 ? .yellow : .green)
                     .frame(width: geo.size.width * level.rmsFraction)
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: level.rmsFraction)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.08),
+                               value: level.rmsFraction)
+
+                Rectangle()
+                    .fill(Color.primary.opacity(0.7))
+                    .frame(width: 1.5)
+                    .offset(x: geo.size.width * heldPeak - 0.75)
+                    .opacity(heldPeak > 0 ? 1 : 0)
+
+                if latch.isLit {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(Color.red)
+                        .frame(width: 3)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { latch.clear(); heldPeak = 0 }
         }
         .frame(width: 40, height: 6)
+        .onChange(of: level) { newValue in
+            let now = Date()
+            latch.update(with: newValue, now: now)
+            if newValue.peakFraction >= heldPeak || now > holdExpiry {
+                heldPeak = newValue.peakFraction
+                holdExpiry = now.addingTimeInterval(1.5)
+            }
+        }
     }
 }
