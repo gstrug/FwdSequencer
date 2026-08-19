@@ -63,8 +63,8 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     private var trackMixers: [UUID: AVAudioMixerNode] = [:]
 
     private let callbackLock = NSLock()
-    private var _onLevelUpdate: ((UUID, Float) -> Void)?
-    private var _onMasterLevelUpdate: ((Float) -> Void)?
+    private var _onLevelUpdate: ((UUID, AudioLevel) -> Void)?
+    private var _onMasterLevelUpdate: ((AudioLevel) -> Void)?
     private var _onStatusChange: ((AudioEngineStatus) -> Void)?
     private var _onPlaybackInterrupted: ((String) -> Void)?
     private var _onRecoveryRequired: (() -> Void)?
@@ -73,11 +73,11 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     private func withCallbackLock<T>(_ body: () -> T) -> T {
         callbackLock.lock(); defer { callbackLock.unlock() }; return body()
     }
-    var onLevelUpdate: ((UUID, Float) -> Void)? {
+    var onLevelUpdate: ((UUID, AudioLevel) -> Void)? {
         get { withCallbackLock { _onLevelUpdate } }
         set { withCallbackLock { _onLevelUpdate = newValue } }
     }
-    var onMasterLevelUpdate: ((Float) -> Void)? {
+    var onMasterLevelUpdate: ((AudioLevel) -> Void)? {
         get { withCallbackLock { _onMasterLevelUpdate } }
         set { withCallbackLock { _onMasterLevelUpdate = newValue } }
     }
@@ -458,7 +458,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             guard now - lastLevelTimestamp > 0.05 else { return }
             lastLevelTimestamp = now
             guard !self.telemetryPaused else { return }
-            self.onMasterLevelUpdate?(self.rms(buffer))
+            self.onMasterLevelUpdate?(self.levels(buffer))
         }
         masterTapInstalled = true
     }
@@ -829,20 +829,30 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             guard now - lastLevelTimestamp > 0.05 else { return }
             lastLevelTimestamp = now
             guard !self.telemetryPaused else { return }
-            self.onLevelUpdate?(id, self.rms(buffer))
+            self.onLevelUpdate?(id, self.levels(buffer))
         }
     }
 
-    private func rms(_ buffer: AVAudioPCMBuffer) -> Float {
-        guard let data = buffer.floatChannelData else { return 0 }
+    /// Peak and RMS for one buffer, in linear terms and deliberately UNCLAMPED —
+    /// a signal over full scale must be reportable, or clipping is invisible. The old
+    /// version returned `min(1, rms * 8)`, which pinned the meter around -18 dBFS RMS
+    /// and hid every over.
+    private func levels(_ buffer: AVAudioPCMBuffer) -> AudioLevel {
+        guard let data = buffer.floatChannelData else { return .silent }
         let count = Int(buffer.frameLength)
-        guard count > 0 else { return 0 }
-        var sum: Float = 0
+        guard count > 0 else { return .silent }
         let channels = max(1, Int(buffer.format.channelCount))
+        var sum: Float = 0
+        var peak: Float = 0
         for channel in 0..<channels {
-            for i in 0..<count { sum += data[channel][i] * data[channel][i] }
+            let samples = data[channel]
+            for i in 0..<count {
+                let sample = samples[i]
+                sum += sample * sample
+                peak = max(peak, abs(sample))
+            }
         }
-        return min(1.0, sqrt(sum / Float(count * channels)) * 8)
+        return AudioLevel(peak: peak, rms: sqrt(sum / Float(count * channels)))
     }
 
     private func loadGMBank(_ sampler: AVAudioUnitSampler) {

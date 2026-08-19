@@ -111,7 +111,7 @@ struct PlayDockView: View {
     private var volumeControls: some View {
         if perf != nil {
             Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
-            Slider(value: volumeBinding, in: 0...1)
+            Slider(value: FaderScale.binding(volumeBinding), in: FaderScale.minDB...FaderScale.maxDB)
                 .frame(minWidth: 80, maxWidth: 160)
                 .accessibilityLabel("Manual keyboard volume")
             if let id = perf?.id { SongTrackMeter(trackID: id) }

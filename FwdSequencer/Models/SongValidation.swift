@@ -54,7 +54,7 @@ nonisolated enum SongValidator {
             throw SongValidationError.invalid("Tempo must be between 20 and 400 BPM.")
         }
         try validate(song.timeSignature)
-        try validateUnit(song.masterVolume, name: "Master volume")
+        try validateGain(song.masterVolume, name: "Master volume")
 
         guard song.tracks.count <= 128 else {
             throw SongValidationError.invalid("A song cannot contain more than 128 tracks.")
@@ -147,7 +147,7 @@ nonisolated enum SongValidator {
     }
 
     private static func validate(_ mixer: MixerState, context: String) throws {
-        try validateUnit(mixer.volume, name: "\(context) volume")
+        try validateGain(mixer.volume, name: "\(context) volume")
         try requireFinite(mixer.pan, name: "\(context) pan")
         guard (-1...1).contains(mixer.pan) else {
             throw SongValidationError.invalid("\(context) pan must be between -1 and 1.")
@@ -218,6 +218,15 @@ nonisolated enum SongValidator {
     private static func validatePluginState(_ data: Data?, context: String) throws {
         guard (data?.count ?? 0) <= maximumPluginStateBytes else {
             throw SongValidationError.invalid("\(context) has more than 32 MB of plug-in state.")
+        }
+    }
+
+    /// Mixer/master gain. Faders run to +6 dB so quiet instruments can be brought up,
+    /// which is about 2.0 in linear terms — a plain 0...1 unit check would reject it.
+    private static func validateGain(_ value: Float, name: String) throws {
+        try requireFinite(value, name: name)
+        guard (0...2).contains(value) else {
+            throw SongValidationError.invalid("\(name) must be between 0 and 2.")
         }
     }
 

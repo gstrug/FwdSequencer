@@ -952,7 +952,7 @@ private struct SongTrackRowView: View {
             Spacer()
 
             Image(systemName: "speaker.wave.1").font(.system(size: 9)).foregroundStyle(.secondary)
-            Slider(value: $track.mixer.volume, in: 0...1).frame(width: 70)
+            Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB).frame(width: 70)
                 .accessibilityLabel("\(track.name) volume")
             SongTrackMeter(trackID: track.id)
 
@@ -1002,7 +1002,7 @@ private struct SongTrackRowView: View {
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "speaker.wave.1").font(.caption2).foregroundStyle(.secondary)
-                Slider(value: $track.mixer.volume, in: 0...1)
+                Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB)
                     .frame(minWidth: 70, maxWidth: 150)
                     .accessibilityLabel("\(track.name) volume")
                 SongTrackMeter(trackID: track.id)
@@ -1107,7 +1107,7 @@ private struct SongTrackRowView: View {
 
             HStack(spacing: 6) {
                 Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
-                Slider(value: $track.mixer.volume, in: 0...1)
+                Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB)
                 SongTrackMeter(trackID: track.id)
             }
 
@@ -1281,14 +1281,18 @@ struct SongTrackMeter: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        let level = levels.trackLevels[trackID] ?? 0
+        let level = levels.trackLevels[trackID] ?? .silent
+        // Same dBFS scale as the mixer meters: RMS fills the bar, and it turns red
+        // once peaks reach full scale so an over is visible from the track row.
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: 2).fill(Color.secondary.opacity(0.2))
                 RoundedRectangle(cornerRadius: 2)
-                    .fill(level > 0.85 ? Color.red : level > 0.6 ? .orange : level > 0.3 ? .yellow : .green)
-                    .frame(width: geo.size.width * CGFloat(min(1, level)))
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: level)
+                    .fill(level.isOver ? Color.red
+                          : level.peakDB > -6 ? .orange
+                          : level.peakDB > -18 ? .yellow : .green)
+                    .frame(width: geo.size.width * level.rmsFraction)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: level.rmsFraction)
             }
         }
         .frame(width: 40, height: 6)
