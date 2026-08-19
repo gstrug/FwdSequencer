@@ -23,6 +23,8 @@ struct ProjectBrowserView: View {
     @State private var exportFormatTarget: Song?
     @State private var exportNameTarget: (song: Song, format: SongExportFormat)?
     @State private var exportNameText = ""
+    /// Shown after an export so the file can actually be found.
+    @State private var exportedLocation: String?
 
     @State private var midiDocument: MIDIFileDocument? = nil
     @State private var midiFilename = "FWD Song"
@@ -63,6 +65,7 @@ struct ProjectBrowserView: View {
                 }
         }
         .onAppear {
+            SongStorage.prepareExportsFolder()
             reload()
             installBundledDemoIfNeeded()
             if !didCompleteOnboarding { showingOnboarding = true }
@@ -172,6 +175,14 @@ struct ProjectBrowserView: View {
                      + "location picker to keep exports with the app.")
             }
         }
+        .alert("Export complete", isPresented: Binding(
+            get: { exportedLocation != nil },
+            set: { if !$0 { exportedLocation = nil } }
+        )) {
+            Button("OK") { exportedLocation = nil }
+        } message: {
+            Text(exportedLocation ?? "")
+        }
         .fileExporter(isPresented: $exportingSong,
                       document: exportDocument,
                       contentType: .fwdSong,
@@ -222,20 +233,29 @@ struct ProjectBrowserView: View {
         guard let target = exportNameTarget else { return }
         exportNameTarget = nil
         let name = sanitizedFilename(exportNameText)
-        SongStorage.prepareExportsFolder()   // so "Exports" exists in the Files app
-        switch target.format {
-        case .fwdSong:
-            exportDocument = SongDocument(song: target.song)
-            exportFilename = name
-            exportingSong = true
-        case .midi:
-            do {
-                midiDocument = MIDIFileDocument(data: try SongMIDIExporter.data(for: target.song))
+        do {
+            // Always keep a copy in the app's Exports folder, then offer the system
+            // picker for anywhere else. Without this, dismissing the picker left no
+            // file at all and nowhere obvious to look.
+            let data: Data
+            switch target.format {
+            case .fwdSong:
+                data = try JSONEncoder().encode(SongValidator.validateAndNormalize(target.song))
+                exportDocument = SongDocument(song: target.song)
+                exportFilename = name
+                exportingSong = true
+            case .midi:
+                data = try SongMIDIExporter.data(for: target.song)
+                midiDocument = MIDIFileDocument(data: data)
                 midiFilename = name
                 exportingMIDI = true
-            } catch {
-                notice = "MIDI export failed. \(error.localizedDescription)"
             }
+            if let url = SongStorage.saveToExports(data, name: name,
+                                                   fileExtension: target.format.fileExtension) {
+                exportedLocation = SongStorage.exportLocationDescription(for: url)
+            }
+        } catch {
+            notice = "Export failed. \(error.localizedDescription)"
         }
     }
 

@@ -63,6 +63,13 @@ nonisolated enum SongExportFormat: String, CaseIterable, Identifiable {
         case .midi:    return "Notes only, for a DAW. Muted tracks are omitted."
         }
     }
+
+    var fileExtension: String {
+        switch self {
+        case .fwdSong: return "fwdsong"
+        case .midi:    return "mid"
+        }
+    }
 }
 
 struct SongDocument: FileDocument {
@@ -190,6 +197,34 @@ enum SongStorage {
 
     static func prepareExportsFolder() {
         try? fileManager.createDirectory(at: exportsDirectory, withIntermediateDirectories: true)
+    }
+
+    /// Write an export into the app's Exports folder, so a file always exists somewhere
+    /// findable even if the system location picker is dismissed. Returns the URL, or nil
+    /// if it could not be written. Never overwrites: a duplicate name gains a suffix.
+    @discardableResult
+    static func saveToExports(_ data: Data, name: String, fileExtension: String) -> URL? {
+        prepareExportsFolder()
+        let base = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "FWD Export" : name
+        var candidate = exportsDirectory.appendingPathComponent("\(base).\(fileExtension)")
+        var attempt = 2
+        while fileManager.fileExists(atPath: candidate.path) {
+            candidate = exportsDirectory
+                .appendingPathComponent("\(base) \(attempt).\(fileExtension)")
+            attempt += 1
+        }
+        do {
+            try data.write(to: candidate, options: .atomic)
+            return candidate
+        } catch {
+            return nil
+        }
+    }
+
+    /// Where an export landed, phrased the way the user sees it in the Files app.
+    static func exportLocationDescription(for url: URL) -> String {
+        "Saved to Files › On My iPad › FWD Sequencer › Exports › \(url.lastPathComponent)"
     }
 
     static func url(for id: UUID) -> URL {

@@ -404,13 +404,22 @@ private struct SongTransportBar: View {
             recordingFormat = format
             recordingDocument = AudioRecordingDocument(data: prepared.data)
             exportingRecording = true
+            // Keep a copy in the app's Exports folder so the take is never lost just
+            // because the location picker was dismissed.
+            var message: [String] = []
             if prepared.didClip {
-                songStore.notice = String(
-                    format: "The mix peaked at %+.1f dBFS, so the exported %@ file is clipped. "
-                          + "Lower the master or track levels and record again, or export as CAF "
-                          + "to keep the take exactly as played.",
-                    prepared.peakDBFS, format.displayName)
+                message.append(String(
+                    format: "The mix peaked at %+.1f dBFS, so this %@ file is clipped. "
+                          + "Lower the levels and record again, or export as CAF to keep the "
+                          + "take exactly as played.",
+                    prepared.peakDBFS, format.displayName))
             }
+            if let saved = SongStorage.saveToExports(prepared.data,
+                                                     name: recordingFilename,
+                                                     fileExtension: format.fileExtension) {
+                message.append(SongStorage.exportLocationDescription(for: saved))
+            }
+            if !message.isEmpty { songStore.notice = message.joined(separator: "\n\n") }
         } catch {
             songStore.notice = error.localizedDescription
         }
@@ -953,7 +962,7 @@ private struct SongTrackRowView: View {
 
             Image(systemName: "speaker.wave.1").font(.system(size: 9)).foregroundStyle(.secondary)
             Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB).frame(width: 70)
-                .onTapGesture(count: 2) { track.mixer.volume = 1.0 }   // reset to 0 dB
+                .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.volume = 1.0 })   // reset to 0 dB
                 .accessibilityLabel("\(track.name) volume")
             SongTrackMeter(trackID: track.id)
 
@@ -1004,7 +1013,7 @@ private struct SongTrackRowView: View {
                 Spacer(minLength: 4)
                 Image(systemName: "speaker.wave.1").font(.caption2).foregroundStyle(.secondary)
                 Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB)
-                    .onTapGesture(count: 2) { track.mixer.volume = 1.0 }   // reset to 0 dB
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.volume = 1.0 })   // reset to 0 dB
                     .frame(minWidth: 70, maxWidth: 150)
                     .accessibilityLabel("\(track.name) volume")
                 SongTrackMeter(trackID: track.id)
@@ -1110,14 +1119,14 @@ private struct SongTrackRowView: View {
             HStack(spacing: 6) {
                 Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
                 Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB)
-                    .onTapGesture(count: 2) { track.mixer.volume = 1.0 }   // reset to 0 dB
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.volume = 1.0 })   // reset to 0 dB
                 SongTrackMeter(trackID: track.id)
             }
 
             HStack(spacing: 6) {
                 Text("Pan").font(.caption2).foregroundStyle(.secondary)
                 Slider(value: $track.mixer.pan, in: -1...1)
-                    .onTapGesture(count: 2) { track.mixer.pan = 0 }
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.pan = 0 })
                 Toggle("M", isOn: $track.mixer.isMuted)
                     .toggleStyle(.button).tint(.orange).font(.caption2.bold())
                     .accessibilityLabel("Mute \(track.name)")

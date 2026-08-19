@@ -102,7 +102,7 @@ struct FaderWithMeter<Meter: View>: View {
                     .rotationEffect(.degrees(-90))
                     .frame(width: 36, height: faderHeight)
                     // Double-tap anywhere on the fader returns it to unity.
-                    .onTapGesture(count: 2) { value = 1.0 }
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { value = 1.0 })
             }
 
             // VU meter alongside — an observing leaf so level ticks re-render
