@@ -78,7 +78,7 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
 
 /// A named, non-destructive snapshot of a section's note data. Variations do not
 /// create extra arrangement entries; applying one replaces the section's current
-/// parts and remains undoable through SongStore.
+/// parts, so save a variation first if the present arrangement matters.
 nonisolated struct SectionVariation: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String

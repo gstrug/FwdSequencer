@@ -61,8 +61,6 @@ class SongStore: ObservableObject {
     @Published var audioStatus: AudioEngineStatus = .recovering
     @Published var notice: String? = nil
     @Published private(set) var isRecording = false
-    @Published private(set) var canUndo = false
-    @Published private(set) var canRedo = false
     /// When off (default), the song plays once to the end and stops; on, it loops.
     @Published var loopEnabled: Bool = false {
         didSet {
@@ -107,8 +105,6 @@ class SongStore: ObservableObject {
     /// background save (captureAndSave) would persist that empty default as a new
     /// .fwdsong on every launch.
     private var hasActiveSong = false
-    private var undoStack: [Song] = []
-    private var redoStack: [Song] = []
 
     init() {
         sequencer.audioEngine = audioEngine
@@ -263,7 +259,7 @@ class SongStore: ObservableObject {
 
     /// Open a song: tear down any previously loaded instruments and load this
     /// song's instruments once (concurrently — open time ≈ one plugin's load).
-    func open(_ song: Song, preserveHistory: Bool = false) {
+    func open(_ song: Song) {
         let safeSong: Song
         do {
             safeSong = try SongValidator.validateAndNormalize(song)
@@ -282,12 +278,6 @@ class SongStore: ObservableObject {
         // Part, so with zero sections note edits have nowhere to go and silently fail.
         // (An older saved song can decode with an empty section list.)
         let song = safeSong
-
-        if !preserveHistory {
-            undoStack.removeAll()
-            redoStack.removeAll()
-            updateHistoryAvailability()
-        }
 
         self.song = song
         hasActiveSong = true
@@ -580,7 +570,6 @@ class SongStore: ObservableObject {
         ensurePerformanceInstrument()
         guard var perf = song.performance else { return }
         if perf.pluginInfo == info { return }
-        checkpointForUndo()
         perf.pluginInfo = info
         perf.pluginStateData = nil
         song.performance = perf
@@ -612,7 +601,6 @@ class SongStore: ObservableObject {
             notice = "FWD Sequencer currently supports creating up to \(Self.maximumEditableTrackCount) tracks per song."
             return
         }
-        checkpointForUndo()
         let track = SongTrack(name: "Track \(song.tracks.count + 1)")
         song.tracks.append(track)
         // Every section gains an (empty) part for the new track.
@@ -626,7 +614,6 @@ class SongStore: ObservableObject {
     }
 
     func deleteTrack(_ trackID: UUID) {
-        checkpointForUndo()
         pendingPluginLoads.cancel(for: trackID)
         pluginStatuses.removeValue(forKey: trackID)
         isLoading = !pendingPluginLoads.isEmpty
@@ -642,13 +629,11 @@ class SongStore: ObservableObject {
 
     func moveTrackUp(_ trackID: UUID) {
         guard let i = song.tracks.firstIndex(where: { $0.id == trackID }), i > 0 else { return }
-        checkpointForUndo()
         song.tracks.swapAt(i, i - 1)
     }
 
     func moveTrackDown(_ trackID: UUID) {
         guard let i = song.tracks.firstIndex(where: { $0.id == trackID }), i < song.tracks.count - 1 else { return }
-        checkpointForUndo()
         song.tracks.swapAt(i, i + 1)
     }
 
@@ -659,7 +644,6 @@ class SongStore: ObservableObject {
             return
         }
         guard let i = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        checkpointForUndo()
         var copy = song.tracks[i]
         copy.id = UUID()
         copy.name = copy.name + " Copy"
@@ -687,7 +671,6 @@ class SongStore: ObservableObject {
     func setPlugin(_ info: PluginInfo?, for trackID: UUID) {
         guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
         guard song.tracks[idx].pluginInfo != info else { return }
-        checkpointForUndo()
         song.tracks[idx].pluginInfo = info
         song.tracks[idx].pluginStateData = nil
         if let info {
@@ -722,7 +705,6 @@ class SongStore: ObservableObject {
             notice = "A song can contain up to \(Self.maximumEditableSectionCount) editable sections."
             return
         }
-        checkpointForUndo()
         song.addEmptySection(named: "Section \(song.sections.count + 1)")
         selectedSection = song.sections.count - 1
     }
@@ -734,7 +716,6 @@ class SongStore: ObservableObject {
             return
         }
         guard song.sections.indices.contains(index) else { return }
-        checkpointForUndo()
         var copy = song.sections[index]
         copy.id = UUID()
         copy.name = copy.name + " copy"
@@ -745,7 +726,6 @@ class SongStore: ObservableObject {
     func moveSection(from: Int, to: Int) {
         guard song.sections.indices.contains(from),
               to >= 0, to < song.sections.count, from != to else { return }
-        checkpointForUndo()
         let sec = song.sections.remove(at: from)
         song.sections.insert(sec, at: to)
         selectedSection = to
@@ -753,14 +733,12 @@ class SongStore: ObservableObject {
 
     func deleteSection(at index: Int) {
         guard song.sections.count > 1, song.sections.indices.contains(index) else { return }
-        checkpointForUndo()
         song.sections.remove(at: index)
         selectedSection = min(selectedSection, song.sections.count - 1)
     }
 
     func transformSelectedSection(_ transform: SectionTransform) {
         guard song.sections.indices.contains(selectedSection) else { return }
-        checkpointForUndo()
 
         switch transform {
         case .rotateNotes:
@@ -801,7 +779,6 @@ class SongStore: ObservableObject {
     func captureVariation() {
         guard song.sections.indices.contains(selectedSection),
               song.sections[selectedSection].variations.count < 32 else { return }
-        checkpointForUndo()
         let number = song.sections[selectedSection].variations.count + 1
         let snapshot = SectionVariation(
             name: "Variation \(number)",
@@ -815,7 +792,6 @@ class SongStore: ObservableObject {
               let variation = song.sections[selectedSection].variations
                 .first(where: { $0.id == variationID }),
               variation.parts != song.sections[selectedSection].parts else { return }
-        checkpointForUndo()
         song.sections[selectedSection].parts = variation.parts
     }
 
@@ -823,7 +799,6 @@ class SongStore: ObservableObject {
         guard song.sections.indices.contains(selectedSection),
               song.sections[selectedSection].variations.contains(where: { $0.id == variationID })
         else { return }
-        checkpointForUndo()
         song.sections[selectedSection].variations.removeAll { $0.id == variationID }
     }
 
@@ -835,43 +810,6 @@ class SongStore: ObservableObject {
         }
     }
 
-    func checkpointForUndo() {
-        guard undoStack.last != song else { return }
-        undoStack.append(song)
-        if undoStack.count > 30 { undoStack.removeFirst() }
-        redoStack.removeAll()
-        updateHistoryAvailability()
-    }
-
-    /// Record an editor's pre-presentation value after the editor closes, but only if
-    /// it actually changed the song. Binding-driven sheets become one meaningful undo
-    /// transaction instead of creating an entry for every slider tick.
-    func recordUndoSnapshot(_ snapshot: Song) {
-        guard snapshot != song, undoStack.last != snapshot else { return }
-        undoStack.append(snapshot)
-        if undoStack.count > 30 { undoStack.removeFirst() }
-        redoStack.removeAll()
-        updateHistoryAvailability()
-    }
-
-    func undo() {
-        guard let previous = undoStack.popLast() else { return }
-        redoStack.append(song)
-        open(previous, preserveHistory: true)
-        updateHistoryAvailability()
-    }
-
-    func redo() {
-        guard let next = redoStack.popLast() else { return }
-        undoStack.append(song)
-        open(next, preserveHistory: true)
-        updateHistoryAvailability()
-    }
-
-    private func updateHistoryAvailability() {
-        canUndo = !undoStack.isEmpty
-        canRedo = !redoStack.isEmpty
-    }
 
     private func pauseForAudioInterruption(_ message: String) {
         guard isPlaying else {

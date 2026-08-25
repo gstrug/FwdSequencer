@@ -308,15 +308,6 @@ private struct SongTransportBar: View {
                 .buttonStyle(.bordered)
 
                 Menu {
-                    Button { songStore.undo() } label: {
-                        Label("Undo", systemImage: "arrow.uturn.backward")
-                    }
-                    .disabled(!songStore.canUndo)
-                    Button { songStore.redo() } label: {
-                        Label("Redo", systemImage: "arrow.uturn.forward")
-                    }
-                    .disabled(!songStore.canRedo)
-                    Divider()
                     Toggle(isOn: $songStore.midiClockEnabled) {
                         Label("MIDI Clock Output", systemImage: "cable.connector")
                     }
@@ -612,7 +603,7 @@ private struct SectionSettingsBar: View {
                     Label("Transform", systemImage: "wand.and.stars")
                 }
                 .buttonStyle(.bordered)
-                .help("Reshape this section's notes and steps in place — a single undoable edit")
+                .help("Reshape this section's notes and steps in place. Save a variation first to keep the current version.")
 
                 Menu {
                     Button { songStore.captureVariation() } label: {
@@ -675,8 +666,6 @@ private struct SongTrackRowView: View {
     @State private var showNoteParams = false
     @State private var showScalePicker = false
     @State private var showDeleteAlert = false
-    @State private var stepsBaseline: Song?
-    @State private var noteParametersBaseline: Song?
     @State private var stepsSectionID: UUID?
     @State private var noteParametersSectionID: UUID?
     @State private var scaleSectionID: UUID?
@@ -734,7 +723,6 @@ private struct SongTrackRowView: View {
     /// notes 1,3,4). A Play that referenced only removed notes stays as a step but plays
     /// nothing. Other step types carry no pool positions and are untouched.
     private func applyKeyScaleDroppingNotes(sectionID: UUID, key: Int, scale: MusicalScale) {
-        songStore.checkpointForUndo()
         let targetBinding = pinnedPartBinding(sectionID: sectionID)
         var target = targetBinding.wrappedValue
         let old = target.notePool
@@ -786,7 +774,6 @@ private struct SongTrackRowView: View {
         let bad = offendingNotes(in: target, key: key, scale: scale)
         if bad.isEmpty {
             guard target.key != key || target.scale != scale else { return }
-            songStore.checkpointForUndo()
             target.key = key
             target.scale = scale
             targetBinding.wrappedValue = target
@@ -853,8 +840,6 @@ private struct SongTrackRowView: View {
                              onReload: { songStore.reloadPlugin(for: track.id) })
         }
         .sheet(isPresented: $showSteps, onDismiss: {
-            if let baseline = stepsBaseline { songStore.recordUndoSnapshot(baseline) }
-            stepsBaseline = nil
             stepsSectionID = nil
         }) {
             if let sectionID = stepsSectionID {
@@ -863,8 +848,6 @@ private struct SongTrackRowView: View {
             }
         }
         .sheet(isPresented: $showNoteParams, onDismiss: {
-            if let baseline = noteParametersBaseline { songStore.recordUndoSnapshot(baseline) }
-            noteParametersBaseline = nil
             noteParametersSectionID = nil
         }) {
             if let sectionID = noteParametersSectionID {
@@ -1178,7 +1161,6 @@ private struct SongTrackRowView: View {
                 notePool: $part.notePool,
                 scale: part.scale,
                 key: part.key,
-                onBeforeChange: { songStore.checkpointForUndo() },
                 onPreview: { midi in
                     let n = UInt8(midi)
                     AudioEngineManager.shared.playNote(trackID: track.id, midiNote: n, velocity: 100)
@@ -1192,7 +1174,6 @@ private struct SongTrackRowView: View {
                 HStack(spacing: 10) {
                 Button {
                     guard let sectionID = selectedSectionID else { return }
-                    noteParametersBaseline = songStore.song
                     noteParametersSectionID = sectionID
                     showNoteParams = true
                 } label: {
@@ -1202,7 +1183,6 @@ private struct SongTrackRowView: View {
 
                 Button {
                     guard let sectionID = selectedSectionID else { return }
-                    stepsBaseline = songStore.song
                     stepsSectionID = sectionID
                     showSteps = true
                 } label: {
@@ -1225,7 +1205,6 @@ private struct SongKeyboard: View {
     @Binding var notePool: [NoteEntry]
     let scale: MusicalScale
     let key: Int
-    let onBeforeChange: () -> Void
     let onPreview: (Int) -> Void
     @EnvironmentObject var playback: PlaybackMonitor
 
@@ -1235,7 +1214,6 @@ private struct SongKeyboard: View {
             scale: scale,
             playingNotes: playback.playingNotes[trackID] ?? [],
             key: key,
-            onBeforeChange: onBeforeChange,
             onPreview: onPreview
         )
     }

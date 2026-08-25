@@ -5,7 +5,6 @@ struct PianoKeyboardView: View {
     let scale: MusicalScale
     var playingNotes: [Int] = []
     var key: Int = 0
-    var onBeforeChange: (() -> Void)? = nil
     var onPreview: ((Int) -> Void)? = nil
 
     // Full 88-key range: A0 (21) – C8 (108)
@@ -61,7 +60,6 @@ struct PianoKeyboardView: View {
 
     private func toggle(_ midi: Int) {
         guard isInScale(midi) else { return }
-        onBeforeChange?()
         if let idx = notePool.firstIndex(where: { $0.midiNote == midi }) {
             notePool.remove(at: idx)
         } else {

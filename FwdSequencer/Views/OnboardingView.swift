@@ -15,7 +15,7 @@ struct OnboardingView: View {
          "Each section keeps its own notes and steps while the instrument and mixer stay consistent across the arrangement."),
         ("dial.medium",
          "Shape it without losing it",
-         "Chance and ratchets add movement. Save section variations before experimenting, then recall or undo them anytime."),
+         "Probability and Divide add movement without changing the sequence. Save a section variation before experimenting, then recall it whenever you like."),
         ("puzzlepiece.extension.fill",
          "Play first, finish anywhere",
          "Templates work immediately with built-in sound. Add AUv3 instruments, record the mix, or export deterministic MIDI when you are ready.")
