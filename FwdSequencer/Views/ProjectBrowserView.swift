@@ -324,6 +324,8 @@ struct ProjectBrowserView: View {
 
                 ForEach(songs) { song in
                     SongRow(song: song)
+                        // Rows sized to their content rather than the default row height.
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                         .contentShape(Rectangle())
                         .onTapGesture { openSong(song) }
                         .swipeActions(edge: .trailing) {
@@ -558,14 +560,14 @@ struct SongRow: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: "square.stack.3d.up")
-                .font(.title2)
+                .font(.body)
                 .foregroundStyle(.tint)
-                .frame(width: 36)
+                .frame(width: 26)
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(song.name)
                     .font(.headline)
-                    .lineLimit(2)
+                    .lineLimit(1)
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 12) {
                         songMetadata
@@ -585,7 +587,6 @@ struct SongRow: View {
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
-        .padding(.vertical, 4)
     }
 
     @ViewBuilder

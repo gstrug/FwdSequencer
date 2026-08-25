@@ -1116,17 +1116,22 @@ private struct SongTrackRowView: View {
                 .disabled(!isReady)
             }
 
+            // Volume gets its own line; the meter sits beside pan, matching its size,
+            // so the level is readable rather than a 6pt sliver.
             HStack(spacing: 6) {
-                Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
+                Image(systemName: "speaker.wave.2")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .frame(width: 28, alignment: .leading)
                 Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB)
                     .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.volume = 1.0 })   // reset to 0 dB
-                SongTrackMeter(trackID: track.id)
             }
 
             HStack(spacing: 6) {
                 Text("Pan").font(.caption2).foregroundStyle(.secondary)
+                    .frame(width: 28, alignment: .leading)
                 Slider(value: $track.mixer.pan, in: -1...1)
                     .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.pan = 0 })
+                SongTrackMeter(trackID: track.id)
                 Toggle("M", isOn: $track.mixer.isMuted)
                     .toggleStyle(.button).tint(.orange).font(.caption2.bold())
                     .accessibilityLabel("Mute \(track.name)")
@@ -1328,7 +1333,7 @@ struct SongTrackMeter: View {
             .contentShape(Rectangle())
             .onTapGesture { latch.clear(); heldPeak = 0 }
         }
-        .frame(width: 40, height: 6)
+        .frame(minWidth: 56, maxWidth: 90, minHeight: 12, maxHeight: 12)
         .onChange(of: level) { newValue in
             let now = Date()
             latch.update(with: newValue, now: now)

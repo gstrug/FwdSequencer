@@ -175,6 +175,25 @@ struct StepRow: View {
         }
     }
 
+    /// Chance and Ratchets are easy to mistake for pattern controls; they are not.
+    private var articulationHelp: String {
+        var parts: [String] = []
+        if step.probability < 1 {
+            parts.append("Chance \(Int((step.probability * 100).rounded()))% — this step is "
+                         + "sometimes silent. The sequence still advances, so only the rhythm "
+                         + "changes, and it repeats the same way every play.")
+        }
+        if step.ratchets > 1 {
+            parts.append("Ratchets \(step.ratchets) — retriggers this note \(step.ratchets) times "
+                         + "inside the step, so each hit is shorter. The sequence is unaffected.")
+        }
+        if parts.isEmpty {
+            parts.append("Chance skips a step's note without changing the sequence. "
+                         + "Ratchets retrigger it within its own step.")
+        }
+        return parts.joined(separator: "\n")
+    }
+
     private var deleteButton: some View {
         Button(role: .destructive, action: onDelete) {
             Image(systemName: "minus.circle.fill")
@@ -230,6 +249,10 @@ struct StepRow: View {
                     }
                     Stepper("Ratchets: \(step.ratchets)", value: $step.ratchets, in: 1...8)
                         .font(.caption2)
+                    Text(articulationHelp)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.leading, 34)
             }
