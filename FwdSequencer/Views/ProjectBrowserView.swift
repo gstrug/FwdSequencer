@@ -325,7 +325,7 @@ struct ProjectBrowserView: View {
                 ForEach(songs) { song in
                     SongRow(song: song)
                         // Rows sized to their content rather than the default row height.
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                         .contentShape(Rectangle())
                         .onTapGesture { openSong(song) }
                         .swipeActions(edge: .trailing) {
@@ -382,6 +382,9 @@ struct ProjectBrowserView: View {
                     }
                 }
             }
+            // A List enforces a ~44pt minimum row height whatever the content is,
+            // which left song rows taller than the two lines they show.
+            .environment(\.defaultMinListRowHeight, 34)
         }
     }
 
@@ -560,18 +563,18 @@ struct SongRow: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "square.stack.3d.up")
-                .font(.body)
+                .font(.footnote)
                 .foregroundStyle(.tint)
-                .frame(width: 24)
+                .frame(width: 20)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 Text(song.name)
-                    .font(.headline)
+                    .font(.subheadline.weight(.semibold))
                     .lineLimit(1)
                 // Spelled out rather than icon-only: a metronome or slider glyph on its
                 // own tells you nothing about what the number means.
                 Text(summary)
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

@@ -308,14 +308,6 @@ private struct SongTransportBar: View {
                 .buttonStyle(.bordered)
 
                 Menu {
-                    Section("Time Signature") {
-                        Picker("Beats per Bar", selection: $songStore.song.timeSignature.numerator) {
-                            ForEach(1...32, id: \.self) { Text("\($0)").tag($0) }
-                        }
-                        Picker("Beat Unit", selection: $songStore.song.timeSignature.denominator) {
-                            ForEach([1,2,4,8,16,32], id: \.self) { Text("1/\($0)").tag($0) }
-                        }
-                    }
                     Button { songStore.undo() } label: {
                         Label("Undo", systemImage: "arrow.uturn.backward")
                     }
