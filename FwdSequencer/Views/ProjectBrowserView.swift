@@ -558,43 +558,37 @@ struct SongRow: View {
     let song: Song
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 12) {
             Image(systemName: "square.stack.3d.up")
                 .font(.body)
                 .foregroundStyle(.tint)
-                .frame(width: 26)
+                .frame(width: 24)
 
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(song.name)
                     .font(.headline)
                     .lineLimit(1)
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 12) {
-                        songMetadata
-                    }
-                    .fixedSize(horizontal: true, vertical: false)
-                    VStack(alignment: .leading, spacing: 3) {
-                        songMetadata
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                // Spelled out rather than icon-only: a metronome or slider glyph on its
+                // own tells you nothing about what the number means.
+                Text(summary)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
             Image(systemName: "chevron.right")
-                .font(.caption)
+                .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
     }
 
-    @ViewBuilder
-    private var songMetadata: some View {
-        Label("\(song.tracks.count) track\(song.tracks.count == 1 ? "" : "s")",
-              systemImage: "slider.horizontal.3")
-        Label("\(song.sections.count) section\(song.sections.count == 1 ? "" : "s")",
-              systemImage: "square.stack")
-        Label("\(Int(song.tempo)) BPM", systemImage: "metronome")
+    private var summary: String {
+        let tracks = "\(song.tracks.count) track\(song.tracks.count == 1 ? "" : "s")"
+        let sections = "\(song.sections.count) section\(song.sections.count == 1 ? "" : "s")"
+        let tempo = "\(Int(song.tempo)) BPM"
+        let meter = "\(song.timeSignature.numerator)/\(song.timeSignature.denominator)"
+        return [tracks, sections, tempo, meter].joined(separator: " · ")
     }
 }

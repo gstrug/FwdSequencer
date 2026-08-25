@@ -329,7 +329,7 @@ private struct SongTransportBar: View {
                         Label("MIDI Clock Output", systemImage: "cable.connector")
                     }
                 } label: {
-                    Label("Settings", systemImage: "gearshape")
+                    Label("Song Settings", systemImage: "gearshape")
                 }
                 .buttonStyle(.bordered)
                 }
@@ -1131,7 +1131,6 @@ private struct SongTrackRowView: View {
                     .frame(width: 28, alignment: .leading)
                 Slider(value: $track.mixer.pan, in: -1...1)
                     .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.pan = 0 })
-                SongTrackMeter(trackID: track.id)
                 Toggle("M", isOn: $track.mixer.isMuted)
                     .toggleStyle(.button).tint(.orange).font(.caption2.bold())
                     .accessibilityLabel("Mute \(track.name)")
@@ -1139,6 +1138,9 @@ private struct SongTrackRowView: View {
                     .toggleStyle(.button).tint(.yellow).font(.caption2.bold())
                     .accessibilityLabel("Solo \(track.name)")
             }
+
+            // Level meter spans the row beneath the controls, where it has room to read.
+            SongTrackMeter(trackID: track.id)
         }
     }
 
@@ -1333,7 +1335,7 @@ struct SongTrackMeter: View {
             .contentShape(Rectangle())
             .onTapGesture { latch.clear(); heldPeak = 0 }
         }
-        .frame(minWidth: 56, maxWidth: 90, minHeight: 12, maxHeight: 12)
+        .frame(maxWidth: .infinity, minHeight: 10, maxHeight: 10)
         .onChange(of: level) { newValue in
             let now = Date()
             latch.update(with: newValue, now: now)

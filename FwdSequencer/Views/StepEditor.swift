@@ -238,7 +238,7 @@ struct StepRow: View {
             // Per-step gate — scales how long this step's note(s) sustain.
             // Hidden for Hold/Pause, which don't play a note.
             if step.type != .hold && step.type != .pause {
-                VStack(spacing: 5) {
+                VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text("Gate").font(.caption2).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
                         Slider(value: $step.gate, in: 0.05...1.0)
@@ -251,14 +251,26 @@ struct StepRow: View {
                         Text("\(Int((step.probability * 100).rounded()))%")
                             .font(.caption2).monospacedDigit().frame(width: 38)
                     }
-                    Stepper("Divide: \(step.ratchets)", value: $step.ratchets, in: 1...8)
-                        .font(.caption2)
+                    HStack(spacing: 8) {
+                        Text("Divide").font(.caption2).foregroundStyle(.secondary)
+                            .frame(width: 64, alignment: .leading)
+                        // Bounded and left-aligned: a full-width Stepper put its +/-
+                        // buttons under the slider knob on the row above.
+                        Stepper(value: $step.ratchets, in: 1...8) {
+                            Text("\(step.ratchets)")
+                                .font(.caption2).monospacedDigit()
+                        }
+                        .fixedSize()
+                        Spacer(minLength: 0)
+                    }
                     Text(articulationHelp)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
                 }
                 .padding(.leading, 34)
+                .padding(.trailing, 4)
             }
         }
         .padding(.vertical, 4)
