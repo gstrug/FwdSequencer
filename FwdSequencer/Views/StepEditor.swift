@@ -175,21 +175,25 @@ struct StepRow: View {
         }
     }
 
-    /// Chance and Ratchets are easy to mistake for pattern controls; they are not.
+    /// Probability and Divide are easy to mistake for pattern controls; they are not.
+    /// (The model keeps the original property names `probability` and `ratchets`; the
+    /// saved format is unchanged, only the user-facing labels differ.)
     private var articulationHelp: String {
         var parts: [String] = []
         if step.probability < 1 {
-            parts.append("Chance \(Int((step.probability * 100).rounded()))% — this step is "
+            parts.append("Probability \(Int((step.probability * 100).rounded()))% — this step is "
                          + "sometimes silent. The sequence still advances, so only the rhythm "
                          + "changes, and it repeats the same way every play.")
         }
         if step.ratchets > 1 {
-            parts.append("Ratchets \(step.ratchets) — retriggers this note \(step.ratchets) times "
-                         + "inside the step, so each hit is shorter. The sequence is unaffected.")
+            parts.append("Divide \(step.ratchets) — splits this step into \(step.ratchets) equal "
+                         + "hits, so on a quarter note Divide 3 is a triplet and 4 is sixteenths. "
+                         + "Each hit is shorter; the sequence is unaffected.")
         }
         if parts.isEmpty {
-            parts.append("Chance skips a step's note without changing the sequence. "
-                         + "Ratchets retrigger it within its own step.")
+            parts.append("Probability skips a step's note without changing the sequence. "
+                         + "Divide splits the step into equal retriggers — 3 on a quarter note "
+                         + "gives a triplet.")
         }
         return parts.joined(separator: "\n")
     }
@@ -242,12 +246,12 @@ struct StepRow: View {
                             .font(.caption2).monospacedDigit().frame(width: 38)
                     }
                     HStack(spacing: 8) {
-                        Text("Chance").font(.caption2).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
+                        Text("Probability").font(.caption2).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
                         Slider(value: $step.probability, in: 0...1, step: 0.05)
                         Text("\(Int((step.probability * 100).rounded()))%")
                             .font(.caption2).monospacedDigit().frame(width: 38)
                     }
-                    Stepper("Ratchets: \(step.ratchets)", value: $step.ratchets, in: 1...8)
+                    Stepper("Divide: \(step.ratchets)", value: $step.ratchets, in: 1...8)
                         .font(.caption2)
                     Text(articulationHelp)
                         .font(.caption2)
