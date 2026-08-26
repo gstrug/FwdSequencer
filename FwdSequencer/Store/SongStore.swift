@@ -64,6 +64,9 @@ class SongStore: ObservableObject {
     /// When off (default), the song plays once to the end and stops; on, it loops.
     @Published var loopEnabled: Bool = false {
         didSet {
+            guard loopEnabled != oldValue else { return }
+            // Persist with the song so the loop setting survives reopening.
+            if song.loops != loopEnabled { song.loops = loopEnabled }
             if isPlaying || isPaused { updateLiveSong() }
         }
     }
@@ -281,6 +284,7 @@ class SongStore: ObservableObject {
 
         self.song = song
         hasActiveSong = true
+        loopEnabled = song.loops ?? false
         selectedSection = 0
         currentSection = 0
         activate()

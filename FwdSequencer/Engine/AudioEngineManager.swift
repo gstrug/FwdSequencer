@@ -869,6 +869,9 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         withLock {
             guard !isSuspended(trackID) else { return }
             activeNotes[trackID, default: []].insert(midiNote)
+            let kind = auv3Units[trackID] != nil ? "AUv3" : "sampler"
+            NSLog("[FWD-VEL] noteOn track=%@ note=%d vel=%d via=%@",
+                  trackID.uuidString.prefix(8) as CVarArg, Int(midiNote), Int(velocity), kind)
             if let unit = auv3Units[trackID] {
                 sendMIDI(to: unit, bytes: [0x90, midiNote, velocity])
             } else {

@@ -62,6 +62,9 @@ nonisolated struct Song: Codable, Identifiable, Equatable {
     /// Optional preserves decoding of builds 1–16. SongStore materialises a stable
     /// value when an older song opens, making Random steps reproducible thereafter.
     var randomSeed: UInt64? = nil
+    /// Whether the song loops. Optional so builds before this key still decode; nil
+    /// means "not saved yet" and the store treats it as off.
+    var loops: Bool? = nil
     // A dedicated instrument for the manual Play dock, independent of the sequencer
     // tracks. Optional, so older saved songs still decode (missing key → nil).
     var performance: SongTrack? = nil
