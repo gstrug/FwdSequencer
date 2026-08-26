@@ -467,9 +467,9 @@ class SongStore: ObservableObject {
     }
 
     func midiPanic() {
-        sequencer.stop()
+        sequencer.stop()                       // cancels pending note-offs and ratchets
         if midiClockEnabled { audioEngine.stopMIDIClock() }
-        audioEngine.allNotesOff()
+        audioEngine.panic()                    // aggressive: clears notes we may not be tracking
         isPlaying = false
         isPaused = false
         playback.playingNotes.removeAll()

@@ -926,6 +926,27 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         _ = block(AUEventSampleTimeImmediate, 0, listPtr)
     }
 
+    /// The nuclear stop for a hung note, distinct from allNotesOff (which only releases
+    /// notes we know we started). Panic assumes our tracking may be wrong — a plugin's
+    /// own arpeggiator, a stuck sustain, or drift — so it sweeps every SETTLED instrument
+    /// with All Sound Off (CC120), All Notes Off (CC123) and a full 0...127 note-off,
+    /// and every sampler with a full note-off. Only settled units are addressed: an
+    /// unsettled AUv3 has nothing ringing and would crash on the flush (see
+    /// settledInstruments). Safe on settled instruments — they take MIDI normally.
+    func panic() {
+        withLock {
+            for (id, unit) in auv3Units where settledInstruments.contains(id) {
+                sendMIDI(to: unit, bytes: [0xB0, 120, 0])   // All Sound Off
+                sendMIDI(to: unit, bytes: [0xB0, 123, 0])   // All Notes Off
+                for n in 0...127 { sendMIDI(to: unit, bytes: [0x80, UInt8(n), 0]) }
+            }
+            for (_, sampler) in samplers {
+                for n in 0...127 { sampler.stopNote(UInt8(n), onChannel: 0) }
+            }
+            activeNotes.removeAll()
+        }
+    }
+
     func allNotesOff() {
         withLock {
             // Only settled AUv3s are addressed — an unsettled one has no ringing notes
