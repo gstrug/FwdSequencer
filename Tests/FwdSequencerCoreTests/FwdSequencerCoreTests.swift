@@ -479,6 +479,56 @@ final class FwdSequencerCoreTests: XCTestCase {
         engine.stop()
     }
 
+    /// A chord voicing holds ABSOLUTE pool positions. Shrinking the pool underneath it
+    /// — which is exactly what dropping out-of-key notes on a key change does while the
+    /// sequencer is running — left `.rep` returning positions past the end of the new
+    /// pool, and the tick loop trapped indexing it. Survivors must be kept and dropped
+    /// positions discarded, with playback continuing.
+    func testChordVoicingSurvivesThePoolShrinkingUnderneathIt() {
+        let output = RecordingAudioOutput()
+        let firstNote = expectation(description: "Chord played")
+        output.onFirstNote = { firstNote.fulfill() }
+
+        let trackID = UUID()
+        let sectionID = UUID()
+        let fullPool = [NoteEntry(midiNote: 60), NoteEntry(midiNote: 62),
+                        NoteEntry(midiNote: 64), NoteEntry(midiNote: 67)]
+        let steps = [Step(type: .play, chordPositions: [1, 3, 4]), Step(type: .rep)]
+
+        let engine = SequencerEngine()
+        engine.audioEngine = output
+        engine.startSong(
+            sections: [SequencerSection(id: sectionID, numberOfBars: 1, tracks: [
+                PlayTrack(id: trackID, tempoDivision: .quarter, notePool: fullPool,
+                          steps: steps, isMuted: false, isSoloed: false)
+            ])],
+            tempo: 240,
+            timeSignature: TimeSignature(),
+            trackIDs: [trackID],
+            loop: true
+        )
+        wait(for: [firstNote], timeout: 1)
+
+        // Positions 3 and 4 no longer exist. The voicing must not be replayed verbatim.
+        let shrunkPool = Array(fullPool.prefix(2))
+        engine.updateSong(
+            sections: [SequencerSection(id: sectionID, numberOfBars: 1, tracks: [
+                PlayTrack(id: trackID, tempoDivision: .quarter, notePool: shrunkPool,
+                          steps: steps, isMuted: false, isSoloed: false)
+            ])],
+            tempo: 240,
+            timeSignature: TimeSignature(),
+            trackIDs: [trackID],
+            loop: true
+        )
+
+        let countAtShrink = output.playedNotes
+        Thread.sleep(forTimeInterval: 0.75)   // several steps at 240 BPM
+        XCTAssertGreaterThan(output.playedNotes, countAtShrink,
+                             "Playback should continue against the smaller pool")
+        engine.stop()
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)

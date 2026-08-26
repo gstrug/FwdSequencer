@@ -354,8 +354,8 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         var frame = currentFrame()
         let interval = 60.0 / frame.tempo / Double(stepsPerBeat)
 
-        // How many 16th-note steps make one bar given the time signature.
-        // Formula: numerator beats × (16 steps per whole note / denominator)
+        // How many ticks make one bar, at the 32nd-note tick resolution above.
+        // Formula: numerator beats × (32 ticks per whole note / denominator).
         var stepsPerBar = max(1, frame.timeSignature.numerator * 32 / frame.timeSignature.denominator)
         var totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
 
@@ -491,6 +491,9 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                 // the chord internally, while the step gate scales the whole thing.
                 var notes: [Int] = []
                 for idx in poolIndices {
+                    // Belt and braces: every producer of poolIndices bounds-checks, but
+                    // this is the one place a stale index would trap on the audio path.
+                    guard idx >= 0, idx < track.notePool.count else { continue }
                     let entry = track.notePool[idx]
                     let midiNote = UInt8(entry.midiNote)
                     audioEngine?.playNote(trackID: track.id, midiNote: midiNote, velocity: UInt8(entry.velocity))
@@ -639,6 +642,27 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         }
 
         state.notePtr = state.notePtr % noteCount
+
+        // Re-validate a carried-over chord voicing against the CURRENT pool.
+        //
+        // `voicing` holds absolute pool positions captured when a Play step ran. The
+        // pool can shrink underneath it while the sequencer is running — dropping
+        // out-of-key notes on a key change does exactly that — and `.rep` returned the
+        // voicing verbatim, so `notePool[idx]` indexed past the end and trapped. (Fwd
+        // and Back happened to survive because they map through `% noteCount`.)
+        //
+        // Survivors are kept and dropped positions discarded, matching how a Play
+        // chord is pruned on a key change. Down to one note, the track returns to
+        // single-note mode; down to none, the voicing is abandoned.
+        if let v = state.voicing {
+            let valid = v.filter { $0 >= 0 && $0 < noteCount }
+            if valid.count > 1 {
+                state.voicing = valid
+            } else {
+                state.voicing = nil
+                if let only = valid.first { state.notePtr = only }
+            }
+        }
 
         // Finish a Hold/Pause carried over from the previous section before running
         // any of this section's steps. Each trigger consumes one of the remaining

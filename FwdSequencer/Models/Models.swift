@@ -203,7 +203,10 @@ nonisolated struct NoteEntry: Codable, Identifiable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
-        midiNote = try c.decode(Int.self, forKey: .midiNote)
+        // Clamped like the others: the tick loop converts this to UInt8 to send it,
+        // so an out-of-range value in a hand-edited or damaged file is a trap, not a
+        // wrong note.
+        midiNote = min(max(try c.decode(Int.self, forKey: .midiNote), 0), 127)
         velocity = min(max(try c.decodeIfPresent(Int.self, forKey: .velocity) ?? 100, 0), 127)
         gateLength = min(max(try c.decodeIfPresent(Double.self, forKey: .gateLength) ?? 0.5, 0.05), 1.0)
     }
