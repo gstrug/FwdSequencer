@@ -670,34 +670,49 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         let fsd = au.fullStateForDocument
         let isDocument = (fsd != nil)
         let state = fsd ?? au.fullState
-        let params = au.parameterTree?.allParameters ?? []
 
         // Use PropertyListSerialization — handles NSData/NSString/NSNumber/NSDictionary
         // natively without the type-allowlist issues of NSKeyedUnarchiver.
         var combined: [String: Any] = [:]
 
-        let fullStateIsSubstantial: Bool
+        // Is fullState a COMPLETE preset, or only metadata?
+        //
+        // Apple's preset dictionary is documented as type / subtype / manufacturer /
+        // version plus a `data` payload holding the plugin's own serialised state. If
+        // that payload is present and non-empty, fullState is authoritative and the
+        // parameter tree must not be saved or re-applied over it.
+        //
+        // This previously tested `state.count > 5`, which is exactly backwards for a
+        // well-behaved plugin: the canonical complete dictionary has precisely those
+        // five keys, so a correct plugin (GeoShred among them) was classified as
+        // "metadata only" and had its entire parameter tree written back over a
+        // perfectly good restore — hundreds of individual parameter writes, each able
+        // to trigger internal recalculation. Only genuinely sparse states, such as
+        // AudioKit's name/version-only dictionaries with no data blob, need the tree.
+        let hasStatePayload: Bool
         if let state, !state.isEmpty {
             combined["_fullState"] = state
             // Record which property the state came from so restore writes back to the
             // SAME one — setting both can corrupt synths that distinguish document state.
             combined["_fullStateIsDocument"] = isDocument
-            // A fullState with >5 keys contains real sound data (e.g. EG Pulse pad volumes).
-            // ≤5 keys is typically just metadata (e.g. AudioKit's AUPresetName/Version).
-            fullStateIsSubstantial = state.count > 5
+            let payload = state[kAUPresetDataKey] as? Data
+            hasStatePayload = !(payload?.isEmpty ?? true)
         } else {
-            fullStateIsSubstantial = false
+            hasStatePayload = false
         }
 
-        if !params.isEmpty {
+        // Only walk the parameter tree when it is actually needed. Enumerating every
+        // parameter is expensive on a large instrument and pokes the plugin's parameter
+        // machinery on every autosave for no benefit.
+        if !hasStatePayload, let params = au.parameterTree?.allParameters, !params.isEmpty {
             var paramDict: [String: Double] = [:]
             for p in params { paramDict["\(p.address)"] = Double(p.value) }
             combined["_parameterTree"] = paramDict
         }
 
-        // Tell the restore path whether parameterTree is needed.
-        // If fullState is substantial, it is authoritative and parameterTree must not overwrite it.
-        combined["_parameterTreeRequired"] = !fullStateIsSubstantial
+        // Tell the restore path whether parameterTree is needed. A fullState carrying a
+        // data payload is authoritative and the tree must never overwrite it.
+        combined["_parameterTreeRequired"] = !hasStatePayload
 
         // Which plugin this state came from, so restore can reject a foreign blob.
         combined["_componentIdentifier"] = componentIdentifier(for: unit)

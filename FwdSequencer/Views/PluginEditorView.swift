@@ -19,6 +19,16 @@ private struct AUPluginView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: AUPluginHostController, context: Context) {}
+
+    /// Apple documents a matching removal sequence for view-controller containment, and
+    /// it was never performed: the plugin's view controller was added as a child and
+    /// then simply dropped when the editor closed. For an out-of-process AUv3 that means
+    /// its hosted scene is torn down without ever being told, which is exactly the kind
+    /// of thing that leaves a remote view in a bad state on the next open.
+    static func dismantleUIViewController(_ uiViewController: AUPluginHostController,
+                                          coordinator: ()) {
+        uiViewController.detachPluginViewController()
+    }
 }
 
 final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
@@ -52,6 +62,13 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// We drive the child's appearance callbacks ourselves (see embed/detach). Left at
+    /// the default of true, UIKit forwards them as well, so the manual
+    /// begin/endAppearanceTransition calls meant the plugin's view controller received
+    /// viewWillAppear/viewDidAppear TWICE per open — which fragile out-of-process
+    /// plugins are entitled to object to.
+    override var shouldAutomaticallyForwardAppearanceMethods: Bool { false }
 
     // Prevent the plugin VC's preferredContentSize from propagating to SwiftUI.
     override var preferredContentSize: CGSize {
@@ -139,6 +156,18 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         vc.endAppearanceTransition()
         signalViewReady()
         view.setNeedsLayout()
+    }
+
+    /// The counterpart to `embed`: Apple's documented teardown for a child view
+    /// controller, including the appearance transition we are now responsible for.
+    func detachPluginViewController() {
+        guard let child = children.first else { return }
+        child.willMove(toParent: nil)
+        child.beginAppearanceTransition(false, animated: false)
+        child.view.removeFromSuperview()
+        child.removeFromParent()
+        child.endAppearanceTransition()
+        pluginView = nil
     }
 
     override func viewDidLayoutSubviews() {

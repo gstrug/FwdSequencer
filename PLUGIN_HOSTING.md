@@ -117,6 +117,25 @@ A `UIViewControllerRepresentable` wraps `AUPluginHostController`, which:
 Presented via `.fullScreenCover` (from `SongTrackRowView` / `PlayDockView`), not
 `.sheet` — on iPad a sheet won't fill the screen.
 
+
+### View-controller containment (matters for out-of-process UIs)
+
+Two documented requirements were being broken, both of which a fragile remote view
+is entitled to object to:
+
+- **Appearance forwarding.** `AUPluginHostController` calls
+  `beginAppearanceTransition` / `endAppearanceTransition` around the embed. That is
+  correct *only* with automatic forwarding disabled; at the default of `true` UIKit
+  forwards as well, so the plugin's view controller received `viewWillAppear` /
+  `viewDidAppear` **twice** per open. The controller now overrides
+  `shouldAutomaticallyForwardAppearanceMethods` to `false` and owns the callbacks.
+- **Removal.** The child was added with `addChild` / `didMove(toParent:)` and then
+  simply dropped when the editor closed — the documented counterpart
+  (`willMove(toParent: nil)` → `removeFromSuperview()` → `removeFromParent()`, plus
+  the disappear transition) never ran, so an out-of-process AUv3 was never told its
+  hosted scene was going away. `detachPluginViewController()` now performs it, driven
+  from `UIViewControllerRepresentable.dismantleUIViewController`.
+
 ### Preset fallback
 
 If a plugin has no view controller, `onNoUI` flips the editor into a preset-list
@@ -210,13 +229,29 @@ read `currentPreset`.
 
 ### `_parameterTreeRequired` — the disambiguator
 
-On save: `_parameterTreeRequired = (fullState is NOT substantial)`, where
-"substantial" means `> 5` keys. On restore:
+On save, `_parameterTreeRequired = (fullState has NO data payload)`.
+
+Apple's preset dictionary is `type` / `subtype` / `manufacturer` / `version` plus a
+**`data`** payload holding the plugin's own serialised state. If that payload is
+present and non-empty, `fullState` is **authoritative**: the parameter tree is
+neither saved nor re-applied, and is not even enumerated (walking it is expensive
+on a large instrument and pokes the plugin's parameter machinery on every autosave).
+
+This test used to be `fullState.count > 5`, which is exactly backwards — the
+canonical complete dictionary has precisely those five keys, so a *correct* plugin
+was classified as "metadata only" and had its whole parameter tree written back
+over a perfectly good restore, one parameter at a time. That is the likely cause of
+preset save/recall misbehaving on large instruments such as GeoShred while hosts
+that simply set `fullState` were fine. Only genuinely sparse states — AudioKit's
+name/version dictionaries with no `data` blob — need the tree.
+
+On restore:
 
 - Apply `_fullState` to the **same** property it came from (`_fullStateIsDocument`).
-  Writing to *both* `fullStateForDocument` and `fullState` corrupts complex synths
-  (GeoShred). Legacy saves without the flag fall back to the old set-both behaviour.
+  Writing to *both* `fullStateForDocument` and `fullState` corrupts complex synths.
+  Legacy saves without the flag fall back to the old set-both behaviour.
 - Apply `_parameterTree` **only if** `_parameterTreeRequired` is true.
+- Reject a blob whose `_componentIdentifier` does not match the live unit.
 - Setting `au.currentPreset` during restore was removed — it fired async internal
   resets that wiped freshly-applied parameters.
 
