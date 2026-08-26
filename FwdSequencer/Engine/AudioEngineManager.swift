@@ -356,6 +356,42 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         ) { [weak self] _ in
             self?.rebuildAfterMediaServicesReset()
         })
+        // Required by AVAudioEngine: when the hardware configuration changes (a new
+        // route, a different sample rate, an AUv3 renegotiating its format) the engine
+        // stops itself and tears down the connections around the output node. The host
+        // MUST rebuild them; without this the mix has nowhere to go and the app goes
+        // silent until the song is reopened. Observed with `object: nil` on purpose —
+        // `engine` is REPLACED wholesale by rebuildAfterMediaServicesReset(), so an
+        // observer bound to the instance alive at registration would go deaf after a
+        // media-services reset. The handler checks the sender instead.
+        sessionObservers.append(center.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] note in
+            self?.handleConfigurationChange(note)
+        })
+    }
+
+    /// Rebuild the mix path after AVAudioEngine tears it down.
+    ///
+    /// Deliberately reconnects only the in-process mixer plumbing — every track mixer
+    /// into the main mixer, and the main mixer into the output. The instrument → track
+    /// mixer connections are left ALONE: `AVAudioMixerNode` converts its inputs, so a
+    /// changed hardware sample rate needs no renegotiation there, and disconnecting an
+    /// out-of-process AUv3 would force its render resources to be reallocated behind its
+    /// back — the same class of interference that produced blank UIs and lost state
+    /// elsewhere in this file.
+    private func handleConfigurationChange(_ notification: Notification) {
+        withLock {
+            guard let sender = notification.object as? AVAudioEngine, sender === engine else { return }
+            engine.connect(engine.mainMixerNode, to: engine.outputNode, format: nil)
+            for (_, mixer) in trackMixers {
+                engine.connect(mixer, to: engine.mainMixerNode, format: nil)
+            }
+            installMasterTap()
+            _ = startEngineIfNeeded()
+        }
     }
 
     private func handleInterruption(_ notification: Notification) {
@@ -406,6 +442,11 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             auv3Units.removeAll()
             trackMixers.removeAll()
             suspendCounts.removeAll()
+            // Must go with the units themselves. A track left in the settled set has no
+            // instrument behind it, and would be treated as safe to address the moment a
+            // new one is keyed to the same track id.
+            settledInstruments.removeAll()
+            activeNotes.removeAll()
             let completions = loadRequests.values.map(\.completion)
             loadRequests.removeAll()
             engine = AVAudioEngine()
@@ -687,24 +728,29 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         // five keys, so a correct plugin (GeoShred among them) was classified as
         // "metadata only" and had its entire parameter tree written back over a
         // perfectly good restore — hundreds of individual parameter writes, each able
-        // to trigger internal recalculation. Only genuinely sparse states, such as
-        // AudioKit's name/version-only dictionaries with no data blob, need the tree.
-        let hasStatePayload: Bool
+        // to trigger internal recalculation.
+        //
+        // The payload test is the primary rule, but a plugin that stores its state in
+        // its own custom keys rather than a `data` blob is authoritative too, so the
+        // old key-count heuristic is kept as a secondary signal. Only genuinely sparse
+        // states — AudioKit's name/version-only dictionaries — fall through to the tree.
+        let stateIsAuthoritative: Bool
         if let state, !state.isEmpty {
             combined["_fullState"] = state
             // Record which property the state came from so restore writes back to the
             // SAME one — setting both can corrupt synths that distinguish document state.
             combined["_fullStateIsDocument"] = isDocument
             let payload = state[kAUPresetDataKey] as? Data
-            hasStatePayload = !(payload?.isEmpty ?? true)
+            let hasStatePayload = !(payload?.isEmpty ?? true)
+            stateIsAuthoritative = hasStatePayload || state.count > 5
         } else {
-            hasStatePayload = false
+            stateIsAuthoritative = false
         }
 
         // Only walk the parameter tree when it is actually needed. Enumerating every
         // parameter is expensive on a large instrument and pokes the plugin's parameter
         // machinery on every autosave for no benefit.
-        if !hasStatePayload, let params = au.parameterTree?.allParameters, !params.isEmpty {
+        if !stateIsAuthoritative, let params = au.parameterTree?.allParameters, !params.isEmpty {
             var paramDict: [String: Double] = [:]
             for p in params { paramDict["\(p.address)"] = Double(p.value) }
             combined["_parameterTree"] = paramDict
@@ -712,7 +758,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
         // Tell the restore path whether parameterTree is needed. A fullState carrying a
         // data payload is authoritative and the tree must never overwrite it.
-        combined["_parameterTreeRequired"] = !hasStatePayload
+        combined["_parameterTreeRequired"] = !stateIsAuthoritative
 
         // Which plugin this state came from, so restore can reject a foreign blob.
         combined["_componentIdentifier"] = componentIdentifier(for: unit)

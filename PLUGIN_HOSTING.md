@@ -33,6 +33,18 @@ AVAudioEngine
   plugin's preferred format rather than forcing stereo (some synths go silent under a
   mismatched format).
 
+- **Configuration changes are handled.** `AVAudioEngine` posts
+  `.AVAudioEngineConfigurationChange` when the hardware configuration changes — a new
+  route, a different sample rate, an AUv3 renegotiating its format — and tears down
+  the connections around the output node. The host is required to rebuild them; without
+  it the mix has nowhere to go and the app goes silent until the song is reopened.
+  `handleConfigurationChange` reconnects the in-process plumbing only (track mixers →
+  main mixer → output) and deliberately leaves instrument → track-mixer connections
+  alone: `AVAudioMixerNode` converts its inputs, so nothing needs renegotiating there,
+  and disconnecting an out-of-process AUv3 would force its render resources to be
+  reallocated behind its back. The observer is registered with `object: nil` because
+  `engine` is replaced wholesale on a media-services reset.
+
 All of this lives in `Engine/AudioEngineManager.swift`.
 
 ---

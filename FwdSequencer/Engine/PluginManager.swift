@@ -20,7 +20,10 @@ class PluginManager: ObservableObject {
             object: AVAudioUnitComponentManager.shared(),
             queue: .main
         ) { [weak self] _ in
-            self?.performScan()
+            // Off the main thread: components(matching:) enumerates every installed
+            // audio-unit extension, and this notification fires whenever one is
+            // installed, removed or re-tagged. performScan publishes back on main.
+            DispatchQueue.global(qos: .userInitiated).async { self?.performScan() }
         }
         _ = AVAudioUnitComponentManager.shared()
     }
@@ -51,9 +54,9 @@ class PluginManager: ObservableObject {
         var seen = Set<String>()
         var results: [PluginInfo] = []
 
-        // Instruments only: kAudioUnitType_MusicDevice = 0x61756D75 ("aumu")
+        // Instruments only ("aumu").
         let instrDesc = AudioComponentDescription(
-            componentType: 0x61756D75, componentSubType: 0,
+            componentType: kAudioUnitType_MusicDevice, componentSubType: 0,
             componentManufacturer: 0,
             componentFlags: 0, componentFlagsMask: 0
         )
