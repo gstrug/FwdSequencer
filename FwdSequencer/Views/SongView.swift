@@ -913,6 +913,28 @@ private struct SongTrackRowView: View {
             .buttonStyle(.plain).foregroundStyle(.secondary)
             .accessibilityLabel("Expand \(track.name)")
 
+            // Mixer controls lead the row, ahead of the variable-width text.
+            //
+            // They used to trail a Spacer, but this bar is laid out at its intrinsic
+            // width (`.fixedSize` in collapsedBar), so that width tracked the track and
+            // plugin names — and the controls landed at a different x on every row.
+            // Every element before the toggles is now a fixed width, so volume, mute
+            // and solo line up down the whole track list regardless of naming.
+            Image(systemName: "speaker.wave.1").font(.system(size: 9)).foregroundStyle(.secondary)
+            Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB).frame(width: 70)
+                .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.volume = 1.0 })   // reset to 0 dB
+                .accessibilityLabel("\(track.name) volume")
+            // Explicit width: the meter is maxWidth-greedy, which has no intrinsic size
+            // to resolve inside a fixed-size row.
+            SongTrackMeter(trackID: track.id).frame(width: 44)
+
+            Toggle("M", isOn: $track.mixer.isMuted).toggleStyle(.button).tint(.orange).font(.caption2.bold())
+                .accessibilityLabel("Mute \(track.name)")
+            Toggle("S", isOn: $track.mixer.isSoloed).toggleStyle(.button).tint(.yellow).font(.caption2.bold())
+                .accessibilityLabel("Solo \(track.name)")
+
+            Divider().frame(height: 16)
+
             Text(track.name).font(.subheadline.bold()).lineLimit(1)
 
             Divider().frame(height: 16)
@@ -934,19 +956,6 @@ private struct SongTrackRowView: View {
             }
 
             Spacer()
-
-            Image(systemName: "speaker.wave.1").font(.system(size: 9)).foregroundStyle(.secondary)
-            Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB).frame(width: 70)
-                .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.volume = 1.0 })   // reset to 0 dB
-                .accessibilityLabel("\(track.name) volume")
-            SongTrackMeter(trackID: track.id)
-
-            Divider().frame(height: 16)
-
-            Toggle("M", isOn: $track.mixer.isMuted).toggleStyle(.button).tint(.orange).font(.caption2.bold())
-                .accessibilityLabel("Mute \(track.name)")
-            Toggle("S", isOn: $track.mixer.isSoloed).toggleStyle(.button).tint(.yellow).font(.caption2.bold())
-                .accessibilityLabel("Solo \(track.name)")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
