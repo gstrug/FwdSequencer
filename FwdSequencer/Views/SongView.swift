@@ -891,6 +891,28 @@ private struct SongTrackRowView: View {
         )
     }
 
+    /// Steps for the step INDICATOR, which is a playback readout rather than an editor.
+    ///
+    /// `part` is bound to the SELECTED section, because that is what editing must
+    /// target. The active-step index, though, comes from the sequencer and refers to
+    /// the section currently SOUNDING. Drawing one against the other highlighted
+    /// position 3 of the selected section while position 3 of a different section was
+    /// playing — so as soon as the playhead left the selected section the indicator
+    /// stopped meaning anything and looked frozen.
+    ///
+    /// While the transport is running the indicator therefore reads the playing
+    /// section; stopped, it falls back to the selected one so the display still
+    /// reflects what you are editing. This is independent of the `followsPlayhead`
+    /// setting, which moves the whole editor — here only the readout follows.
+    private var indicatorSteps: [Step] {
+        guard songStore.isPlaying || songStore.isPaused else { return part.steps }
+        let playing = songStore.currentSection
+        guard songStore.song.sections.indices.contains(playing),
+              let p = songStore.song.sections[playing].parts.first(where: { $0.trackID == track.id })
+        else { return part.steps }
+        return p.steps
+    }
+
     // Compact one-line row shown when the track is collapsed.
     private var collapsedBar: some View {
         ViewThatFits(in: .horizontal) {
@@ -948,8 +970,8 @@ private struct SongTrackRowView: View {
             Text(part.tempoDivision.abbreviation)
                 .font(.caption2).foregroundStyle(.secondary)
 
-            if !part.steps.isEmpty {
-                SongMiniSteps(trackID: track.id, steps: part.steps)
+            if !indicatorSteps.isEmpty {
+                SongMiniSteps(trackID: track.id, steps: indicatorSteps)
             } else {
                 Text("\(part.notePool.count) notes")
                     .font(.caption2).foregroundStyle(.secondary)
@@ -989,8 +1011,8 @@ private struct SongTrackRowView: View {
             }
             HStack(spacing: 8) {
                 Text(part.tempoDivision.abbreviation).font(.caption2).foregroundStyle(.secondary)
-                if !part.steps.isEmpty {
-                    SongMiniSteps(trackID: track.id, steps: part.steps)
+                if !indicatorSteps.isEmpty {
+                    SongMiniSteps(trackID: track.id, steps: indicatorSteps)
                 } else {
                     Text("\(part.notePool.count) notes").font(.caption2).foregroundStyle(.secondary)
                 }
@@ -1161,8 +1183,8 @@ private struct SongTrackRowView: View {
                 .fixedSize(horizontal: true, vertical: false)
             }
 
-            if !part.steps.isEmpty {
-                SongMiniSteps(trackID: track.id, steps: part.steps, compact: false)
+            if !indicatorSteps.isEmpty {
+                SongMiniSteps(trackID: track.id, steps: indicatorSteps, compact: false)
             }
 
             SongKeyboard(
@@ -1239,20 +1261,41 @@ private struct SongMiniSteps: View {
     var body: some View {
         let activeStep = playback.activeSteps[trackID]
         let size: CGFloat = compact ? 8 : 10
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 3) {
-                ForEach(Array(steps.enumerated()), id: \.element.id) { idx, step in
-                    let isActive = activeStep == idx
-                    Text(step.label)
-                        .font(.system(size: size, weight: isActive ? .bold : .regular, design: .monospaced))
-                        .foregroundStyle(isActive ? .black : .secondary)
-                        .padding(.horizontal, 4).padding(.vertical, 2)
-                        .background(isActive ? Color.accentColor : Color.secondary.opacity(0.15),
-                                    in: RoundedRectangle(cornerRadius: 3))
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.08), value: isActive)
+        // A long step list cannot fit the row, so the strip scrolls — but scrolling it
+        // by hand while the sequencer runs is hopeless. Keep the playing step in view
+        // instead: the strip follows the playhead, and dragging it still works for
+        // inspecting a stopped sequence.
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 3) {
+                    ForEach(Array(steps.enumerated()), id: \.element.id) { idx, step in
+                        let isActive = activeStep == idx
+                        Text(step.label)
+                            .font(.system(size: size, weight: isActive ? .bold : .regular, design: .monospaced))
+                            .foregroundStyle(isActive ? .black : .secondary)
+                            .padding(.horizontal, 4).padding(.vertical, 2)
+                            .background(isActive ? Color.accentColor : Color.secondary.opacity(0.15),
+                                        in: RoundedRectangle(cornerRadius: 3))
+                            .animation(reduceMotion ? nil : .easeInOut(duration: 0.08), value: isActive)
+                            // Scroll target keyed by the step's own id, matching the
+                            // ForEach identity — an index-based .id() would override
+                            // that stable identity and churn the views on reorder.
+                            .id(step.id)
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .onChange(of: activeStep) { step in
+                guard let step, steps.indices.contains(step) else { return }
+                // .center keeps the neighbouring steps visible on both sides, so the
+                // strip reads as a window onto the sequence rather than jumping.
+                let target = steps[step].id
+                if reduceMotion {
+                    proxy.scrollTo(target, anchor: .center)
+                } else {
+                    withAnimation(.easeInOut(duration: 0.12)) { proxy.scrollTo(target, anchor: .center) }
                 }
             }
-            .padding(.horizontal, 2)
         }
         .frame(maxWidth: compact ? 160 : .infinity)
     }
