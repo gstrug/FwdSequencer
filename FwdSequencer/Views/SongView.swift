@@ -1258,6 +1258,23 @@ private struct SongMiniSteps: View {
     @EnvironmentObject var playback: PlaybackMonitor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// The strip is a fixed window onto the sequence: this many steps are visible and
+    /// the rest scroll past, so a track with 4 steps and one with 64 occupy the same
+    /// width and the collapsed rows still line up.
+    ///
+    /// Not a hard guarantee of exactly six chips — step labels range from "—" to
+    /// "P1,3,5 ×4 75%", and forcing a uniform chip width would truncate the long ones.
+    /// Chips get a minimum width instead, and the window is sized to six of those: six
+    /// for typical labels, a few less when they are verbose.
+    private static let visibleSteps: CGFloat = 6
+    private var chipSpacing: CGFloat { 3 }
+    private var chipMinWidth: CGFloat { compact ? 26 : 30 }
+    private var windowWidth: CGFloat {
+        Self.visibleSteps * chipMinWidth
+            + (Self.visibleSteps - 1) * chipSpacing
+            + 4   // the HStack's horizontal padding
+    }
+
     var body: some View {
         let activeStep = playback.activeSteps[trackID]
         let size: CGFloat = compact ? 8 : 10
@@ -1267,13 +1284,14 @@ private struct SongMiniSteps: View {
         // inspecting a stopped sequence.
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 3) {
+                HStack(spacing: chipSpacing) {
                     ForEach(Array(steps.enumerated()), id: \.element.id) { idx, step in
                         let isActive = activeStep == idx
                         Text(step.label)
                             .font(.system(size: size, weight: isActive ? .bold : .regular, design: .monospaced))
                             .foregroundStyle(isActive ? .black : .secondary)
                             .padding(.horizontal, 4).padding(.vertical, 2)
+                            .frame(minWidth: chipMinWidth)
                             .background(isActive ? Color.accentColor : Color.secondary.opacity(0.15),
                                         in: RoundedRectangle(cornerRadius: 3))
                             .animation(reduceMotion ? nil : .easeInOut(duration: 0.08), value: isActive)
@@ -1297,7 +1315,13 @@ private struct SongMiniSteps: View {
                 }
             }
         }
-        .frame(maxWidth: compact ? 160 : .infinity)
+        // Collapsed: a FIXED width, not a maximum — the strip must occupy the same
+        // space whatever the step count, so rows align and the size stays deterministic
+        // inside the collapsed row's fixed-size layout.
+        // Expanded: the window is a floor instead. There is room to spare in a full
+        // row, so show as many steps as fit rather than throwing the space away.
+        .frame(width: compact ? windowWidth : nil)
+        .frame(minWidth: compact ? nil : windowWidth, maxWidth: compact ? nil : .infinity)
     }
 }
 
