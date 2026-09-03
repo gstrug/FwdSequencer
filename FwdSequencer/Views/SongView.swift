@@ -914,13 +914,19 @@ private struct SongTrackRowView: View {
     }
 
     // Compact one-line row shown when the track is collapsed.
+    /// Below this the wide one-line layout is too cramped and ViewThatFits falls back
+    /// to the stacked compact bar. It replaces a `.fixedSize` on the wide variant: that
+    /// pinned the row to its intrinsic width, which left no slack for the step strip to
+    /// grow into. A minimum width still gives ViewThatFits a real threshold to test,
+    /// while letting the row stretch — and hand the surplus to the strip — above it.
+    private static let wideCollapsedMinWidth: CGFloat = 620
+
     private var collapsedBar: some View {
         ViewThatFits(in: .horizontal) {
-            collapsedWideBar.fixedSize(horizontal: true, vertical: false)
+            collapsedWideBar
+                .frame(minWidth: Self.wideCollapsedMinWidth, maxWidth: .infinity, alignment: .leading)
             collapsedCompactBar
         }
-        // The wide variant is fixed-size, so without this it floats in the centre of
-        // the row. Minimised tracks should line up with the expanded ones.
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
@@ -970,14 +976,16 @@ private struct SongTrackRowView: View {
             Text(part.tempoDivision.abbreviation)
                 .font(.caption2).foregroundStyle(.secondary)
 
+            // The strip takes ALL the remaining width — no trailing Spacer competing
+            // with it for the slack — so it shows as many steps as the row can hold and
+            // only scrolls once they overflow that.
             if !indicatorSteps.isEmpty {
                 SongMiniSteps(trackID: track.id, steps: indicatorSteps)
             } else {
                 Text("\(part.notePool.count) notes")
                     .font(.caption2).foregroundStyle(.secondary)
+                Spacer()
             }
-
-            Spacer()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -1258,14 +1266,13 @@ private struct SongMiniSteps: View {
     @EnvironmentObject var playback: PlaybackMonitor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// The strip is a fixed window onto the sequence: this many steps are visible and
-    /// the rest scroll past, so a track with 4 steps and one with 64 occupy the same
-    /// width and the collapsed rows still line up.
+    /// The strip fills whatever width the row has left and only scrolls once the steps
+    /// overflow it, so a short sequence is shown whole and stays still.
     ///
-    /// Not a hard guarantee of exactly six chips — step labels range from "—" to
-    /// "P1,3,5 ×4 75%", and forcing a uniform chip width would truncate the long ones.
-    /// Chips get a minimum width instead, and the window is sized to six of those: six
-    /// for typical labels, a few less when they are verbose.
+    /// A fixed six-step window was tried first and was hard to read: it scrolled
+    /// constantly, even for sequences that would have fitted comfortably. This is the
+    /// floor for that fill — enough that the strip is never a useless sliver in a
+    /// narrow row — not a target.
     private static let visibleSteps: CGFloat = 6
     private var chipSpacing: CGFloat { 3 }
     private var chipMinWidth: CGFloat { compact ? 26 : 30 }
@@ -1305,23 +1312,23 @@ private struct SongMiniSteps: View {
             }
             .onChange(of: activeStep) { step in
                 guard let step, steps.indices.contains(step) else { return }
-                // .center keeps the neighbouring steps visible on both sides, so the
-                // strip reads as a window onto the sequence rather than jumping.
+                // No anchor, deliberately: that scrolls the MINIMUM needed to bring the
+                // step into view, so a sequence that fits does not move at all and a
+                // longer one only nudges when the playhead reaches the edge. Anchoring
+                // to .center instead re-centred on every step, which kept the whole
+                // strip in constant motion and was near-impossible to read.
                 let target = steps[step].id
                 if reduceMotion {
-                    proxy.scrollTo(target, anchor: .center)
+                    proxy.scrollTo(target)
                 } else {
-                    withAnimation(.easeInOut(duration: 0.12)) { proxy.scrollTo(target, anchor: .center) }
+                    withAnimation(.easeInOut(duration: 0.12)) { proxy.scrollTo(target) }
                 }
             }
         }
-        // Collapsed: a FIXED width, not a maximum — the strip must occupy the same
-        // space whatever the step count, so rows align and the size stays deterministic
-        // inside the collapsed row's fixed-size layout.
-        // Expanded: the window is a floor instead. There is room to spare in a full
-        // row, so show as many steps as fit rather than throwing the space away.
-        .frame(width: compact ? windowWidth : nil)
-        .frame(minWidth: compact ? nil : windowWidth, maxWidth: compact ? nil : .infinity)
+        // Fill the row's remaining width, with the window as a floor. Scrolling then
+        // only happens when the steps genuinely outgrow the space available, rather
+        // than on every sequence longer than an arbitrary count.
+        .frame(minWidth: windowWidth, maxWidth: .infinity, alignment: .leading)
     }
 }
 
