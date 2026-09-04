@@ -507,54 +507,6 @@ struct ProjectBrowserView: View {
     }
 }
 
-// MARK: - Project Row
-
-struct ProjectRow: View {
-    let project: Project
-
-    var body: some View {
-        HStack(spacing: 14) {
-            Image(systemName: "music.note.list")
-                .font(.title2)
-                .foregroundStyle(.tint)
-                .frame(width: 36)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(project.name)
-                    .font(.headline)
-                    .lineLimit(2)
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 12) {
-                        projectMetadata
-                    }
-                    .fixedSize(horizontal: true, vertical: false)
-                    VStack(alignment: .leading, spacing: 3) {
-                        projectMetadata
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            }
-
-            Spacer()
-
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundStyle(.tertiary)
-        }
-        .padding(.vertical, 4)
-    }
-
-    @ViewBuilder
-    private var projectMetadata: some View {
-        Label("\(project.tracks.count) track\(project.tracks.count == 1 ? "" : "s")",
-              systemImage: "slider.horizontal.3")
-        Label("\(Int(project.tempo)) BPM", systemImage: "metronome")
-        Label("\(project.timeSignature.numerator)/\(project.timeSignature.denominator)",
-              systemImage: "music.note")
-    }
-}
-
 // MARK: - Song Row
 
 struct SongRow: View {

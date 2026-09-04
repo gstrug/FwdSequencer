@@ -1,18 +1,5 @@
 import Foundation
 
-// MARK: - Project
-
-nonisolated struct Project: Codable, Identifiable, Equatable {
-    var id: UUID = UUID()
-    var name: String = "Untitled Pattern"
-    var tempo: Double = 120.0
-    var timeSignature: TimeSignature = TimeSignature()
-    var numberOfBars: Int = 4
-    var scale: MusicalScale = .chromatic
-    var masterVolume: Float = 1.0
-    var tracks: [Track] = []
-}
-
 nonisolated struct TimeSignature: Codable, Equatable {
     var numerator: Int = 4
     var denominator: Int = 4
@@ -167,21 +154,6 @@ nonisolated struct Part: Codable, Equatable {
         key = try c.decodeIfPresent(Int.self, forKey: .key) ?? 0
         scale = try c.decodeIfPresent(MusicalScale.self, forKey: .scale) ?? .chromatic
     }
-}
-
-// MARK: - Track
-
-nonisolated struct Track: Codable, Identifiable, Equatable {
-    var id: UUID = UUID()
-    var name: String = "Track"
-    var pluginInfo: PluginInfo? = nil
-    var pluginStateData: Data? = nil   // PropertyList-serialised AUv3 state (see AudioEngineManager.getPluginState)
-    var tempoDivision: TempoDivision = .quarter
-    var scale: MusicalScale = .chromatic
-    var key: Int = 0   // 0 = C, 1 = C#, 2 = D … 11 = B
-    var notePool: [NoteEntry] = []
-    var steps: [Step] = []
-    var mixer: MixerState = MixerState()
 }
 
 nonisolated struct NoteEntry: Codable, Identifiable, Equatable {

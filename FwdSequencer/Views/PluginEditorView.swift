@@ -220,8 +220,6 @@ private struct AuditionKeyboard: View {
         ("C3",48),("D3",50),("E3",52),("F3",53),("G3",55),("A3",57),("B3",59),
         ("C4",60),("D4",62),("E4",64),("F4",65),("G4",67),("A4",69),("B4",71),
     ]
-    private static let blackPattern = [true, true, false, true, true, true, false,
-                                       true, true, false, true, true, true, false]
     // black key midi offsets from white key index
     private static let blackMidi: [UInt8?] = [
         49,51,nil,54,56,58,nil,

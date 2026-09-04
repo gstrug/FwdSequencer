@@ -230,13 +230,6 @@ nonisolated enum SongValidator {
         }
     }
 
-    private static func validateUnit(_ value: Float, name: String) throws {
-        try requireFinite(value, name: name)
-        guard (0...1).contains(value) else {
-            throw SongValidationError.invalid("\(name) must be between 0 and 1.")
-        }
-    }
-
     private static func requireFinite<T: BinaryFloatingPoint>(_ value: T, name: String) throws {
         guard value.isFinite else {
             throw SongValidationError.invalid("\(name) must be a finite number.")

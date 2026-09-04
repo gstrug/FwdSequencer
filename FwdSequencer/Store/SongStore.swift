@@ -89,7 +89,6 @@ class SongStore: ObservableObject {
     let playback = PlaybackMonitor()
     let audioEngine = AudioEngineManager.shared
     let sequencer = SequencerEngine()
-    let pluginManager = PluginManager.shared
 
     let savedSignal = PassthroughSubject<Void, Never>()
     let beatSignal  = PassthroughSubject<Bool, Never>()
