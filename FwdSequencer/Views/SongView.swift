@@ -635,11 +635,11 @@ private struct SectionSettingsBar: View {
                 .buttonStyle(.bordered)
                 .help("Save and recall alternate versions without adding arrangement sections")
 
-                Toggle(isOn: $songStore.followsPlayhead) {
-                    Label("Follow", systemImage: "scope")
+                Toggle(isOn: $songStore.holdsSection) {
+                    Label("Hold", systemImage: "repeat.1")
                 }
                 .toggleStyle(.button)
-                .help("Keep the editor on the section currently playing")
+                .help("Repeat the selected section instead of playing through the song")
                 }
                 Spacer(minLength: 0)
             }
@@ -902,8 +902,8 @@ private struct SongTrackRowView: View {
     ///
     /// While the transport is running the indicator therefore reads the playing
     /// section; stopped, it falls back to the selected one so the display still
-    /// reflects what you are editing. This is independent of the `followsPlayhead`
-    /// setting, which moves the whole editor — here only the readout follows.
+    /// reflects what you are editing. (With Hold on the two coincide, since the held
+    /// section is the selected one.)
     private var indicatorSteps: [Step] {
         guard songStore.isPlaying || songStore.isPaused else { return part.steps }
         let playing = songStore.currentSection

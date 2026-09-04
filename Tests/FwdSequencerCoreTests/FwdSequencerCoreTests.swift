@@ -529,6 +529,55 @@ final class FwdSequencerCoreTests: XCTestCase {
         engine.stop()
     }
 
+    /// Hold repeats one section for editing. It has to outrank "don't loop": turning it
+    /// on near the end of a non-looping song must keep repeating, not stop playback.
+    /// It also must not advance to the next section at the boundary.
+    func testHeldSectionRepeatsAndDoesNotEndANonLoopingSong() {
+        let output = RecordingAudioOutput()
+        let trackID = UUID()
+        let first = UUID()
+        let second = UUID()
+
+        func section(_ id: UUID, note: Int) -> SequencerSection {
+            SequencerSection(id: id, numberOfBars: 1, tracks: [
+                PlayTrack(id: trackID, tempoDivision: .quarter,
+                          notePool: [NoteEntry(midiNote: note)],
+                          steps: [Step(type: .play)], isMuted: false, isSoloed: false)
+            ])
+        }
+
+        let engine = SequencerEngine()
+        engine.audioEngine = output
+        let finishedLock = NSLock()
+        var finished = false
+        var sectionsSeen: [Int] = []
+        engine.onSongFinished = { finishedLock.lock(); finished = true; finishedLock.unlock() }
+        engine.onSectionChange = { finishedLock.lock(); sectionsSeen.append($0); finishedLock.unlock() }
+
+        // loop: false — without the hold this song would finish after two bars.
+        engine.startSong(
+            sections: [section(first, note: 60), section(second, note: 67)],
+            tempo: 400,
+            timeSignature: TimeSignature(),
+            trackIDs: [trackID],
+            loop: false,
+            heldSection: first
+        )
+
+        // At 400 BPM a 4/4 bar is 0.6s, so an unheld song would have finished by now.
+        Thread.sleep(forTimeInterval: 1.6)
+        engine.stop()
+
+        finishedLock.lock()
+        let didFinish = finished
+        let seen = sectionsSeen
+        finishedLock.unlock()
+
+        XCTAssertFalse(didFinish, "A held section must keep repeating, not end the song")
+        XCTAssertEqual(Set(seen), [0], "Playback must not leave the held section")
+        XCTAssertGreaterThan(output.playedNotes, 2, "The held section should still be playing")
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)

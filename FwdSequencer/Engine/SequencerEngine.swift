@@ -78,6 +78,10 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     // Live playback snapshot. All access is sequencerQueue-only. `sectionIndex` is
     // queue-owned state, like globalStep.
     private var songLoops = true
+    /// When set, playback repeats this one section instead of moving through the
+    /// arrangement — the editing "Hold". Keyed by section ID rather than index so that
+    /// reordering or deleting sections cannot silently hold the wrong one.
+    private var heldSectionID: UUID?
     private var sectionIndex = 0
     private var _songSections: [SequencerSection] = []
     private var _songTempo: Double = 120
@@ -134,12 +138,15 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// carries across sections.
     func startSong(sections: [SequencerSection], tempo: Double,
                    timeSignature: TimeSignature, trackIDs: [UUID], loop: Bool,
-                   randomSeed: UInt64 = 0x465744) {
+                   randomSeed: UInt64 = 0x465744, heldSection: UUID? = nil) {
         sequencerQueue.async { [weak self] in
             guard let self else { return }
             stopTimer()
             globalStep = 0
-            sectionIndex = 0
+            heldSectionID = heldSection
+            // Start ON the held section: pressing play with a section held should sound
+            // that section, not restart the arrangement from the top.
+            sectionIndex = heldSection.flatMap { id in sections.firstIndex { $0.id == id } } ?? 0
             songLoops = loop
             _songSections = sections
             _songTempo = tempo
@@ -149,9 +156,16 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             cancelAllPendingNoteOffs()
             audioEngine?.allNotesOff()
             states = Dictionary(uniqueKeysWithValues: trackIDs.map { ($0, TrackState()) })
-            onSectionChange?(0)
+            onSectionChange?(sectionIndex)
             startTimer(tempo: tempo, immediate: true)
         }
+    }
+
+    /// Hold playback on one section (by ID) so it repeats for editing, or pass nil to
+    /// release and resume moving through the arrangement. Takes effect at the next
+    /// section boundary, so engaging it never chops the bar that is playing.
+    func holdSection(_ sectionID: UUID?) {
+        sequencerQueue.async { [weak self] in self?.heldSectionID = sectionID }
     }
 
     /// Atomically push the complete live song configuration. Current section identity
@@ -239,13 +253,15 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         sequencerQueue.async { [weak self] in
             guard let self else { return }
             globalStep = 0
-            sectionIndex = 0
+            // Rewind to the HELD section when one is held — rewinding to the top would
+            // jump away from the section being edited.
+            sectionIndex = heldSectionID.flatMap { id in self._songSections.firstIndex { $0.id == id } } ?? 0
             random = SeededRandomGenerator(seed: initialRandomSeed)
             for key in Array(states.keys) { states[key] = TrackState() }
             cancelAllPendingNoteOffs()
             audioEngine?.allNotesOff()
             onBarChange?(0)
-            onSectionChange?(0)
+            onSectionChange?(sectionIndex)
         }
     }
 
@@ -404,18 +420,34 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             globalStep = 0
             let count = songSectionCount()
             if count > 0 {
-                // End of the last section with looping off → finish and stop.
-                if sectionIndex + 1 >= count && !songLoops {
-                    finishSong()
-                    return
+                // Held: repeat this section rather than advancing. A hold engaged while
+                // a different section was playing lands here, so playback moves to the
+                // held one at the boundary. The end-of-arrangement check is skipped
+                // deliberately — hold outranks "don't loop", or turning it on near the
+                // end of a non-looping song would stop playback instead of repeating.
+                let held = heldSectionID.flatMap { id in _songSections.firstIndex { $0.id == id } }
+                if let held {
+                    if held != sectionIndex {
+                        sectionIndex = held
+                        onSectionChange?(sectionIndex)
+                        frame = currentFrame()
+                        stepsPerBar = max(1, frame.timeSignature.numerator * 32 / frame.timeSignature.denominator)
+                        totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
+                    }
+                } else {
+                    // End of the last section with looping off → finish and stop.
+                    if sectionIndex + 1 >= count && !songLoops {
+                        finishSong()
+                        return
+                    }
+                    // Advance to the next section (wrap → song loops), then re-resolve
+                    // the frame so this same tick plays the new section's first step.
+                    sectionIndex = (sectionIndex + 1) % count
+                    onSectionChange?(sectionIndex)
+                    frame = currentFrame()
+                    stepsPerBar = max(1, frame.timeSignature.numerator * 32 / frame.timeSignature.denominator)
+                    totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
                 }
-                // Advance to the next section (wrap → song loops), then re-resolve
-                // the frame so this same tick plays the new section's first step.
-                sectionIndex = (sectionIndex + 1) % count
-                onSectionChange?(sectionIndex)
-                frame = currentFrame()
-                stepsPerBar = max(1, frame.timeSignature.numerator * 32 / frame.timeSignature.denominator)
-                totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
             }
         }
 

@@ -54,7 +54,14 @@ class SongStore: ObservableObject {
     /// Which section playback is currently in (drives the arrangement playhead).
     @Published var currentSection: Int = 0
     /// Which section the editors are bound to (the one the user is editing).
-    @Published var selectedSection: Int = 0
+    @Published var selectedSection: Int = 0 {
+        didSet {
+            guard selectedSection != oldValue, holdsSection else { return }
+            // Held: the selection IS what plays, so following it here lets the user
+            // audition another section without releasing the hold.
+            pushHeldSection()
+        }
+    }
     /// True while instruments are still spinning up after opening a song.
     @Published var isLoading: Bool = false
     @Published var pluginStatuses: [UUID: TrackPluginStatus] = [:]
@@ -70,12 +77,27 @@ class SongStore: ObservableObject {
             if isPlaying || isPaused { updateLiveSong() }
         }
     }
-    /// Keep the editor on the sounding section. This is a local workflow preference,
-    /// not song data, so collaborators opening the document keep their own setting.
-    @Published var followsPlayhead: Bool = UserDefaults.standard.object(
-        forKey: "FollowsSongPlayhead"
-    ) as? Bool ?? true {
-        didSet { UserDefaults.standard.set(followsPlayhead, forKey: "FollowsSongPlayhead") }
+    /// Repeat the SELECTED section instead of playing through the arrangement, so it
+    /// can be edited against a continuous loop. Changing the selection while this is on
+    /// moves playback to the newly selected section at the next boundary.
+    ///
+    /// Deliberately NOT persisted, unlike the loop setting: it is a transient editing
+    /// mode, and silently restoring it on launch would present as "my song only plays
+    /// one section". It also resets when a song is opened or closed.
+    @Published var holdsSection: Bool = false {
+        didSet {
+            guard holdsSection != oldValue else { return }
+            pushHeldSection()
+        }
+    }
+
+    /// Tell the sequencer which section to hold, or to release the hold.
+    private func pushHeldSection() {
+        guard holdsSection, song.sections.indices.contains(selectedSection) else {
+            sequencer.holdSection(nil)
+            return
+        }
+        sequencer.holdSection(song.sections[selectedSection].id)
     }
     @Published var midiClockEnabled: Bool = UserDefaults.standard.bool(forKey: "MIDIClockOutputEnabled") {
         didSet {
@@ -158,10 +180,6 @@ class SongStore: ObservableObject {
         sequencer.onSectionChange = { [weak self] index in
             DispatchQueue.main.async {
                 self?.currentSection = index
-                // Follow the playhead so the note editor (blue selected keys, steps,
-                // section settings) reflects the section currently sounding. Fires
-                // only during playback, so manual selection is untouched when stopped.
-                if self?.followsPlayhead == true { self?.selectedSection = index }
             }
         }
         sequencer.onSongFinished = { [weak self] in
@@ -284,6 +302,8 @@ class SongStore: ObservableObject {
         self.song = song
         hasActiveSong = true
         loopEnabled = song.loops ?? false
+        // Hold is a transient editing mode; a freshly opened song plays its arrangement.
+        holdsSection = false
         selectedSection = 0
         currentSection = 0
         activate()
@@ -417,7 +437,9 @@ class SongStore: ObservableObject {
             timeSignature: song.timeSignature,
             trackIDs: song.tracks.map(\.id),
             loop: loopEnabled,
-            randomSeed: song.randomSeed ?? Self.seed(from: song.id)
+            randomSeed: song.randomSeed ?? Self.seed(from: song.id),
+            heldSection: holdsSection && song.sections.indices.contains(selectedSection)
+                ? song.sections[selectedSection].id : nil
         )
         if midiClockEnabled { audioEngine.startMIDIClock(tempo: song.tempo) }
     }
