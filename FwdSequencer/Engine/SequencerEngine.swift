@@ -12,9 +12,8 @@ nonisolated protocol SequencerAudioOutput: AnyObject {
 // MARK: - Playable views
 //
 // The tick loop triggers against these lightweight per-track views rather than a
-// whole Track, so the same code path serves both a looping pattern and a song's
-// sequence of sections. (Note: the tick loop does not read key/scale — those are
-// edit-time constraints only.)
+// whole Track. (Note: the tick loop does not read key/scale — those are edit-time
+// constraints only.)
 
 nonisolated struct PlayTrack {
     let id: UUID
@@ -29,11 +28,6 @@ nonisolated struct PlayTrack {
         self.id = id; self.tempoDivision = tempoDivision
         self.notePool = notePool; self.steps = steps
         self.isMuted = isMuted; self.isSoloed = isSoloed
-    }
-
-    init(from t: Track) {
-        self.init(id: t.id, tempoDivision: t.tempoDivision, notePool: t.notePool,
-                  steps: t.steps, isMuted: t.mixer.isMuted, isSoloed: t.mixer.isSoloed)
     }
 }
 
@@ -53,9 +47,9 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     var onStepChange: ((UUID, Int) -> Void)?
     /// Fires on every beat. `true` = downbeat (beat 1 of bar), `false` = all other beats.
     var onBeat: ((Bool) -> Void)?
-    /// Song mode only: fires when playback advances to a new section (by index).
+    /// Fires when playback advances to a new section (by index).
     var onSectionChange: ((Int) -> Void)?
-    /// Song mode only: fires when a non-looping song plays past its last section.
+    /// Fires when a non-looping song plays past its last section.
     var onSongFinished: (() -> Void)?
 
     /// Owns every mutable scheduler field below. Public commands enqueue work here;
@@ -81,12 +75,8 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     private var globalStep = 0
     private let stepsPerBeat = 8   // ticks per beat = 32nd-note resolution
 
-    // Live playback snapshots. All access is sequencerQueue-only.
-    private var _project: Project = Project()
-
-    // Song mode — additive playback path. `isSongMode` selects which source the tick
-    // loop reads; `sectionIndex` is queue-owned state (like globalStep).
-    private var isSongMode = false
+    // Live playback snapshot. All access is sequencerQueue-only. `sectionIndex` is
+    // queue-owned state, like globalStep.
     private var songLoops = true
     private var sectionIndex = 0
     private var _songSections: [SequencerSection] = []
@@ -95,7 +85,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     private var initialRandomSeed: UInt64 = 0x465744
     private var random = SeededRandomGenerator(seed: 0x465744)
 
-    // A resolved snapshot the tick loop plays against, from either source.
+    // A resolved snapshot the tick loop plays against.
     private struct Frame {
         let tempo: Double
         let timeSignature: TimeSignature
@@ -103,27 +93,16 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         let tracks: [PlayTrack]
     }
 
-    func updateProject(_ project: Project) {
-        sequencerQueue.async { [weak self] in self?._project = project }
-    }
-
-    // Resolve the snapshot the tick loop plays against: the live project (pattern
-    // mode) or the current section (song mode).
+    /// The snapshot the tick loop plays against: the section currently sounding.
     private func currentFrame() -> Frame {
-        if isSongMode {
-            guard !_songSections.isEmpty else {
-                return Frame(tempo: _songTempo, timeSignature: _songTimeSignature,
-                             numberOfBars: 1, tracks: [])
-            }
-            let idx = min(max(0, sectionIndex), _songSections.count - 1)
-            let s = _songSections[idx]
+        guard !_songSections.isEmpty else {
             return Frame(tempo: _songTempo, timeSignature: _songTimeSignature,
-                         numberOfBars: s.numberOfBars, tracks: s.tracks)
-        } else {
-            let p = _project
-            return Frame(tempo: p.tempo, timeSignature: p.timeSignature,
-                         numberOfBars: p.numberOfBars, tracks: p.tracks.map(PlayTrack.init(from:)))
+                         numberOfBars: 1, tracks: [])
         }
+        let idx = min(max(0, sectionIndex), _songSections.count - 1)
+        let s = _songSections[idx]
+        return Frame(tempo: _songTempo, timeSignature: _songTimeSignature,
+                     numberOfBars: s.numberOfBars, tracks: s.tracks)
     }
 
     private func songSectionCount() -> Int {
@@ -150,26 +129,9 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
 
     // MARK: - Lifecycle
 
-    func start(project: Project) {
-        sequencerQueue.async { [weak self] in
-            guard let self else { return }
-            stopTimer()
-            globalStep = 0
-            sectionIndex = 0
-            isSongMode = false
-            _project = project
-            initialRandomSeed = Self.seed(from: project.id)
-            random = SeededRandomGenerator(seed: initialRandomSeed)
-            cancelAllPendingNoteOffs()
-            audioEngine?.allNotesOff()
-            states = Dictionary(uniqueKeysWithValues: project.tracks.map { ($0.id, TrackState()) })
-            startTimer(tempo: project.tempo, immediate: true)
-        }
-    }
-
     /// Start song playback: play `sections` in order, looping back to the first.
     /// `trackIDs` are the stable SongTrack ids (instrument keys) so per-track state
-    /// carries across sections. Additive — does not disturb the pattern path.
+    /// carries across sections.
     func startSong(sections: [SequencerSection], tempo: Double,
                    timeSignature: TimeSignature, trackIDs: [UUID], loop: Bool,
                    randomSeed: UInt64 = 0x465744) {
@@ -178,7 +140,6 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             stopTimer()
             globalStep = 0
             sectionIndex = 0
-            isSongMode = true
             songLoops = loop
             _songSections = sections
             _songTempo = tempo
@@ -284,30 +245,73 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             cancelAllPendingNoteOffs()
             audioEngine?.allNotesOff()
             onBarChange?(0)
-            if isSongMode { onSectionChange?(0) }
+            onSectionChange?(0)
         }
     }
 
-    func updateTempo(_ tempo: Double) {
-        sequencerQueue.async { [weak self] in
-            guard let self else { return }
-            _songTempo = tempo
-            guard timer != nil else { return }
-            stopTimer()
-            startTimer(tempo: tempo, immediate: false)
-        }
-    }
+    // MARK: - Tick scheduling
+    //
+    // The handler used to be `tick()` directly, which quietly made the sequencer run
+    // SLOW. A DispatchSourceTimer keeps its own absolute schedule, so it does not
+    // accumulate error from handler execution time — but when the system is busy it
+    // COALESCES firings that fall due together, delivering one callback where several
+    // were owed. Counting one step per callback therefore lost the difference: the
+    // sequence fell progressively behind wall-clock time, and with MIDI clock enabled
+    // it dragged everything slaved to it along too.
+    //
+    // Ticks are now counted against the timeline instead of against callbacks: each
+    // firing works out how many are due and issues the backlog.
+
+    /// Ticks issued back-to-back to make up a shortfall. A coalesced firing is normally
+    /// one or two ticks behind, and catching those up is inaudible. A larger gap means
+    /// a real stall (an instrument loading, the app suspended), and replaying it as a
+    /// burst would dump a bar of notes at once — so past this the timeline is rebased
+    /// instead, keeping the sequence continuous at the cost of the lost time.
+    private static let maxCatchUpTicks: Int64 = 4
+
+    private var tickIntervalNanos: Int64 = 0
+    /// Monotonic uptime at which tick 0 of the current timer was due.
+    private var firstTickNanos: Int64 = 0
+    private var ticksIssued: Int64 = 0
 
     private func startTimer(tempo: Double, immediate: Bool) {
         let safeTempo = min(max(tempo, 20), 400)
         let interval = 60.0 / safeTempo / Double(stepsPerBeat)
+        let deadline = DispatchTime.now() + (immediate ? 0 : interval)
+        tickIntervalNanos = Int64((interval * 1_000_000_000).rounded())
+        firstTickNanos = Int64(bitPattern: deadline.uptimeNanoseconds)
+        ticksIssued = 0
         let t = DispatchSource.makeTimerSource(queue: sequencerQueue)
-        t.schedule(deadline: .now() + (immediate ? 0 : interval),
-                   repeating: interval,
-                   leeway: .milliseconds(1))
-        t.setEventHandler { [weak self] in self?.tick() }
+        t.schedule(deadline: deadline, repeating: interval, leeway: .milliseconds(1))
+        t.setEventHandler { [weak self] in self?.fireDueTicks() }
         t.resume()
         timer = t
+    }
+
+    /// Issue every tick the timeline says is owed, not just one per callback.
+    private func fireDueTicks() {
+        guard tickIntervalNanos > 0 else { tick(); return }
+        let now = Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)
+        let elapsed = max(0, now - firstTickNanos)
+        let due = elapsed / tickIntervalNanos + 1
+        var backlog = due - ticksIssued
+
+        if backlog < 1 {
+            backlog = 1          // fired a touch early (leeway) — still run this one
+        } else if backlog > Self.maxCatchUpTicks {
+            // Rebase so the CURRENT position becomes "on time" and carry on, rather
+            // than firing the whole backlog at once.
+            firstTickNanos = now - ticksIssued * tickIntervalNanos
+            backlog = 1
+        }
+
+        for _ in 0..<backlog {
+            ticksIssued += 1
+            tick()
+            // finishSong() stops the timer mid-catch-up; anything further would start
+            // replaying the song from the top.
+            if timer == nil { break }
+        }
     }
 
     private func reconcileTrackStates(trackIDs: [UUID]) {
@@ -398,22 +402,20 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             }
             for key in Array(states.keys) { states[key] = carries[key] ?? TrackState() }
             globalStep = 0
-            if isSongMode {
-                let count = songSectionCount()
-                if count > 0 {
-                    // End of the last section with looping off → finish and stop.
-                    if sectionIndex + 1 >= count && !songLoops {
-                        finishSong()
-                        return
-                    }
-                    // Advance to the next section (wrap → song loops), then re-resolve
-                    // the frame so this same tick plays the new section's first step.
-                    sectionIndex = (sectionIndex + 1) % count
-                    onSectionChange?(sectionIndex)
-                    frame = currentFrame()
-                    stepsPerBar = max(1, frame.timeSignature.numerator * 32 / frame.timeSignature.denominator)
-                    totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
+            let count = songSectionCount()
+            if count > 0 {
+                // End of the last section with looping off → finish and stop.
+                if sectionIndex + 1 >= count && !songLoops {
+                    finishSong()
+                    return
                 }
+                // Advance to the next section (wrap → song loops), then re-resolve
+                // the frame so this same tick plays the new section's first step.
+                sectionIndex = (sectionIndex + 1) % count
+                onSectionChange?(sectionIndex)
+                frame = currentFrame()
+                stepsPerBar = max(1, frame.timeSignature.numerator * 32 / frame.timeSignature.denominator)
+                totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
             }
         }
 
