@@ -763,7 +763,7 @@ class SongStore: ObservableObject {
     }
 
     func transformSelectedSection(_ transform: SectionTransform) {
-        guard song.sections.indices.contains(selectedSection) else { return }
+        guard canAlterSelectedSection else { return }
         // Transform reshapes the section in place and there is no undo, so it always
         // leaves a way back before touching anything.
         reportDroppedSnapshot(
@@ -806,16 +806,26 @@ class SongStore: ObservableObject {
         }
     }
 
+    /// Altering a section requires it to be held.
+    ///
+    /// Transform and Restore are only worth judging by ear, and without Hold the
+    /// sequencer walks on to the next section mid-audition. Holding repeats the
+    /// selected section so each version can actually be heard. Enforced here as well as
+    /// in the UI so the rule lives with the operations rather than with the buttons.
+    var canAlterSelectedSection: Bool {
+        holdsSection && song.sections.indices.contains(selectedSection)
+    }
+
     /// Snapshot semantics live on SongSection; these wrap them for the selected section
     /// and surface anything the snapshot cap forced out.
     func captureVariation() {
-        guard song.sections.indices.contains(selectedSection) else { return }
+        guard canAlterSelectedSection else { return }
         let number = song.sections[selectedSection].variations.count + 1
         reportDroppedSnapshot(song.sections[selectedSection].saveSnapshot(named: "Snapshot \(number)"))
     }
 
     func applyVariation(_ variationID: UUID) {
-        guard song.sections.indices.contains(selectedSection) else { return }
+        guard canAlterSelectedSection else { return }
         let result = song.sections[selectedSection].restoreSnapshot(variationID)
         reportDroppedSnapshot(result.dropped)
     }

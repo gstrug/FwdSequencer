@@ -605,7 +605,10 @@ private struct SectionSettingsBar: View {
                     Label("Transform", systemImage: "wand.and.stars")
                 }
                 .buttonStyle(.bordered)
-                .help("Reshape this section's notes and steps in place. A snapshot is saved first, so you can get back.")
+                .disabled(!songStore.canAlterSelectedSection)
+                .help(songStore.canAlterSelectedSection
+                      ? "Reshape this section's notes and steps in place. A snapshot is saved first, so you can get back."
+                      : "Turn on Hold first — a transform is only worth judging by ear, and Hold repeats this section so you can hear it.")
 
                 // A sheet rather than a Menu: snapshots are renameable now, and a menu
                 // cannot host an editable text field.
@@ -618,13 +621,25 @@ private struct SectionSettingsBar: View {
                     )
                 }
                 .buttonStyle(.bordered)
-                .help("Save and restore versions of this section's notes and steps")
+                .disabled(!songStore.canAlterSelectedSection)
+                .help(songStore.canAlterSelectedSection
+                      ? "Save and restore versions of this section's notes and steps"
+                      : "Turn on Hold first — Hold repeats this section so you can hear each version as you restore it.")
 
                 Toggle(isOn: $songStore.holdsSection) {
                     Label("Hold", systemImage: "repeat.1")
                 }
                 .toggleStyle(.button)
                 .help("Repeat the selected section instead of playing through the song")
+
+                // Transform and Snapshots are gated on Hold, so say so rather than
+                // leaving two greyed-out buttons to explain themselves.
+                if !songStore.canAlterSelectedSection {
+                    Text("Hold to alter this section")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                }
                 }
                 Spacer(minLength: 0)
             }
