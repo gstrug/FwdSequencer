@@ -764,6 +764,11 @@ class SongStore: ObservableObject {
 
     func transformSelectedSection(_ transform: SectionTransform) {
         guard song.sections.indices.contains(selectedSection) else { return }
+        // Transform reshapes the section in place and there is no undo, so it always
+        // leaves a way back before touching anything.
+        reportDroppedSnapshot(
+            song.sections[selectedSection].saveSnapshot(named: "Before \(transform.rawValue)")
+        )
 
         switch transform {
         case .rotateNotes:
@@ -801,23 +806,31 @@ class SongStore: ObservableObject {
         }
     }
 
+    /// Snapshot semantics live on SongSection; these wrap them for the selected section
+    /// and surface anything the snapshot cap forced out.
     func captureVariation() {
-        guard song.sections.indices.contains(selectedSection),
-              song.sections[selectedSection].variations.count < 32 else { return }
+        guard song.sections.indices.contains(selectedSection) else { return }
         let number = song.sections[selectedSection].variations.count + 1
-        let snapshot = SectionVariation(
-            name: "Variation \(number)",
-            parts: song.sections[selectedSection].parts
-        )
-        song.sections[selectedSection].variations.append(snapshot)
+        reportDroppedSnapshot(song.sections[selectedSection].saveSnapshot(named: "Snapshot \(number)"))
     }
 
     func applyVariation(_ variationID: UUID) {
-        guard song.sections.indices.contains(selectedSection),
-              let variation = song.sections[selectedSection].variations
-                .first(where: { $0.id == variationID }),
-              variation.parts != song.sections[selectedSection].parts else { return }
-        song.sections[selectedSection].parts = variation.parts
+        guard song.sections.indices.contains(selectedSection) else { return }
+        let result = song.sections[selectedSection].restoreSnapshot(variationID)
+        reportDroppedSnapshot(result.dropped)
+    }
+
+    func renameVariation(_ variationID: UUID, to newName: String) {
+        guard song.sections.indices.contains(selectedSection) else { return }
+        song.sections[selectedSection].renameSnapshot(variationID, to: newName)
+    }
+
+    private func reportDroppedSnapshot(_ droppedName: String?) {
+        guard let droppedName else { return }
+        notice = """
+            This section already had \(SongSection.maximumSnapshots) snapshots, \
+            so the oldest ("\(droppedName)") was removed to make room.
+            """
     }
 
     func deleteVariation(_ variationID: UUID) {

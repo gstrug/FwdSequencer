@@ -578,6 +578,65 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertGreaterThan(output.playedNotes, 2, "The held section should still be playing")
     }
 
+    /// Restoring a snapshot used to overwrite the section's current notes outright, so
+    /// any editing done since was gone — and the app has no undo. The current state
+    /// must be captured before it is replaced.
+    func testRestoringASnapshotPreservesTheStateItReplaces() throws {
+        let track = SongTrack(name: "T")
+        var part = Part(trackID: track.id)
+        part.notePool = [NoteEntry(midiNote: 60), NoteEntry(midiNote: 64)]
+        var section = SongSection(name: "A", parts: [part])
+
+        section.saveSnapshot(named: "Original")
+        let original = try XCTUnwrap(section.variations.first)
+        section.parts[0].notePool = [NoteEntry(midiNote: 72)]   // edit since the snapshot
+
+        let result = section.restoreSnapshot(original.id)
+
+        XCTAssertTrue(result.applied)
+        XCTAssertEqual(section.parts[0].notePool.map(\.midiNote), [60, 64])
+        XCTAssertTrue(
+            section.variations.contains { $0.parts.first?.notePool.map(\.midiNote) == [72] },
+            "The state replaced by a restore must still be recoverable"
+        )
+    }
+
+    /// At the cap the oldest snapshot makes way, rather than the save being refused —
+    /// a full list must never silently remove the safety net from Restore or Transform.
+    func testSnapshotCapDropsTheOldestRatherThanRefusingToSave() {
+        let track = SongTrack(name: "T")
+        var section = SongSection(name: "A", parts: [Part(trackID: track.id)])
+
+        for i in 0..<SongSection.maximumSnapshots {
+            section.parts[0].notePool = [NoteEntry(midiNote: 60 + i)]
+            XCTAssertNil(section.saveSnapshot(named: "S\(i)"), "Below the cap nothing is dropped")
+        }
+        XCTAssertEqual(section.variations.count, SongSection.maximumSnapshots)
+
+        let dropped = section.saveSnapshot(named: "One more")
+        XCTAssertEqual(dropped, "S0", "The OLDEST snapshot makes way")
+        XCTAssertEqual(section.variations.count, SongSection.maximumSnapshots)
+        XCTAssertEqual(section.variations.last?.name, "One more")
+    }
+
+    /// A snapshot name reaches the validator, which rejects an empty or over-long one —
+    /// that would make the whole song unsaveable.
+    func testSnapshotRenameKeepsTheNameValid() {
+        let track = SongTrack(name: "T")
+        var section = SongSection(name: "A", parts: [Part(trackID: track.id)])
+        section.saveSnapshot(named: "Snapshot 1")
+        let id = section.variations[0].id
+
+        section.renameSnapshot(id, to: "   ")
+        XCTAssertFalse(section.variations[0].name.isEmpty, "An empty name must not be stored")
+
+        section.renameSnapshot(id, to: String(repeating: "x", count: 5_000))
+        XCTAssertLessThanOrEqual(section.variations[0].name.count, SongValidator.maximumNameLength)
+
+        section.renameSnapshot(id, to: "  Chorus idea  ")
+        XCTAssertEqual(section.variations[0].name, "Chorus idea")
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)

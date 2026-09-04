@@ -122,6 +122,54 @@ nonisolated struct SongSection: Codable, Identifiable, Equatable {
     }
 }
 
+/// Section snapshots ("Snapshots" in the UI): named checkpoints of a section's note
+/// data — every track's note pool, steps, division, key and scale. Instruments, plugin
+/// state and mixer settings live on the track, not the section, so they are never
+/// captured or restored here.
+///
+/// The app has no undo, so every destructive section operation saves the current state
+/// first and these are the way back.
+extension SongSection {
+    static let maximumSnapshots = 32
+
+    /// Capture the current parts under `name`.
+    ///
+    /// At the cap the OLDEST snapshot is dropped to make room and its name returned,
+    /// rather than the save being refused. Refusing would mean a full snapshot list
+    /// silently removes the safety net from Transform and Restore, which is the worse
+    /// trade; the caller surfaces what went.
+    @discardableResult
+    mutating func saveSnapshot(named name: String) -> String? {
+        var dropped: String?
+        if variations.count >= Self.maximumSnapshots {
+            dropped = variations.removeFirst().name
+        }
+        variations.append(SectionVariation(name: name, parts: parts))
+        return dropped
+    }
+
+    /// Replace the parts with a snapshot, preserving what is there as a snapshot first.
+    /// Returns whether anything changed, and any snapshot the cap forced out.
+    @discardableResult
+    mutating func restoreSnapshot(_ id: UUID) -> (applied: Bool, dropped: String?) {
+        guard let snapshot = variations.first(where: { $0.id == id }),
+              snapshot.parts != parts else { return (false, nil) }
+        let dropped = saveSnapshot(named: "Before \(snapshot.name)")
+        parts = snapshot.parts
+        return (true, dropped)
+    }
+
+    mutating func renameSnapshot(_ id: UUID, to newName: String) {
+        guard let index = variations.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Must stay non-empty and within the name limit: the validator rejects a song
+        // containing an invalid snapshot name, which would make it unsaveable.
+        variations[index].name = trimmed.isEmpty
+            ? "Snapshot"
+            : String(trimmed.prefix(SongValidator.maximumNameLength))
+    }
+}
+
 // Per-track note data for one section. `trackID` == SongTrack.id, which is also
 // the routing key in AudioEngineManager, so notes reach the already-loaded
 // instrument with no audio-graph change at section boundaries. Key/scale, rhythm,

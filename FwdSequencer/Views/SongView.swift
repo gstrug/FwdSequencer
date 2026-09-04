@@ -563,6 +563,8 @@ private struct SectionSettingsBar: View {
     @EnvironmentObject var songStore: SongStore
     @State private var selectAllName = false
 
+    @State private var showSnapshots = false
+
     var body: some View {
         let sel = songStore.selectedSection
         ScrollView(.horizontal, showsIndicators: false) {
@@ -603,37 +605,20 @@ private struct SectionSettingsBar: View {
                     Label("Transform", systemImage: "wand.and.stars")
                 }
                 .buttonStyle(.bordered)
-                .help("Reshape this section's notes and steps in place. Save a variation first to keep the current version.")
+                .help("Reshape this section's notes and steps in place. A snapshot is saved first, so you can get back.")
 
-                Menu {
-                    Button { songStore.captureVariation() } label: {
-                        Label("Save Current Snapshot", systemImage: "camera")
-                    }
-                    .disabled(songStore.song.sections[sel].variations.count >= 32)
-
-                    if !songStore.song.sections[sel].variations.isEmpty {
-                        Divider()
-                        ForEach(songStore.song.sections[sel].variations) { variation in
-                            Menu(variation.name) {
-                                Button { songStore.applyVariation(variation.id) } label: {
-                                    Label("Apply", systemImage: "arrow.uturn.backward.circle")
-                                }
-                                Button(role: .destructive) {
-                                    songStore.deleteVariation(variation.id)
-                                } label: {
-                                    Label("Delete Snapshot", systemImage: "trash")
-                                }
-                            }
-                        }
-                    }
-                } label: {
+                // A sheet rather than a Menu: snapshots are renameable now, and a menu
+                // cannot host an editable text field.
+                Button { showSnapshots = true } label: {
                     Label(
-                        "Variations \(songStore.song.sections[sel].variations.count)",
-                        systemImage: "square.stack.3d.up"
+                        songStore.song.sections[sel].variations.isEmpty
+                            ? "Snapshots"
+                            : "Snapshots (\(songStore.song.sections[sel].variations.count))",
+                        systemImage: "camera"
                     )
                 }
                 .buttonStyle(.bordered)
-                .help("Save and recall alternate versions without adding arrangement sections")
+                .help("Save and restore versions of this section's notes and steps")
 
                 Toggle(isOn: $songStore.holdsSection) {
                     Label("Hold", systemImage: "repeat.1")
@@ -647,6 +632,92 @@ private struct SectionSettingsBar: View {
         }
         .padding(.vertical, 6)
         .background(.regularMaterial)
+        .sheet(isPresented: $showSnapshots) { SectionSnapshotsSheet() }
+    }
+}
+
+// MARK: - Section snapshots
+//
+// Named checkpoints of ONE section's note data — every track's note pool, steps,
+// tempo division, key and scale. Instruments, plugin state and mixer settings live on
+// the track, not the section, so they are untouched by both saving and restoring.
+//
+// Restoring is non-destructive: SongStore snapshots the current state before it
+// overwrites anything, here and for Transform, because the app has no undo.
+
+private struct SectionSnapshotsSheet: View {
+    @EnvironmentObject var songStore: SongStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectAllID: UUID?
+
+    private var sectionName: String {
+        let sel = songStore.selectedSection
+        return songStore.song.sections.indices.contains(sel)
+            ? songStore.song.sections[sel].name : "Section"
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    Button {
+                        songStore.captureVariation()
+                    } label: {
+                        Label("Save this section's notes", systemImage: "camera")
+                    }
+                } footer: {
+                    Text("Captures the note pool, steps, division, key and scale for "
+                         + "every track in \"\(sectionName)\". Instruments and mixer "
+                         + "settings are not included.")
+                }
+
+                let sel = songStore.selectedSection
+                if songStore.song.sections.indices.contains(sel),
+                   !songStore.song.sections[sel].variations.isEmpty {
+                    Section("Saved") {
+                        ForEach(songStore.song.sections[sel].variations) { variation in
+                            snapshotRow(variation)
+                        }
+                        .onDelete { offsets in
+                            let ids = offsets.map { songStore.song.sections[sel].variations[$0].id }
+                            for id in ids { songStore.deleteVariation(id) }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Snapshots")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func snapshotRow(_ variation: SectionVariation) -> some View {
+        HStack(spacing: 12) {
+            // Same renaming idiom as sections and tracks: long-press selects all.
+            SelectAllTextField(
+                text: Binding(
+                    get: { variation.name },
+                    set: { songStore.renameVariation(variation.id, to: $0) }
+                ),
+                placeholder: "Snapshot",
+                selectAllTrigger: Binding(
+                    get: { selectAllID == variation.id },
+                    set: { if !$0 { selectAllID = nil } }
+                )
+            )
+            .onLongPressGesture { selectAllID = variation.id }
+
+            Spacer(minLength: 8)
+
+            Button("Restore") { songStore.applyVariation(variation.id) }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+        }
     }
 }
 
