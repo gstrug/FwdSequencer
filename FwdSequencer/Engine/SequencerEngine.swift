@@ -512,21 +512,46 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                     audioEngine?.stopNote(trackID: track.id, midiNote: UInt8(last))
                 }
                 state.lastMidiNotes = []
-            } else if pendingNoteOffs[track.id] != nil {
-                // Skip — notes still ringing: hold them through the skip by extending
-                // every pending release by one step. (Same serial queue, so a non-empty
-                // map reliably means the notes haven't been released yet.)
+            } else if isCarrying, pendingNoteOffs[track.id] != nil {
+                // A Hold CARRIED IN from the previous section: the note was scheduled
+                // over there, where the lookahead below could not see this section's
+                // steps, so it is extended a step at a time as it was before.
                 cancelPendingNoteOffs(for: track.id)
                 for note in state.lastMidiNotes {
                     scheduleNoteOff(trackID: track.id, midiNote: UInt8(note), delay: stepDuration)
                 }
             }
-            // else: Skip but releases already fired — notes are off, nothing to extend
+            // A Hold within a section needs nothing here: the note that preceded it was
+            // already scheduled to span it (see sustainTriggers).
 
             if shouldSound, !poolIndices.isEmpty {
                 // Play every note in the (possibly chord) step. Each note releases on
                 // its own schedule: its gate × the step's gate. So per-note gates shape
                 // the chord internally, while the step gate scales the whole thing.
+                // How long this note is MEANT to sound: its own step plus every Hold
+                // step that immediately follows.
+                //
+                // Sustain used to be applied the other way round — the note was
+                // scheduled for one step, and each Hold trigger extended whatever was
+                // still pending. That silently depended on the note outliving its own
+                // step: with any gate below 1.0 the release had already fired by the
+                // time the Hold ran, so there was nothing left to extend and the note
+                // stayed one step long however many Holds followed. Every note came out
+                // staccato, and the MIDI export (which tracks pending releases as
+                // bookkeeping rather than by time) disagreed with what you heard.
+                //
+                // Scanning forward is bounded by the step count, so a list that is all
+                // Holds cannot spin.
+                var sustainTriggers = 1
+                if ratchets == 1, !track.steps.isEmpty {
+                    var scan = state.stepIndex % track.steps.count
+                    for _ in 0..<track.steps.count {
+                        guard track.steps[scan].type == .hold else { break }
+                        sustainTriggers += max(1, track.steps[scan].n)
+                        scan = (scan + 1) % track.steps.count
+                    }
+                }
+
                 var notes: [Int] = []
                 for idx in poolIndices {
                     // Belt and braces: every producer of poolIndices bounds-checks, but
@@ -538,7 +563,8 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                     notes.append(entry.midiNote)
                     let noteGate = max(0.01, entry.gateLength * stepGate)
                     let subdivision = stepDuration / Double(ratchets)
-                    scheduleNoteOff(trackID: track.id, midiNote: midiNote, delay: noteGate * subdivision)
+                    scheduleNoteOff(trackID: track.id, midiNote: midiNote,
+                                    delay: noteGate * subdivision * Double(sustainTriggers))
                     if ratchets > 1 {
                         for ratchet in 1..<ratchets {
                             scheduleRatchet(

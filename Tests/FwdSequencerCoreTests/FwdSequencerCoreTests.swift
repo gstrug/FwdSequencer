@@ -10,6 +10,26 @@ final class FwdSequencerCoreTests: XCTestCase {
         let note: UInt8
     }
 
+    /// Records when notes start and stop, for asserting how long they actually sound.
+    private final class TimingAudioOutput: SequencerAudioOutput {
+        private let lock = NSLock()
+        private var started: [UInt8: CFAbsoluteTime] = [:]
+        private var _durations: [Double] = []
+        var durations: [Double] { lock.lock(); defer { lock.unlock() }; return _durations }
+
+        func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8) {
+            lock.lock(); started[midiNote] = CFAbsoluteTimeGetCurrent(); lock.unlock()
+        }
+        func stopNote(trackID: UUID, midiNote: UInt8) {
+            lock.lock()
+            if let start = started.removeValue(forKey: midiNote) {
+                _durations.append(CFAbsoluteTimeGetCurrent() - start)
+            }
+            lock.unlock()
+        }
+        func allNotesOff() {}
+    }
+
     private final class RecordingAudioOutput: SequencerAudioOutput {
         private let lock = NSLock()
         private var _playedNotes = 0
@@ -760,6 +780,38 @@ final class FwdSequencerCoreTests: XCTestCase {
                                "\(numerator)/\(denominator) bar must divide by \(division)")
             }
         }
+    }
+
+    /// A note followed by Hold steps must sound across them.
+    ///
+    /// Sustain used to be applied by extending whatever release was still pending when
+    /// the Hold ran — which silently required the note to outlive its own step. At any
+    /// gate below 1.0 the release had already fired, so nothing was extended and the
+    /// note stayed one step long however many Holds followed: everything came out
+    /// staccato. The note is now scheduled to span the Holds up front.
+    func testANoteSoundsAcrossTheHoldStepsThatFollowIt() {
+        let out = TimingAudioOutput()
+        let id = UUID()
+        // Quarter = 60, triplet-eighths -> one step is 1/3 s. Play + Hold x2 is a
+        // quarter note, so the note must sound for ~gate x 1.0 s, not ~1/3 s.
+        let track = PlayTrack(id: id, tempoDivision: .eighthTriplet,
+                              notePool: [NoteEntry(midiNote: 60, velocity: 100, gateLength: 0.9)],
+                              steps: [Step(type: .play), Step(type: .hold, n: 2)],
+                              isMuted: false, isSoloed: false)
+        let engine = SequencerEngine()
+        engine.audioEngine = out
+        engine.startSong(sections: [SequencerSection(id: UUID(), numberOfBars: 1, tracks: [track])],
+                         tempo: 60, timeSignature: TimeSignature(numerator: 3, denominator: 4),
+                         trackIDs: [id], loop: true)
+        Thread.sleep(forTimeInterval: 2.2)
+        engine.stop()
+
+        let durations = out.durations
+        XCTAssertFalse(durations.isEmpty, "no notes were played")
+        let first = durations[0]
+        XCTAssertEqual(first, 0.9, accuracy: 0.08,
+                       "a Play + Hold x2 quarter must ring for about gate x 1 second, not one step")
+        XCTAssertGreaterThan(first, 0.5, "regression: the note lasted only its own step")
     }
 
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
