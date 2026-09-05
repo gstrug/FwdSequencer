@@ -578,31 +578,47 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertGreaterThan(output.playedNotes, 2, "The held section should still be playing")
     }
 
-    /// Restoring a snapshot used to overwrite the section's current notes outright, so
-    /// any editing done since was gone — and the app has no undo. The current state
-    /// must be captured before it is replaced.
-    func testRestoringASnapshotPreservesTheStateItReplaces() throws {
+    /// Restore applies a snapshot and CONSUMES it: the entry leaves the list, so a
+    /// restore cannot be repeated and the list only ever holds versions not yet used.
+    func testRestoringASnapshotAppliesItAndRemovesItFromTheList() throws {
         let track = SongTrack(name: "T")
         var part = Part(trackID: track.id)
         part.notePool = [NoteEntry(midiNote: 60), NoteEntry(midiNote: 64)]
         var section = SongSection(name: "A", parts: [part])
 
-        section.saveSnapshot(named: "Original")
-        let original = try XCTUnwrap(section.variations.first)
-        section.parts[0].notePool = [NoteEntry(midiNote: 72)]   // edit since the snapshot
+        section.saveSnapshot(named: "Clean")
+        let clean = try XCTUnwrap(section.variations.first)
+        section.parts[0].notePool = [NoteEntry(midiNote: 72)]
+        section.saveSnapshot(named: "Busy")
 
-        let result = section.restoreSnapshot(original.id)
-
-        XCTAssertTrue(result.applied)
+        XCTAssertTrue(section.restoreSnapshot(clean.id))
         XCTAssertEqual(section.parts[0].notePool.map(\.midiNote), [60, 64])
-        XCTAssertTrue(
-            section.variations.contains { $0.parts.first?.notePool.map(\.midiNote) == [72] },
-            "The state replaced by a restore must still be recoverable"
-        )
+        XCTAssertFalse(section.variations.contains { $0.id == clean.id },
+                       "A restored snapshot is consumed")
+        XCTAssertEqual(section.variations.map(\.name), ["Busy"],
+                       "Other snapshots are untouched, and no 'Before' entry is bred")
+        XCTAssertFalse(section.restoreSnapshot(clean.id), "It cannot be restored twice")
+    }
+
+    /// Auditioning must not touch the document — it only changes what is handed to the
+    /// sequencer, so abandoning an audition costs nothing.
+    func testAuditioningReadsSnapshotPartsWithoutApplyingThem() throws {
+        let track = SongTrack(name: "T")
+        var part = Part(trackID: track.id)
+        part.notePool = [NoteEntry(midiNote: 60)]
+        var section = SongSection(name: "A", parts: [part])
+        section.saveSnapshot(named: "Alt")
+        let alt = try XCTUnwrap(section.variations.first)
+        section.parts[0].notePool = [NoteEntry(midiNote: 72)]
+
+        let auditioned = try XCTUnwrap(section.snapshotParts(alt.id))
+        XCTAssertEqual(auditioned[0].notePool.map(\.midiNote), [60])
+        XCTAssertEqual(section.parts[0].notePool.map(\.midiNote), [72], "Unchanged")
+        XCTAssertEqual(section.variations.count, 1, "Unchanged")
     }
 
     /// At the cap the oldest snapshot makes way, rather than the save being refused —
-    /// a full list must never silently remove the safety net from Restore or Transform.
+    /// a full list must never silently remove the safety net from Transform.
     func testSnapshotCapDropsTheOldestRatherThanRefusingToSave() {
         let track = SongTrack(name: "T")
         var section = SongSection(name: "A", parts: [Part(trackID: track.id)])
@@ -619,22 +635,33 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(section.variations.last?.name, "One more")
     }
 
-    /// A snapshot name reaches the validator, which rejects an empty or over-long one —
-    /// that would make the whole song unsaveable.
-    func testSnapshotRenameKeepsTheNameValid() {
+    /// Names are user-supplied now, so they must be made safe: the validator rejects an
+    /// empty or over-long one, and duplicates make the list unreadable.
+    func testSnapshotNamesAreTrimmedCappedAndDeduplicated() {
         let track = SongTrack(name: "T")
         var section = SongSection(name: "A", parts: [Part(trackID: track.id)])
-        section.saveSnapshot(named: "Snapshot 1")
+
+        section.saveSnapshot(named: "  Chorus idea  ")
+        XCTAssertEqual(section.variations[0].name, "Chorus idea", "Trimmed")
+
+        section.saveSnapshot(named: "Chorus idea")
+        XCTAssertEqual(section.variations[1].name, "Chorus idea 2", "Duplicates get a suffix")
+        section.saveSnapshot(named: "Chorus idea")
+        XCTAssertEqual(section.variations[2].name, "Chorus idea 3")
+
+        section.saveSnapshot(named: "   ")
+        XCTAssertFalse(section.variations[3].name.isEmpty, "An empty name is never stored")
+
+        section.saveSnapshot(named: String(repeating: "x", count: 5_000))
+        XCTAssertLessThanOrEqual(section.variations[4].name.count, SongValidator.maximumNameLength)
+
+        // Renaming is held to the same rules, but must not collide with itself.
         let id = section.variations[0].id
-
-        section.renameSnapshot(id, to: "   ")
-        XCTAssertFalse(section.variations[0].name.isEmpty, "An empty name must not be stored")
-
-        section.renameSnapshot(id, to: String(repeating: "x", count: 5_000))
-        XCTAssertLessThanOrEqual(section.variations[0].name.count, SongValidator.maximumNameLength)
-
-        section.renameSnapshot(id, to: "  Chorus idea  ")
-        XCTAssertEqual(section.variations[0].name, "Chorus idea")
+        section.renameSnapshot(id, to: "Chorus idea")
+        XCTAssertEqual(section.variations[0].name, "Chorus idea",
+                       "Renaming to its own name must not add a suffix")
+        section.renameSnapshot(id, to: "Chorus idea 2")
+        XCTAssertEqual(section.variations[0].name, "Chorus idea 2 2", "Collides with another")
     }
 
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {

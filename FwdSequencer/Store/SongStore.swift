@@ -56,7 +56,10 @@ class SongStore: ObservableObject {
     /// Which section the editors are bound to (the one the user is editing).
     @Published var selectedSection: Int = 0 {
         didSet {
-            guard selectedSection != oldValue, holdsSection else { return }
+            guard selectedSection != oldValue else { return }
+            // The audition belongs to the section it was started from.
+            stopAudition()
+            guard holdsSection else { return }
             // Held: the selection IS what plays, so following it here lets the user
             // audition another section without releasing the hold.
             pushHeldSection()
@@ -87,6 +90,9 @@ class SongStore: ObservableObject {
     @Published var holdsSection: Bool = false {
         didSet {
             guard holdsSection != oldValue else { return }
+            // Auditioning is only reachable while held; releasing the hold must not
+            // leave the sequencer playing a snapshot that is not in the document.
+            if !holdsSection { stopAudition() }
             pushHeldSection()
         }
     }
@@ -249,9 +255,20 @@ class SongStore: ObservableObject {
     /// Build the sequencer's per-section playable view. Mute/solo come from the
     /// track (constant across sections); note data comes from each section's Part.
     private func flattenedSections() -> [SequencerSection] {
-        song.sections.map { section in
+        // While auditioning, the SELECTED section plays the snapshot's notes instead of
+        // its own. Only what the sequencer is handed changes — `song` is untouched, so
+        // an audition can be abandoned with nothing to undo.
+        let auditioned: [Part]? = auditioningSnapshot.flatMap { id in
+            song.sections.indices.contains(selectedSection)
+                ? song.sections[selectedSection].snapshotParts(id) : nil
+        }
+        let auditionedSectionID: UUID? = auditioned == nil ? nil
+            : (song.sections.indices.contains(selectedSection) ? song.sections[selectedSection].id : nil)
+
+        return song.sections.map { section in
+            let sourceParts = section.id == auditionedSectionID ? (auditioned ?? section.parts) : section.parts
             let tracks: [PlayTrack] = song.tracks.map { st in
-                let part = section.parts.first { $0.trackID == st.id }
+                let part = sourceParts.first { $0.trackID == st.id }
                 return PlayTrack(
                     id: st.id,
                     tempoDivision: part?.tempoDivision ?? .quarter,
@@ -818,21 +835,51 @@ class SongStore: ObservableObject {
 
     /// Snapshot semantics live on SongSection; these wrap them for the selected section
     /// and surface anything the snapshot cap forced out.
-    func captureVariation() {
-        guard canAlterSelectedSection else { return }
-        let number = song.sections[selectedSection].variations.count + 1
-        reportDroppedSnapshot(song.sections[selectedSection].saveSnapshot(named: "Snapshot \(number)"))
+
+    /// The name offered in the save prompt: describes nothing on its own, so it is only
+    /// a starting point the user is expected to replace.
+    func suggestedSnapshotName() -> String {
+        guard song.sections.indices.contains(selectedSection) else { return "Snapshot" }
+        return song.sections[selectedSection]
+            .snapshotName(from: "Snapshot \(song.sections[selectedSection].variations.count + 1)")
     }
 
+    func captureVariation(named name: String) {
+        guard canAlterSelectedSection else { return }
+        reportDroppedSnapshot(song.sections[selectedSection].saveSnapshot(named: name))
+    }
+
+    /// Restore CONSUMES the snapshot — see SongSection.restoreSnapshot.
     func applyVariation(_ variationID: UUID) {
         guard canAlterSelectedSection else { return }
-        let result = song.sections[selectedSection].restoreSnapshot(variationID)
-        reportDroppedSnapshot(result.dropped)
+        stopAudition()
+        song.sections[selectedSection].restoreSnapshot(variationID)
     }
 
     func renameVariation(_ variationID: UUID, to newName: String) {
         guard song.sections.indices.contains(selectedSection) else { return }
         song.sections[selectedSection].renameSnapshot(variationID, to: newName)
+    }
+
+    // MARK: - Auditioning a snapshot
+    //
+    // Hearing a snapshot before committing to it. The document is NOT touched: the
+    // snapshot's parts are substituted into the sections handed to the sequencer, so
+    // the audition is purely a playback state and abandoning it costs nothing.
+
+    @Published private(set) var auditioningSnapshot: UUID?
+
+    func auditionSnapshot(_ variationID: UUID) {
+        guard canAlterSelectedSection,
+              song.sections[selectedSection].snapshotParts(variationID) != nil else { return }
+        auditioningSnapshot = variationID
+        updateLiveSong()
+    }
+
+    func stopAudition() {
+        guard auditioningSnapshot != nil else { return }
+        auditioningSnapshot = nil
+        updateLiveSong()
     }
 
     private func reportDroppedSnapshot(_ droppedName: String?) {
@@ -847,6 +894,8 @@ class SongStore: ObservableObject {
         guard song.sections.indices.contains(selectedSection),
               song.sections[selectedSection].variations.contains(where: { $0.id == variationID })
         else { return }
+        // Never leave playback pointed at notes that no longer exist.
+        if auditioningSnapshot == variationID { stopAudition() }
         song.sections[selectedSection].variations.removeAll { $0.id == variationID }
     }
 

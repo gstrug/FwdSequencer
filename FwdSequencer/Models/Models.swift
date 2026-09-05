@@ -66,9 +66,9 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     var collapsed: Bool? = nil        // persisted minimized state (Optional → old songs decode)
 }
 
-/// A named, non-destructive snapshot of a section's note data. Variations do not
-/// create extra arrangement entries; applying one replaces the section's current
-/// parts, so save a variation first if the present arrangement matters.
+/// A named snapshot of a section's note data. Snapshots do not create arrangement
+/// entries; restoring one replaces the section's current parts and consumes the
+/// snapshot. (`SectionVariation` is the on-disk name, kept so saved songs still decode.)
 nonisolated struct SectionVariation: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String
@@ -127,46 +127,71 @@ nonisolated struct SongSection: Codable, Identifiable, Equatable {
 /// state and mixer settings live on the track, not the section, so they are never
 /// captured or restored here.
 ///
-/// The app has no undo, so every destructive section operation saves the current state
-/// first and these are the way back.
+/// The app has no undo. Transform saves the current state before reshaping, and the
+/// user is prompted to name a snapshot when saving one deliberately, so there is always
+/// a described point to come back to.
 extension SongSection {
     static let maximumSnapshots = 32
+
+    /// Make `raw` fit to be stored: trimmed, never empty, within the validator's length
+    /// limit, and unique within this section. Duplicates gain a numeric suffix rather
+    /// than being rejected — the point of naming a snapshot is describing what changed,
+    /// and refusing a name mid-flow would lose that description.
+    func snapshotName(from raw: String, excluding id: UUID? = nil) -> String {
+        let limit = SongValidator.maximumNameLength
+        var base = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if base.isEmpty { base = "Snapshot" }
+        base = String(base.prefix(limit))
+        let taken = Set(variations.filter { $0.id != id }.map(\.name))
+        guard taken.contains(base) else { return base }
+        var suffix = 2
+        while true {
+            let tail = " \(suffix)"
+            let candidate = String(base.prefix(limit - tail.count)) + tail
+            if !taken.contains(candidate) { return candidate }
+            suffix += 1
+        }
+    }
 
     /// Capture the current parts under `name`.
     ///
     /// At the cap the OLDEST snapshot is dropped to make room and its name returned,
-    /// rather than the save being refused. Refusing would mean a full snapshot list
-    /// silently removes the safety net from Transform and Restore, which is the worse
-    /// trade; the caller surfaces what went.
+    /// rather than the save being refused.
     @discardableResult
     mutating func saveSnapshot(named name: String) -> String? {
         var dropped: String?
         if variations.count >= Self.maximumSnapshots {
             dropped = variations.removeFirst().name
         }
-        variations.append(SectionVariation(name: name, parts: parts))
+        variations.append(SectionVariation(name: snapshotName(from: name), parts: parts))
         return dropped
     }
 
-    /// Replace the parts with a snapshot, preserving what is there as a snapshot first.
-    /// Returns whether anything changed, and any snapshot the cap forced out.
+    /// Restore a snapshot and CONSUME it — the entry leaves the list.
+    ///
+    /// Restoring used to save the current state first, as "Before <name>". That made
+    /// every restore breed an entry nobody had asked for and whose name described a
+    /// moment rather than a version, which made the list unreadable. Snapshots are
+    /// named waypoints the user creates deliberately; going back to one uses it up.
+    ///
+    /// The consequence is that the state being replaced is NOT kept. That is the point
+    /// of prompting for a name on save: you checkpoint what you want to keep.
     @discardableResult
-    mutating func restoreSnapshot(_ id: UUID) -> (applied: Bool, dropped: String?) {
-        guard let snapshot = variations.first(where: { $0.id == id }),
-              snapshot.parts != parts else { return (false, nil) }
-        let dropped = saveSnapshot(named: "Before \(snapshot.name)")
-        parts = snapshot.parts
-        return (true, dropped)
+    mutating func restoreSnapshot(_ id: UUID) -> Bool {
+        guard let index = variations.firstIndex(where: { $0.id == id }) else { return false }
+        parts = variations[index].parts
+        variations.remove(at: index)
+        return true
+    }
+
+    /// The parts a snapshot holds, without applying them — for auditioning.
+    func snapshotParts(_ id: UUID) -> [Part]? {
+        variations.first { $0.id == id }?.parts
     }
 
     mutating func renameSnapshot(_ id: UUID, to newName: String) {
         guard let index = variations.firstIndex(where: { $0.id == id }) else { return }
-        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Must stay non-empty and within the name limit: the validator rejects a song
-        // containing an invalid snapshot name, which would make it unsaveable.
-        variations[index].name = trimmed.isEmpty
-            ? "Snapshot"
-            : String(trimmed.prefix(SongValidator.maximumNameLength))
+        variations[index].name = snapshotName(from: newName, excluding: id)
     }
 }
 

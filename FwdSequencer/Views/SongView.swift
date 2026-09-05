@@ -663,12 +663,18 @@ private struct SectionSettingsBar: View {
 private struct SectionSnapshotsSheet: View {
     @EnvironmentObject var songStore: SongStore
     @Environment(\.dismiss) private var dismiss
-    @State private var selectAllID: UUID?
 
-    private var sectionName: String {
-        let sel = songStore.selectedSection
-        return songStore.song.sections.indices.contains(sel)
-            ? songStore.song.sections[sel].name : "Section"
+    /// Naming happens in a prompt rather than inline in the row. An inline field wrote
+    /// on every keystroke, so deleting the last character handed the sanitiser an empty
+    /// string, which it replaced with "Snapshot" and wrote straight back into the field
+    /// — the name could never be typed over. A prompt sanitises once, on commit.
+    @State private var nameDraft = ""
+    @State private var renaming: UUID?
+    @State private var showNamePrompt = false
+
+    private var sel: Int { songStore.selectedSection }
+    private var section: SongSection? {
+        songStore.song.sections.indices.contains(sel) ? songStore.song.sections[sel] : nil
     }
 
     var body: some View {
@@ -676,27 +682,34 @@ private struct SectionSnapshotsSheet: View {
             List {
                 Section {
                     Button {
-                        songStore.captureVariation()
+                        renaming = nil
+                        nameDraft = songStore.suggestedSnapshotName()
+                        showNamePrompt = true
                     } label: {
-                        Label("Save this section's notes", systemImage: "camera")
+                        Label("Save this section's notes…", systemImage: "camera")
                     }
                 } footer: {
                     Text("Captures the note pool, steps, division, key and scale for "
-                         + "every track in \"\(sectionName)\". Instruments and mixer "
-                         + "settings are not included.")
+                         + "every track in \"\(section?.name ?? "this section")\". "
+                         + "Instruments and mixer settings are not included.")
                 }
 
-                let sel = songStore.selectedSection
-                if songStore.song.sections.indices.contains(sel),
-                   !songStore.song.sections[sel].variations.isEmpty {
-                    Section("Saved") {
-                        ForEach(songStore.song.sections[sel].variations) { variation in
-                            snapshotRow(variation)
+                if let section, !section.variations.isEmpty {
+                    Section {
+                        ForEach(section.variations) { snapshot in
+                            snapshotRow(snapshot)
                         }
                         .onDelete { offsets in
-                            let ids = offsets.map { songStore.song.sections[sel].variations[$0].id }
-                            for id in ids { songStore.deleteVariation(id) }
+                            for id in offsets.map({ section.variations[$0].id }) {
+                                songStore.deleteVariation(id)
+                            }
                         }
+                    } header: {
+                        Text("Saved")
+                    } footer: {
+                        Text("Audition plays a snapshot without changing anything. "
+                             + "Restore replaces this section's notes with it and removes "
+                             + "it from the list.")
                     }
                 }
             }
@@ -707,32 +720,62 @@ private struct SectionSnapshotsSheet: View {
                     Button("Done") { dismiss() }
                 }
             }
+            // An audition is playback-only state; it must not outlive this sheet, or the
+            // sequencer would keep playing notes the document does not contain.
+            .onDisappear { songStore.stopAudition() }
+            .alert(renaming == nil ? "Name this snapshot" : "Rename snapshot",
+                   isPresented: $showNamePrompt) {
+                TextField("Name", text: $nameDraft)
+                Button("Cancel", role: .cancel) { }
+                Button("Save") {
+                    if let renaming { songStore.renameVariation(renaming, to: nameDraft) }
+                    else { songStore.captureVariation(named: nameDraft) }
+                }
+            } message: {
+                Text("Describe what changed, so you know which version to come back to.")
+            }
         }
     }
 
     @ViewBuilder
-    private func snapshotRow(_ variation: SectionVariation) -> some View {
-        HStack(spacing: 12) {
-            // Same renaming idiom as sections and tracks: long-press selects all.
-            SelectAllTextField(
-                text: Binding(
-                    get: { variation.name },
-                    set: { songStore.renameVariation(variation.id, to: $0) }
-                ),
-                placeholder: "Snapshot",
-                selectAllTrigger: Binding(
-                    get: { selectAllID == variation.id },
-                    set: { if !$0 { selectAllID = nil } }
-                )
-            )
-            .onLongPressGesture { selectAllID = variation.id }
+    private func snapshotRow(_ snapshot: SectionVariation) -> some View {
+        let isAuditioning = songStore.auditioningSnapshot == snapshot.id
+        VStack(alignment: .leading, spacing: 8) {
+            Text(snapshot.name).font(.body).lineLimit(2)
 
-            Spacer(minLength: 8)
-
-            Button("Restore") { songStore.applyVariation(variation.id) }
+            HStack(spacing: 10) {
+                Button {
+                    if isAuditioning { songStore.stopAudition() }
+                    else { songStore.auditionSnapshot(snapshot.id) }
+                } label: {
+                    Label(isAuditioning ? "Stop" : "Audition",
+                          systemImage: isAuditioning ? "stop.fill" : "play.circle")
+                }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .tint(isAuditioning ? .orange : nil)
+
+                Button("Restore") { songStore.applyVariation(snapshot.id) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                Button {
+                    renaming = snapshot.id
+                    nameDraft = snapshot.name
+                    showNamePrompt = true
+                } label: {
+                    Label("Rename", systemImage: "pencil")
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Spacer(minLength: 0)
+            }
+            // A List row makes the whole row tappable, which would fire the first
+            // button; each button owns its own hit area instead.
+            .buttonStyle(.bordered)
         }
+        .padding(.vertical, 2)
     }
 }
 
