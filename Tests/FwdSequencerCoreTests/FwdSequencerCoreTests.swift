@@ -719,6 +719,49 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(section.variations[0].name, "Chorus idea 2 2", "Collides with another")
     }
 
+    /// The tick grid exists to make triplets — and therefore swing — expressible. It was
+    /// 8 per quarter, which divides only by two, so a triplet could not land on a tick.
+    func testTheTickGridExpressesBothBinaryAndTripletDivisions() {
+        let ticksPerQuarter = TempoDivision.quarter.sequencerTicks
+        XCTAssertEqual(ticksPerQuarter, 24)
+
+        // Binary divisions halve cleanly all the way to a 32nd.
+        XCTAssertEqual(TempoDivision.eighth.sequencerTicks, 12)
+        XCTAssertEqual(TempoDivision.sixteenth.sequencerTicks, 6)
+        XCTAssertEqual(TempoDivision.thirtysecond.sequencerTicks, 3)
+
+        // A triplet is three in the time of two, and must land on whole ticks.
+        for (triplet, parent) in [(TempoDivision.quarterTriplet, TempoDivision.quarter),
+                                  (.eighthTriplet, .eighth),
+                                  (.sixteenthTriplet, .sixteenth)] {
+            XCTAssertEqual(triplet.sequencerTicks * 3, parent.sequencerTicks * 2,
+                           "\(triplet) must be three in the time of two \(parent)")
+        }
+
+        // Every division is a whole number of ticks — nothing rounds.
+        for division in TempoDivision.allCases {
+            XCTAssertGreaterThan(division.sequencerTicks, 0, "\(division)")
+        }
+
+        // Swing is now representable: a swung eighth pair is a triplet-eighth held for
+        // two units followed by one, i.e. 2:1 within a quarter.
+        let swungLong = TempoDivision.eighthTriplet.sequencerTicks * 2
+        let swungShort = TempoDivision.eighthTriplet.sequencerTicks
+        XCTAssertEqual(swungLong + swungShort, ticksPerQuarter)
+        XCTAssertEqual(swungLong, swungShort * 2)
+
+        // Common bars divide evenly by the common divisions, so patterns line up with
+        // the bar rather than drifting at the loop point.
+        let ticksPerWholeNote = ticksPerQuarter * 4
+        for (numerator, denominator) in [(4, 4), (3, 4), (6, 8)] {
+            let bar = numerator * ticksPerWholeNote / denominator
+            for division in [TempoDivision.quarter, .eighth, .sixteenth, .eighthTriplet] {
+                XCTAssertEqual(bar % division.sequencerTicks, 0,
+                               "\(numerator)/\(denominator) bar must divide by \(division)")
+            }
+        }
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)

@@ -73,7 +73,19 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         pendingNoteOffs.removeAll()
     }
     private var globalStep = 0
-    private let stepsPerBeat = 8   // ticks per beat = 32nd-note resolution
+    /// Tick resolution: 24 per quarter note.
+    ///
+    /// It was 8, which is a 32nd-note grid and divides only by two — so nothing in the
+    /// sequencer could express a triplet, and swing was therefore impossible. 24 is the
+    /// smallest value divisible by both 8 (for 32nds) and 3 (for triplets), so every
+    /// division below lands on a whole tick.
+    ///
+    /// Musical durations are unchanged by this: the tick interval is
+    /// 60 / tempo / stepsPerBeat, so tripling the resolution thirds the interval and a
+    /// quarter note still lasts a quarter note.
+    private let stepsPerBeat = 24
+    /// Ticks per whole note — the unit the time signature's denominator divides.
+    private var ticksPerWholeNote: Int { stepsPerBeat * 4 }
 
     // Live playback snapshot. All access is sequencerQueue-only. `sectionIndex` is
     // queue-owned state, like globalStep.
@@ -283,7 +295,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// a real stall (an instrument loading, the app suspended), and replaying it as a
     /// burst would dump a bar of notes at once — so past this the timeline is rebased
     /// instead, keeping the sequence continuous at the cost of the lost time.
-    private static let maxCatchUpTicks: Int64 = 4
+    private var maxCatchUpTicks: Int64 { Int64(stepsPerBeat / 2) }
 
     private var tickIntervalNanos: Int64 = 0
     /// Monotonic uptime at which tick 0 of the current timer was due.
@@ -314,7 +326,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
 
         if backlog < 1 {
             backlog = 1          // fired a touch early (leeway) — still run this one
-        } else if backlog > Self.maxCatchUpTicks {
+        } else if backlog > maxCatchUpTicks {
             // Rebase so the CURRENT position becomes "on time" and carry on, rather
             // than firing the whole backlog at once.
             firstTickNanos = now - ticksIssued * tickIntervalNanos
@@ -376,7 +388,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
 
         // How many ticks make one bar, at the 32nd-note tick resolution above.
         // Formula: numerator beats × (32 ticks per whole note / denominator).
-        var stepsPerBar = max(1, frame.timeSignature.numerator * 32 / frame.timeSignature.denominator)
+        var stepsPerBar = max(1, frame.timeSignature.numerator * ticksPerWholeNote / frame.timeSignature.denominator)
         var totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
 
         // Loop point: end of the current pattern/section.
@@ -431,7 +443,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                         sectionIndex = held
                         onSectionChange?(sectionIndex)
                         frame = currentFrame()
-                        stepsPerBar = max(1, frame.timeSignature.numerator * 32 / frame.timeSignature.denominator)
+                        stepsPerBar = max(1, frame.timeSignature.numerator * ticksPerWholeNote / frame.timeSignature.denominator)
                         totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
                     }
                 } else {
@@ -445,7 +457,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                     sectionIndex = (sectionIndex + 1) % count
                     onSectionChange?(sectionIndex)
                     frame = currentFrame()
-                    stepsPerBar = max(1, frame.timeSignature.numerator * 32 / frame.timeSignature.denominator)
+                    stepsPerBar = max(1, frame.timeSignature.numerator * ticksPerWholeNote / frame.timeSignature.denominator)
                     totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
                 }
             }
@@ -458,7 +470,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         }
 
         // Beat indicator — fires every beat; true = downbeat (beat 1 of bar)
-        let stepsPerBeatTS = max(1, 32 / frame.timeSignature.denominator)
+        let stepsPerBeatTS = max(1, ticksPerWholeNote / frame.timeSignature.denominator)
         if globalStep % stepsPerBeatTS == 0 {
             let isDownbeat = (globalStep % stepsPerBar) == 0
             onBeat?(isDownbeat)
@@ -469,16 +481,8 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         for track in frame.tracks {
             guard !track.notePool.isEmpty else { continue }
 
-            let triggerEvery: Int
-            switch track.tempoDivision {
-            case .breve:          triggerEvery = stepsPerBeat * 8   // 64 ticks
-            case .whole:          triggerEvery = stepsPerBeat * 4   // 32
-            case .half:           triggerEvery = stepsPerBeat * 2   // 16
-            case .quarter:        triggerEvery = stepsPerBeat        // 8
-            case .eighth:         triggerEvery = stepsPerBeat / 2    // 4
-            case .sixteenth:      triggerEvery = stepsPerBeat / 4    // 2
-            case .thirtysecond:   triggerEvery = 1
-            }
+            // Single source of truth for the grid, shared with the model layer.
+            let triggerEvery = max(1, track.tempoDivision.sequencerTicks)
 
             guard globalStep % triggerEvery == 0 else { continue }
             guard var state = states[track.id] else { continue }

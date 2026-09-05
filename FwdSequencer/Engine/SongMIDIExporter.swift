@@ -337,15 +337,21 @@ nonisolated enum SongMIDIExporter {
         }
     }
 
+    /// The exporter keeps its own 480-PPQ grid, independent of the sequencer's 24, so
+    /// exported files stay at standard MIDI resolution. 480 divides by 3, so the triplet
+    /// divisions land on whole ticks here too.
     private static func triggerTicks(for division: TempoDivision) -> Int {
         switch division {
-        case .breve: return ticksPerQuarter * 8
-        case .whole: return ticksPerQuarter * 4
-        case .half: return ticksPerQuarter * 2
-        case .quarter: return ticksPerQuarter
-        case .eighth: return ticksPerQuarter / 2
-        case .sixteenth: return ticksPerQuarter / 4
-        case .thirtysecond: return ticksPerQuarter / 8
+        case .breve:            return ticksPerQuarter * 8
+        case .whole:            return ticksPerQuarter * 4
+        case .half:             return ticksPerQuarter * 2
+        case .quarter:          return ticksPerQuarter
+        case .quarterTriplet:   return ticksPerQuarter * 2 / 3
+        case .eighth:           return ticksPerQuarter / 2
+        case .eighthTriplet:    return ticksPerQuarter / 3
+        case .sixteenth:        return ticksPerQuarter / 4
+        case .sixteenthTriplet: return ticksPerQuarter / 6
+        case .thirtysecond:     return ticksPerQuarter / 8
         }
     }
 

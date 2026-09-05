@@ -435,35 +435,46 @@ extension StepType: Codable {
 // MARK: - Enumerations
 
 nonisolated enum TempoDivision: String, Codable, CaseIterable, Equatable {
-    case breve          = "Breve"
-    case whole          = "Whole"
-    case half           = "Half"
-    case quarter        = "Quarter"
-    case eighth         = "Eighth"
-    case sixteenth      = "Sixteenth"
-    case thirtysecond   = "32nd"
+    case breve            = "Breve"
+    case whole            = "Whole"
+    case half             = "Half"
+    case quarter          = "Quarter"
+    case quarterTriplet   = "Quarter Triplet"
+    case eighth           = "Eighth"
+    case eighthTriplet    = "Eighth Triplet"
+    case sixteenth        = "Sixteenth"
+    case sixteenthTriplet = "Sixteenth Triplet"
+    case thirtysecond     = "32nd"
 
     var abbreviation: String {
         switch self {
-        case .breve:        return "2/1"
-        case .whole:        return "1/1"
-        case .half:         return "1/2"
-        case .quarter:      return "1/4"
-        case .eighth:       return "1/8"
-        case .sixteenth:    return "1/16"
-        case .thirtysecond: return "1/32"
+        case .breve:            return "2/1"
+        case .whole:            return "1/1"
+        case .half:             return "1/2"
+        case .quarter:          return "1/4"
+        case .quarterTriplet:   return "1/4T"
+        case .eighth:           return "1/8"
+        case .eighthTriplet:    return "1/8T"
+        case .sixteenth:        return "1/16"
+        case .sixteenthTriplet: return "1/16T"
+        case .thirtysecond:     return "1/32"
         }
     }
 
-    var stepsPerBar: Int {
+    /// Ticks between triggers, at the sequencer's 24-ticks-per-quarter resolution.
+    /// A triplet is three in the time of two, hence the 2/3.
+    var sequencerTicks: Int {
         switch self {
-        case .breve:        return 1
-        case .whole:        return 1
-        case .half:         return 2
-        case .quarter:      return 4
-        case .eighth:       return 8
-        case .sixteenth:    return 16
-        case .thirtysecond: return 32
+        case .breve:            return 192
+        case .whole:            return 96
+        case .half:             return 48
+        case .quarter:          return 24
+        case .quarterTriplet:   return 16
+        case .eighth:           return 12
+        case .eighthTriplet:    return 8
+        case .sixteenth:        return 6
+        case .sixteenthTriplet: return 4
+        case .thirtysecond:     return 3
         }
     }
 }
