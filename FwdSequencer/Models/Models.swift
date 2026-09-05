@@ -73,6 +73,29 @@ nonisolated struct SectionVariation: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
     var name: String
     var parts: [Part]
+    /// The section's state before any editing, captured automatically the first time it
+    /// is held. Protected: never consumed by a restore, never evicted by the snapshot
+    /// cap, and not deletable — otherwise the guarantee that you can always get back to
+    /// the original would be undone by the very mechanisms meant to protect you.
+    ///
+    /// Optional so songs saved before this existed still decode (missing key -> nil).
+    var isOriginal: Bool? = nil
+
+    var isProtected: Bool { isOriginal == true }
+
+    // Tolerant decoder: the synthesised one throws on a missing key even with a default.
+    private enum CodingKeys: String, CodingKey { case id, name, parts, isOriginal }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Snapshot"
+        parts = try c.decodeIfPresent([Part].self, forKey: .parts) ?? []
+        isOriginal = try c.decodeIfPresent(Bool.self, forKey: .isOriginal)
+    }
+
+    init(id: UUID = UUID(), name: String, parts: [Part], isOriginal: Bool? = nil) {
+        self.id = id; self.name = name; self.parts = parts; self.isOriginal = isOriginal
+    }
 }
 
 nonisolated struct SongSection: Codable, Identifiable, Equatable {
@@ -153,33 +176,65 @@ extension SongSection {
         }
     }
 
+    var hasOriginalSnapshot: Bool { variations.contains { $0.isProtected } }
+
+    /// Capture the section as it stands as the protected "Original", once.
+    ///
+    /// Called the first time a section is held — i.e. before any editing is possible,
+    /// since Transform and Restore both require Hold — so it records the state before
+    /// anything was changed. Does nothing if one already exists, or the second hold
+    /// would overwrite the original with already-edited notes.
+    @discardableResult
+    mutating func saveOriginalSnapshot() -> Bool {
+        guard !hasOriginalSnapshot else { return false }
+        variations.insert(
+            SectionVariation(name: snapshotName(from: "Original"), parts: parts, isOriginal: true),
+            at: 0
+        )
+        return true
+    }
+
     /// Capture the current parts under `name`.
     ///
-    /// At the cap the OLDEST snapshot is dropped to make room and its name returned,
-    /// rather than the save being refused.
+    /// At the cap the oldest UNPROTECTED snapshot is dropped to make room and its name
+    /// returned, rather than the save being refused. The Original is never the one that
+    /// goes; if only protected snapshots remain there is nothing to evict and the save
+    /// is refused, which cannot happen in practice with a cap of 32 and one Original.
     @discardableResult
     mutating func saveSnapshot(named name: String) -> String? {
         var dropped: String?
         if variations.count >= Self.maximumSnapshots {
-            dropped = variations.removeFirst().name
+            guard let victim = variations.firstIndex(where: { !$0.isProtected }) else { return nil }
+            dropped = variations.remove(at: victim).name
         }
         variations.append(SectionVariation(name: snapshotName(from: name), parts: parts))
         return dropped
     }
 
-    /// Restore a snapshot and CONSUME it — the entry leaves the list.
+    /// Restore a snapshot. By default it is CONSUMED — the entry leaves the list.
     ///
     /// Restoring used to save the current state first, as "Before <name>". That made
     /// every restore breed an entry nobody had asked for and whose name described a
     /// moment rather than a version, which made the list unreadable. Snapshots are
     /// named waypoints the user creates deliberately; going back to one uses it up.
     ///
-    /// The consequence is that the state being replaced is NOT kept. That is the point
-    /// of prompting for a name on save: you checkpoint what you want to keep.
+    /// The consequence is that the state being replaced is NOT kept — hence the prompt
+    /// to name a snapshot when saving one. `keeping: true` ("Restore & Keep") leaves the
+    /// entry in place for going back to repeatedly, and the Original is ALWAYS kept
+    /// whatever is asked, since it is the one guaranteed way back.
     @discardableResult
-    mutating func restoreSnapshot(_ id: UUID) -> Bool {
+    mutating func restoreSnapshot(_ id: UUID, keeping: Bool = false) -> Bool {
         guard let index = variations.firstIndex(where: { $0.id == id }) else { return false }
         parts = variations[index].parts
+        if !keeping && !variations[index].isProtected { variations.remove(at: index) }
+        return true
+    }
+
+    /// Protected snapshots cannot be deleted; everything else can.
+    @discardableResult
+    mutating func deleteSnapshot(_ id: UUID) -> Bool {
+        guard let index = variations.firstIndex(where: { $0.id == id }),
+              !variations[index].isProtected else { return false }
         variations.remove(at: index)
         return true
     }

@@ -699,8 +699,11 @@ private struct SectionSnapshotsSheet: View {
                         ForEach(section.variations) { snapshot in
                             snapshotRow(snapshot)
                         }
+                        // Swiping the Original away is refused by the store; filter it
+                        // here too so the gesture does not look like it silently failed.
                         .onDelete { offsets in
-                            for id in offsets.map({ section.variations[$0].id }) {
+                            for id in offsets.map({ section.variations[$0] })
+                                        .filter({ !$0.isProtected }).map(\.id) {
                                 songStore.deleteVariation(id)
                             }
                         }
@@ -708,8 +711,10 @@ private struct SectionSnapshotsSheet: View {
                         Text("Saved")
                     } footer: {
                         Text("Audition plays a snapshot without changing anything. "
-                             + "Restore replaces this section's notes with it and removes "
-                             + "it from the list.")
+                             + "Restore replaces this section's notes with it and uses it "
+                             + "up; Restore & Keep leaves it in the list. \"Original\" is "
+                             + "saved automatically the first time a section is held, and "
+                             + "is always kept.")
                     }
                 }
             }
@@ -741,7 +746,15 @@ private struct SectionSnapshotsSheet: View {
     private func snapshotRow(_ snapshot: SectionVariation) -> some View {
         let isAuditioning = songStore.auditioningSnapshot == snapshot.id
         VStack(alignment: .leading, spacing: 8) {
-            Text(snapshot.name).font(.body).lineLimit(2)
+            HStack(spacing: 6) {
+                if snapshot.isProtected {
+                    Image(systemName: "lock.fill")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Protected")
+                }
+                Text(snapshot.name).font(.body).lineLimit(2)
+            }
 
             HStack(spacing: 10) {
                 Button {
@@ -755,9 +768,21 @@ private struct SectionSnapshotsSheet: View {
                 .controlSize(.small)
                 .tint(isAuditioning ? .orange : nil)
 
-                Button("Restore") { songStore.applyVariation(snapshot.id) }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
+                // The Original is never consumed, so a separate "keep" button for it
+                // would offer a choice that does not exist.
+                if snapshot.isProtected {
+                    Button("Restore") { songStore.applyVariation(snapshot.id, keeping: true) }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                } else {
+                    Button("Restore") { songStore.applyVariation(snapshot.id) }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+
+                    Button("Restore & Keep") { songStore.applyVariation(snapshot.id, keeping: true) }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                }
 
                 Button {
                     renaming = snapshot.id

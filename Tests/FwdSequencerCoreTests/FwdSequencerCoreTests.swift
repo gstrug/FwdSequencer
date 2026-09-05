@@ -617,6 +617,61 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(section.variations.count, 1, "Unchanged")
     }
 
+    /// The Original is the one guaranteed way back, so the mechanisms that normally
+    /// remove snapshots — restore consuming them, the cap evicting the oldest, and
+    /// delete — must all leave it alone.
+    func testTheOriginalSnapshotSurvivesRestoreEvictionAndDeletion() throws {
+        let track = SongTrack(name: "T")
+        var part = Part(trackID: track.id)
+        part.notePool = [NoteEntry(midiNote: 60)]
+        var section = SongSection(name: "A", parts: [part])
+
+        XCTAssertTrue(section.saveOriginalSnapshot())
+        XCTAssertFalse(section.saveOriginalSnapshot(), "Only ever captured once")
+        let original = try XCTUnwrap(section.variations.first)
+        XCTAssertTrue(original.isProtected)
+
+        // Edit, then restore the Original: it applies but is NOT consumed.
+        section.parts[0].notePool = [NoteEntry(midiNote: 72)]
+        XCTAssertTrue(section.restoreSnapshot(original.id))
+        XCTAssertEqual(section.parts[0].notePool.map(\.midiNote), [60])
+        XCTAssertTrue(section.variations.contains { $0.id == original.id },
+                      "Restoring the Original must not use it up")
+
+        // Delete is refused.
+        XCTAssertFalse(section.deleteSnapshot(original.id))
+        XCTAssertTrue(section.variations.contains { $0.id == original.id })
+
+        // Fill to the cap: the Original must never be the one evicted.
+        while section.variations.count < SongSection.maximumSnapshots {
+            section.saveSnapshot(named: "S\(section.variations.count)")
+        }
+        let dropped = section.saveSnapshot(named: "One more")
+        XCTAssertNotEqual(dropped, original.name)
+        XCTAssertTrue(section.variations.contains { $0.id == original.id },
+                      "The cap must evict an ordinary snapshot, never the Original")
+    }
+
+    /// Restore & Keep leaves the entry in place so it can be returned to repeatedly.
+    func testRestoreAndKeepLeavesTheSnapshotInTheList() throws {
+        let track = SongTrack(name: "T")
+        var part = Part(trackID: track.id)
+        part.notePool = [NoteEntry(midiNote: 60)]
+        var section = SongSection(name: "A", parts: [part])
+        section.saveSnapshot(named: "Clean")
+        let clean = try XCTUnwrap(section.variations.first)
+
+        section.parts[0].notePool = [NoteEntry(midiNote: 72)]
+        XCTAssertTrue(section.restoreSnapshot(clean.id, keeping: true))
+        XCTAssertEqual(section.parts[0].notePool.map(\.midiNote), [60])
+        XCTAssertTrue(section.variations.contains { $0.id == clean.id })
+
+        // And again, which a consuming restore could not do.
+        section.parts[0].notePool = [NoteEntry(midiNote: 80)]
+        XCTAssertTrue(section.restoreSnapshot(clean.id, keeping: true))
+        XCTAssertEqual(section.parts[0].notePool.map(\.midiNote), [60])
+    }
+
     /// At the cap the oldest snapshot makes way, rather than the save being refused —
     /// a full list must never silently remove the safety net from Transform.
     func testSnapshotCapDropsTheOldestRatherThanRefusingToSave() {
