@@ -1477,7 +1477,16 @@ private struct SongMiniSteps: View {
         // Fill the row's remaining width, with the window as a floor. Scrolling then
         // only happens when the steps genuinely outgrow the space available, rather
         // than on every sequence longer than an arbitrary count.
-        .frame(minWidth: windowWidth, maxWidth: .infinity, alignment: .leading)
+        // idealWidth is pinned, not just min/max. Without it the strip's ideal size is
+        // its CONTENT's — every chip in the sequence — because that is what a ScrollView
+        // reports. The collapsed row is one candidate in a ViewThatFits, which measures
+        // candidates at their ideal size, so a part with many steps inflated the row's
+        // ideal past the available width, the wide one-line layout was judged not to
+        // fit, and the whole row silently fell back to the stacked compact bar: step
+        // display first, mixer controls no longer aligned down the list. The measured
+        // width must not depend on how many steps a part happens to have.
+        .frame(minWidth: windowWidth, idealWidth: windowWidth,
+               maxWidth: .infinity, alignment: .leading)
     }
 }
 
