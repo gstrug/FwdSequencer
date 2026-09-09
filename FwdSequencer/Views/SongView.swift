@@ -630,7 +630,7 @@ private struct SectionSettingsBar: View {
                     Label("Hold", systemImage: "repeat.1")
                 }
                 .toggleStyle(.button)
-                .help("Repeat the selected section instead of playing through the song")
+                .help("Repeat the selected section and stop the editor following the playhead, so it can be edited")
 
                 // Transform and Snapshots are gated on Hold, so say so rather than
                 // leaving two greyed-out buttons to explain themselves.
@@ -1047,17 +1047,12 @@ private struct SongTrackRowView: View {
 
     /// Steps for the step INDICATOR, which is a playback readout rather than an editor.
     ///
-    /// `part` is bound to the SELECTED section, because that is what editing must
-    /// target. The active-step index, though, comes from the sequencer and refers to
-    /// the section currently SOUNDING. Drawing one against the other highlighted
-    /// position 3 of the selected section while position 3 of a different section was
-    /// playing — so as soon as the playhead left the selected section the indicator
-    /// stopped meaning anything and looked frozen.
-    ///
-    /// While the transport is running the indicator therefore reads the playing
-    /// section; stopped, it falls back to the selected one so the display still
-    /// reflects what you are editing. (With Hold on the two coincide, since the held
-    /// section is the selected one.)
+    /// The selection now follows the playhead, so in normal use this agrees with
+    /// `part.steps`. It still matters in the gap where the two disagree: tapping another
+    /// section in the arrangement strip mid-playback moves the selection until the next
+    /// boundary snaps it back. The active-step index comes from the sequencer and refers
+    /// to the section SOUNDING, so drawing it against a different section's step list
+    /// would highlight an unrelated step.
     private var indicatorSteps: [Step] {
         guard songStore.isPlaying || songStore.isPaused else { return part.steps }
         let playing = songStore.currentSection

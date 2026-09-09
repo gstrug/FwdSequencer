@@ -187,7 +187,18 @@ class SongStore: ObservableObject {
         }
         sequencer.onSectionChange = { [weak self] index in
             DispatchQueue.main.async {
-                self?.currentSection = index
+                guard let self else { return }
+                self.currentSection = index
+                // The editor follows the playhead, so the note pool, keyboard and step
+                // list always describe the section being heard. Without this the
+                // keyboard showed one section's pool while another played, and notes
+                // sounded whose keys were not lit as part of the pool.
+                //
+                // HOLD is what stops this moving: it pins playback to one section, so
+                // the view stays put while that section is edited. That is the whole
+                // point of Hold — it is an editing aid, not the mechanism that keeps
+                // the display in sync.
+                self.selectedSection = index
             }
         }
         sequencer.onSongFinished = { [weak self] in
