@@ -65,4 +65,5 @@ nonisolated enum FeelNoise {
 
     static let velocitySalt: UInt64 = 0x11
     static let gateSalt: UInt64 = 0x22
+    static let timingSalt: UInt64 = 0x33
 }

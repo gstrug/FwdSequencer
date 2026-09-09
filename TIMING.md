@@ -128,7 +128,20 @@ Each is separately shippable and independently revertable.
    the look-ahead exists to remove. `AudioEngineManager` only decides whether pulses
    leave the app; tempo changes need no special handling, since they restart the timer
    and so rebuild the timeline the clock rides on.
-5. **Then, cheaply:** timing jitter, swing templates, groove.
+5. **Timing jitter and swing.** ✅ Done, and cheap as predicted.
+
+   *Swing* is systematic: the offbeat eighth moves from halfway through the beat to two
+   thirds of the way at 100%, i.e. a sixth of a beat late. Downbeats never move.
+
+   *Timing* is derived push and pull around each note's exact position, from the same
+   FeelNoise as the rest of feel. This is the payoff for the whole rewrite — notes used
+   to be sent the instant their tick fired, so they could only ever be LATE. Pulling one
+   earlier is only possible because the sequencer now runs ahead of the beat. Capped at
+   15 ms so the early half stays inside the 20 ms lead; beyond that a note would ask for
+   a moment already gone and clamp, biasing the feel late rather than loosening it.
+
+   Groove templates (per-position offset tables) are not built. Swing covers the common
+   case; a template is the same mechanism with a table instead of a rule.
 
 ## 6. Keeping the AUv3 door open
 

@@ -1183,6 +1183,105 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(out.transport.last, 0xFC, "stopping sends Stop")
     }
 
+    // MARK: - Phase 5: swing and timing
+
+    /// Swing delays the OFFBEAT eighth only, by a sixth of a beat at full — moving it
+    /// from halfway through the beat to two thirds of the way, which is a triplet feel.
+    func testSwingDelaysOnlyTheOffbeatAndByTheRightAmount() throws {
+        func onTicks(swing: Double) throws -> [Int] {
+            var song = Song()
+            var track = SongTrack(name: "T")
+            track.swing = swing
+            song.tracks = [track]
+            var part = Part(trackID: track.id)
+            part.notePool = [NoteEntry(midiNote: 60)]
+            part.steps = [Step(type: .play, n: 1)]
+            part.tempoDivision = .eighth      // on the beat, then between
+            song.sections = [SongSection(name: "A", numberOfBars: 1, parts: [part])]
+            return try channelEvents(in: SongMIDIExporter.data(for: song), track: 1)
+                .filter { $0.status & 0xF0 == 0x90 }.map(\.tick)
+        }
+
+        let straight = try onTicks(swing: 0)
+        let swung = try onTicks(swing: 100)
+        XCTAssertGreaterThanOrEqual(straight.count, 4)
+
+        // Downbeats do not move; offbeats do.
+        XCTAssertEqual(swung[0], straight[0], "the beat itself stays put")
+        XCTAssertEqual(swung[2], straight[2], "and so does the next beat")
+
+        // A quarter is 480 ticks, so a sixth of a beat is 80.
+        XCTAssertEqual(swung[1] - straight[1], 80, "full swing is a sixth of a beat late")
+        XCTAssertEqual(swung[3] - straight[3], 80)
+
+        // Half the swing, half the shift.
+        let half = try onTicks(swing: 50)
+        XCTAssertEqual(half[1] - straight[1], 40)
+    }
+
+    /// Timing jitter pushes AND pulls. Being able to pull is the whole reason the
+    /// look-ahead scheduler exists — notes used to be sent the instant their tick fired,
+    /// so they could only ever be late.
+    func testTimingJitterMovesNotesBothEarlyAndLate() throws {
+        var song = Song()
+        var track = SongTrack(name: "T")
+        song.tracks = [track]
+        var part = Part(trackID: track.id)
+        part.notePool = [NoteEntry(midiNote: 60)]
+        part.steps = [Step(type: .play, n: 1)]
+        part.tempoDivision = .sixteenth
+        song.sections = [SongSection(name: "A", numberOfBars: 4, parts: [part])]
+        song.randomSeed = 2_468
+
+        func onTicks(_ s: Song) throws -> [Int] {
+            try channelEvents(in: SongMIDIExporter.data(for: s), track: 1)
+                .filter { $0.status & 0xF0 == 0x90 }.map(\.tick)
+        }
+
+        let exact = try onTicks(song)
+        track.timingJitter = 15
+        song.tracks = [track]
+        let loose = try onTicks(song)
+
+        XCTAssertEqual(exact.count, loose.count, "jitter must not add or drop notes")
+        let deltas = zip(loose, exact).map(-)
+        XCTAssertTrue(deltas.contains { $0 > 0 }, "some notes must be late")
+        XCTAssertTrue(deltas.contains { $0 < 0 }, "and some EARLY — the point of phase 5")
+        XCTAssertEqual(loose, try onTicks(song), "still reproducible")
+
+        // 15 ms at 120 BPM is 0.03 of a quarter, so ~14 ticks at 480 PPQ.
+        XCTAssertTrue(deltas.allSatisfy { abs($0) <= 16 }, "kept within the stated amount")
+    }
+
+    /// Swing is a groove, jitter is looseness: the first must be identical every bar,
+    /// the second must not be.
+    func testSwingIsSystematicWhileJitterIsNot() throws {
+        func deltas(swing: Double, jitter: Double) throws -> [Int] {
+            var song = Song()
+            var track = SongTrack(name: "T")
+            track.swing = swing
+            track.timingJitter = jitter
+            song.tracks = [track]
+            var part = Part(trackID: track.id)
+            part.notePool = [NoteEntry(midiNote: 60)]
+            part.steps = [Step(type: .play, n: 1)]
+            part.tempoDivision = .eighth
+            song.sections = [SongSection(name: "A", numberOfBars: 4, parts: [part])]
+            song.randomSeed = 99
+            let ticks = try channelEvents(in: SongMIDIExporter.data(for: song), track: 1)
+                .filter { $0.status & 0xF0 == 0x90 }.map(\.tick)
+            // Offset of each note from its exact grid position.
+            return ticks.enumerated().map { $0.element - $0.offset * 240 }
+        }
+
+        let swung = try deltas(swing: 100, jitter: 0)
+        let offbeats = stride(from: 1, to: swung.count, by: 2).map { swung[$0] }
+        XCTAssertEqual(Set(offbeats).count, 1, "every offbeat is swung identically")
+
+        let loose = try deltas(swing: 0, jitter: 15)
+        XCTAssertGreaterThan(Set(loose).count, 3, "jitter differs note to note")
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)

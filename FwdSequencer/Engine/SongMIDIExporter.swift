@@ -176,6 +176,23 @@ nonisolated enum SongMIDIExporter {
                     // different orders, so only a position-addressed value can agree.
                     let triggerIndex = localTick / trigger
 
+                    // Swing and jitter, matched to the live scheduler. In a file these
+                    // are simply where the note is written, so unlike playback there is
+                    // no lead to run out of — but the values must still agree, or the
+                    // export stops matching what was heard.
+                    var timingTicks = 0.0
+                    if track.effectiveSwing > 0, localTick % beatTicks == beatTicks / 2 {
+                        timingTicks += (track.effectiveSwing / 100) * Double(beatTicks) / 6
+                    }
+                    if track.effectiveTimingJitter > 0 {
+                        let ticksPerSecond = Double(ticksPerQuarter) * song.tempo / 60.0
+                        let t = FeelNoise.signedValue(seed: seed, section: sectionIndex,
+                                                      trigger: triggerIndex, midiNote: 0,
+                                                      salt: FeelNoise.timingSalt)
+                        timingTicks += t * track.effectiveTimingJitter / 1000.0 * ticksPerSecond
+                    }
+                    let timingOffset = Int(timingTicks.rounded())
+
                     // Chord roll, lowest note first. Milliseconds convert to ticks
                     // through the tempo, since the file's grid is musical, not real time.
                     let ordered = track.effectiveChordSpread > 0 && resolved.indices.count > 1
@@ -211,8 +228,8 @@ nonisolated enum SongMIDIExporter {
                         let velocity = UInt8(min(max(note.velocity + velocityOffset, 1), 127))
                         let spreadOffset = Int((spreadTicks * Double(order)).rounded())
                         for ratchet in 0..<ratchets {
-                            let onTick = currentTick + spreadOffset
-                                + Int((Double(ratchet) * subdivision).rounded())
+                            let onTick = max(0, currentTick + timingOffset + spreadOffset
+                                + Int((Double(ratchet) * subdivision).rounded()))
                             let noteByte = UInt8(note.midiNote)
                             trackEvents[trackIndex].append(event(
                                 onTick, 1, [0x90 | channel, noteByte, velocity]

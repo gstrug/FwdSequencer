@@ -1273,6 +1273,35 @@ private struct SongTrackRowView: View {
                         Label("Variation", systemImage: "dice")
                     }
 
+                    Menu {
+                        Picker("Swing", selection: Binding(
+                            get: { Int(track.effectiveSwing.rounded()) },
+                            set: { track.swing = Double($0) }
+                        )) {
+                            Text("Off (straight)").tag(0)
+                            Text("Light — 25%").tag(25)
+                            Text("Medium — 50%").tag(50)
+                            Text("Hard — 75%").tag(75)
+                            Text("Full triplet — 100%").tag(100)
+                        }
+                    } label: {
+                        Label("Swing", systemImage: "metronome")
+                    }
+
+                    Menu {
+                        Picker("Timing", selection: Binding(
+                            get: { Int(track.effectiveTimingJitter.rounded()) },
+                            set: { track.timingJitter = Double($0) }
+                        )) {
+                            Text("Off (exact)").tag(0)
+                            Text("Tight — 4 ms").tag(4)
+                            Text("Human — 9 ms").tag(9)
+                            Text("Loose — 15 ms").tag(15)
+                        }
+                    } label: {
+                        Label("Timing", systemImage: "waveform.path")
+                    }
+
                     Divider()
 
                     Button(role: .destructive) { showDeleteAlert = true } label: {

@@ -81,14 +81,18 @@ nonisolated struct PlayTrack {
     let chordSpread: Double
     let accent: Int
     let variation: Int
+    let swing: Double
+    let timingJitter: Double
 
     init(id: UUID, tempoDivision: TempoDivision, notePool: [NoteEntry],
          steps: [Step], isMuted: Bool, isSoloed: Bool,
-         chordSpread: Double = 0, accent: Int = 0, variation: Int = 0) {
+         chordSpread: Double = 0, accent: Int = 0, variation: Int = 0,
+         swing: Double = 0, timingJitter: Double = 0) {
         self.id = id; self.tempoDivision = tempoDivision
         self.notePool = notePool; self.steps = steps
         self.isMuted = isMuted; self.isSoloed = isSoloed
         self.chordSpread = chordSpread; self.accent = accent; self.variation = variation
+        self.swing = swing; self.timingJitter = timingJitter
     }
 }
 
@@ -650,7 +654,8 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                 // steps, so it is extended a step at a time as it was before.
                 cancelPendingNoteOffs(for: track.id)
                 for note in state.lastMidiNotes {
-                    scheduleNoteOff(trackID: track.id, midiNote: UInt8(note), delay: stepDuration)
+                    scheduleNoteOff(trackID: track.id, midiNote: UInt8(note),
+                                    delay: stepDuration, fromLead: currentTickLead)
                 }
             }
             // A Hold within a section needs nothing here: the note that preceded it was
@@ -707,6 +712,27 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                 // Note-to-note variation, derived from position so export matches.
                 let triggerIndex = globalStep / max(1, triggerEvery)
 
+                // Where this track's notes sit relative to the beat.
+                //
+                // SWING is systematic: the offbeat eighth sits halfway through the beat
+                // when straight and two thirds through when fully swung, so 100% delays
+                // it by a sixth of a beat. JITTER is derived push and pull around the
+                // exact position — both directions, which only became possible once the
+                // scheduler started running ahead of the beat.
+                var timingOffset = 0.0
+                if track.swing > 0, globalStep % stepsPerBeat == stepsPerBeat / 2 {
+                    timingOffset += (track.swing / 100) * (60.0 / frame.tempo) / 6
+                }
+                if track.timingJitter > 0 {
+                    let t = FeelNoise.signedValue(seed: initialRandomSeed, section: sectionIndex,
+                                                  trigger: triggerIndex, midiNote: 0,
+                                                  salt: FeelNoise.timingSalt)
+                    timingOffset += t * track.timingJitter / 1000.0
+                }
+                // Clamped at zero: pulling earlier than the lead would ask for a moment
+                // that has already gone, so the whole track would drift late instead.
+                let trackLead = max(0, currentTickLead + timingOffset)
+
                 // Chord spread: a roll from the lowest note up, rather than every note
                 // struck at once. Sorted by PITCH, not by pool order, since the pool is
                 // not required to be ordered. The total is capped so a wide voicing
@@ -750,12 +776,14 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                     let spreadDelay = spreadStep * Double(order)
                     if spreadDelay > 0 {
                         scheduleSpreadNoteOn(trackID: track.id, midiNote: midiNote,
-                                             velocity: velocity, delay: spreadDelay)
+                                             velocity: velocity, delay: spreadDelay,
+                                             fromLead: trackLead)
                     } else {
-                        // Stamped for the tick's own moment, not for whenever this
-                        // handler happened to run.
+                        // Stamped for this track's moment — the tick's, plus whatever
+                        // swing and jitter move it by — not for whenever this handler
+                        // happened to run.
                         audioEngine?.playNote(trackID: track.id, midiNote: midiNote,
-                                              velocity: velocity, afterSeconds: currentTickLead)
+                                              velocity: velocity, afterSeconds: trackLead)
                     }
                     notes.append(entry.midiNote)
                     let noteGate = max(0.01, entry.gateLength * stepGate * gateScale)
@@ -763,7 +791,8 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                     // The release moves with the note-on, so a rolled note keeps its
                     // full length instead of being clipped short by the delay.
                     scheduleNoteOff(trackID: track.id, midiNote: midiNote,
-                                    delay: spreadDelay + noteGate * subdivision * Double(sustainTriggers))
+                                    delay: spreadDelay + noteGate * subdivision * Double(sustainTriggers),
+                                    fromLead: trackLead)
                     if ratchets > 1 {
                         for ratchet in 1..<ratchets {
                             scheduleRatchet(
@@ -771,7 +800,8 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                                 midiNote: midiNote,
                                 velocity: velocity,
                                 delay: Double(ratchet) * subdivision,
-                                gateDuration: noteGate * subdivision
+                                gateDuration: noteGate * subdivision,
+                                fromLead: trackLead
                             )
                         }
                     }
@@ -809,7 +839,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// moment and firing immediately. That keeps the event cancellable right up until
     /// `scheduleLead` before it sounds — which stop, rewind and section changes depend
     /// on — while still placing it accurately (TIMING.md §4).
-    private func scheduleNoteOff(trackID: UUID, midiNote: UInt8, delay: Double) {
+    private func scheduleNoteOff(trackID: UUID, midiNote: UInt8, delay: Double, fromLead lead0: Double) {
         noteOffSeq += 1
         let offID = noteOffSeq
         let noteInt = Int(midiNote)
@@ -828,15 +858,14 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             if pendingNoteOffs[trackID]?.isEmpty == true { pendingNoteOffs.removeValue(forKey: trackID) }
         }
         pendingNoteOffs[trackID, default: [:]][offID] = item
-        sequencerQueue.asyncAfter(deadline: .now() + max(0, currentTickLead + delay - lead),
-                                  execute: item)
+        sequencerQueue.asyncAfter(deadline: .now() + max(0, lead0 + delay - lead), execute: item)
     }
 
     /// Queue a note-on slightly later than the step, for a chord roll. Shares the
     /// pending-event map so a stop, rewind or section change cancels it like any other
     /// scheduled event — a roll must never outlive the step that started it.
     private func scheduleSpreadNoteOn(trackID: UUID, midiNote: UInt8, velocity: UInt8,
-                                      delay: Double) {
+                                      delay: Double, fromLead lead0: Double) {
         noteOffSeq += 1
         let eventID = noteOffSeq
         let lead = scheduleLead
@@ -850,15 +879,14 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                                   velocity: velocity, afterSeconds: lead)
         }
         pendingNoteOffs[trackID, default: [:]][eventID] = item
-        sequencerQueue.asyncAfter(deadline: .now() + max(0, currentTickLead + delay - lead),
-                                  execute: item)
+        sequencerQueue.asyncAfter(deadline: .now() + max(0, lead0 + delay - lead), execute: item)
     }
 
     /// Queue a later note-on as a cancellable sequencer event. Reusing the pending
     /// event map means stop, rewind, section changes, and track deletion cannot leave
     /// a delayed ratchet firing after playback has moved on.
     private func scheduleRatchet(trackID: UUID, midiNote: UInt8, velocity: UInt8,
-                                 delay: Double, gateDuration: Double) {
+                                 delay: Double, gateDuration: Double, fromLead lead0: Double) {
         noteOffSeq += 1
         let eventID = noteOffSeq
         let lead = scheduleLead
@@ -871,13 +899,12 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             audioEngine?.playNote(trackID: trackID, midiNote: midiNote,
                                   velocity: velocity, afterSeconds: lead)
             states[trackID]?.lastMidiNotes.append(Int(midiNote))
-            // This ratchet is now the current moment for anything it schedules.
-            currentTickLead = lead
-            scheduleNoteOff(trackID: trackID, midiNote: midiNote, delay: gateDuration)
+            // This ratchet is now the moment anything it schedules hangs off.
+            scheduleNoteOff(trackID: trackID, midiNote: midiNote,
+                            delay: gateDuration, fromLead: lead)
         }
         pendingNoteOffs[trackID, default: [:]][eventID] = item
-        sequencerQueue.asyncAfter(deadline: .now() + max(0, currentTickLead + delay - lead),
-                                  execute: item)
+        sequencerQueue.asyncAfter(deadline: .now() + max(0, lead0 + delay - lead), execute: item)
     }
 
     // MARK: - Step Execution

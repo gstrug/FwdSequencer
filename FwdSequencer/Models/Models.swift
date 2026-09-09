@@ -101,10 +101,30 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     /// reproduces exactly and export still matches playback.
     var variation: Int? = nil
 
+    /// Swing, as a percentage of the way from straight to a full triplet feel. The
+    /// offbeat eighth sits halfway through the beat when straight and two thirds of the
+    /// way through when fully swung, so 100 delays it by a sixth of a beat.
+    ///
+    /// Systematic, unlike `timingJitter` — this is a groove, not looseness.
+    var swing: Double? = nil
+
+    /// Milliseconds of push and pull around each note's exact position. Derived, like
+    /// the rest of feel, so it is the same every time the song plays.
+    ///
+    /// Needed the look-ahead scheduler to exist: notes used to be sent the instant their
+    /// tick fired, so they could only ever be pushed LATE. Playing early is only
+    /// possible because the sequencer now runs ahead of the beat (TIMING.md).
+    var timingJitter: Double? = nil
+
     /// Clamped for use: a hand-edited or damaged file cannot push these out of range.
     var effectiveChordSpread: Double { min(max(chordSpread ?? 0, 0), 120) }
     var effectiveAccent: Int { min(max(accent ?? 0, 0), 60) }
     var effectiveVariation: Int { min(max(variation ?? 0, 0), 40) }
+    var effectiveSwing: Double { min(max(swing ?? 0, 0), 100) }
+    /// Capped at 15 ms so the early half stays inside the scheduler's 20 ms lead —
+    /// beyond that a note would be asked to play in the past and would simply clamp,
+    /// biasing the feel late instead of loosening it.
+    var effectiveTimingJitter: Double { min(max(timingJitter ?? 0, 0), 15) }
 }
 
 /// A named snapshot of a section's note data. Snapshots do not create arrangement
