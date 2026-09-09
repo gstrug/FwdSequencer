@@ -231,7 +231,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             initialRandomSeed = randomSeed
             random = SeededRandomGenerator(seed: randomSeed)
             cancelAllPendingNoteOffs()
-            flushAllNotes()
+            clearBeforeStarting()
             states = Dictionary(uniqueKeysWithValues: trackIDs.map { ($0, TrackState()) })
             onSectionChange?(sectionIndex)
             audioEngine?.sendMIDITransport(0xFA)   // Start
@@ -295,26 +295,34 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         }
         for key in Array(states.keys) { states[key] = TrackState() }
         cancelAllPendingNoteOffs()
-        flushAllNotes()
+        flushAllNotesForStop()
         audioEngine?.sendMIDITransport(0xFC)   // Stop
         if resetPosition { onBarChange?(0) }
     }
 
-    /// Silence everything, including anything already handed to a plugin.
+    /// Silence everything, for a transport action that ENDS playback.
     ///
-    /// Cancelling work items is not enough once events are stamped ahead: a note-on
-    /// stamped just before the stop is already inside the audio unit and cannot be
-    /// recalled, so an immediate all-notes-off would land BEFORE it and the note would
-    /// hang — the exact failure the panic button exists for (TIMING.md §4).
+    /// Sent twice: once now for what is sounding, and once past the end of the
+    /// look-ahead window to catch what is already in flight. Cancelling work items is
+    /// not enough on its own — delivery of a delayed event is a plain dispatch that
+    /// cannot be recalled, so an immediate sweep alone would land before a note-on due a
+    /// few milliseconds later and leave it hanging (TIMING.md §4).
     ///
-    /// So the flush is sent twice: once now, for what is already sounding, and once
-    /// stamped past the end of the look-ahead window, to catch whatever was in flight.
-    /// The margin is what makes the horizon safe to have at all, which is why it stays
-    /// short.
-    private func flushAllNotes() {
+    /// ONLY for stopping. Used when playback (re)starts, the delayed half arrives AFTER
+    /// the notes that start with it — they are scheduled a lead ahead, the sweep a lead
+    /// plus a margin — and cuts them a few milliseconds in. That silenced tracks from
+    /// the moment play was pressed. Starting has nothing in flight to catch anyway:
+    /// `startAllNotesOff` is the right call there.
+    private func flushAllNotesForStop() {
         audioEngine?.allNotesOff()
         guard scheduleLead > 0 else { return }
         audioEngine?.allNotesOff(afterSeconds: scheduleLead + 0.005)
+    }
+
+    /// Silence what is sounding, with nothing scheduled behind it — for a transport
+    /// action that BEGINS playback, where a delayed sweep would cut the notes it starts.
+    private func clearBeforeStarting() {
+        audioEngine?.allNotesOff()
     }
 
     private func stopTimer() {
@@ -332,7 +340,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             guard let self else { return }
             stopTimer()
             cancelAllPendingNoteOffs()
-            flushAllNotes()
+            flushAllNotesForStop()
             audioEngine?.sendMIDITransport(0xFC)   // Stop
             if let completion { DispatchQueue.main.async { completion() } }
         }
@@ -357,7 +365,9 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             random = SeededRandomGenerator(seed: initialRandomSeed)
             for key in Array(states.keys) { states[key] = TrackState() }
             cancelAllPendingNoteOffs()
-            flushAllNotes()
+            // Rewind keeps playing, so this begins rather than ends: a delayed sweep
+            // would cut the notes the new position is about to play.
+            clearBeforeStarting()
             // Rewinding to the top is a Start for anything slaved to us, not a Continue.
             if timer != nil { audioEngine?.sendMIDITransport(0xFA) }
             onBarChange?(0)
@@ -825,7 +835,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         sectionIndex = 0
         for key in Array(states.keys) { states[key] = TrackState() }
         cancelAllPendingNoteOffs()
-        flushAllNotes()
+        flushAllNotesForStop()
         audioEngine?.sendMIDITransport(0xFC)   // Stop
         onSongFinished?()
     }

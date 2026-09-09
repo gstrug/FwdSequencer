@@ -127,6 +127,19 @@ Each is separately shippable and independently revertable.
    `scheduleLead = 0` restores the old behaviour exactly — every offset becomes "now" —
    and is the first thing to try if a plugin misbehaves. A test pins that.
 
+   **A second bug, from the same flush design.** `flushAllNotes` was called when
+   playback STARTED as well as when it stopped. Its delayed half lands a lead plus a
+   margin ahead, while the notes starting with playback are stamped a lead ahead — so
+   the sweep arrived just after them and cut them a few milliseconds in. Tracks were
+   silenced from the moment play was pressed. The flush is now split: a two-stage
+   `flushAllNotesForStop` for transport actions that END playback, and an immediate-only
+   `clearBeforeStarting` for those that BEGIN it, including rewind, which keeps playing.
+   Starting has nothing in flight to catch in any case.
+
+   This is the bug the first fix missed, because the first diagnosis blamed an
+   asymmetry between sampler and plugin tracks that did not exist — the songs affected
+   had plugins on every track. Two bugs, one flush design.
+
    **Corrected after device testing:** the lead does NOT buy sample-accurate placement,
    because §2's stamping had to be withdrawn. What it does buy is a two-directional
    window — an event can be delivered before its nominal tick, which is what swing and

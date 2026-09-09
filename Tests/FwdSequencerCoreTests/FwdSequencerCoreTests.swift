@@ -1126,6 +1126,33 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertTrue(out.flushOffsets.isEmpty, "and there is nothing in flight to flush")
     }
 
+    /// STARTING must not schedule a delayed sweep. The notes that start with playback
+    /// are stamped a lead ahead and the sweep would land a lead plus a margin ahead —
+    /// i.e. just after them — cutting them a few milliseconds in. On device that
+    /// silenced tracks from the moment play was pressed.
+    func testStartingPlaybackSchedulesNoDelayedFlush() {
+        let (engine, out, _) = makeStampingEngine(lead: 0.020)
+        Thread.sleep(forTimeInterval: 0.4)
+
+        XCTAssertTrue(out.flushOffsets.isEmpty,
+                      "a delayed all-notes-off scheduled at startup would cut the notes "
+                      + "playback has just scheduled")
+        XCTAssertFalse(out.noteOnOffsets.isEmpty, "and notes should be sounding")
+        engine.stop()
+    }
+
+    /// Rewinding keeps playing, so it begins rather than ends: the same delayed sweep
+    /// would cut the notes the new position is about to play.
+    func testRewindingWhilePlayingSchedulesNoDelayedFlush() {
+        let (engine, out, _) = makeStampingEngine(lead: 0.020)
+        Thread.sleep(forTimeInterval: 0.3)
+        engine.rewind()
+        Thread.sleep(forTimeInterval: 0.3)
+
+        XCTAssertTrue(out.flushOffsets.isEmpty, "rewind must not sweep behind itself")
+        engine.stop()
+    }
+
     /// Stopping must flush PAST the horizon as well as immediately. Cancelling work
     /// items cannot recall an event already stamped into a plugin, so an immediate
     /// all-notes-off alone would land before it and leave the note hanging.
