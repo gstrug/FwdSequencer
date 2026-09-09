@@ -85,13 +85,26 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     /// lowest. 0/nil plays the chord dead-simultaneously, which no player can do.
     var chordSpread: Double? = nil
 
-    /// Velocity added on the downbeat, half of it on other beats, and half subtracted
-    /// off the beat — the metric stress a player gives without thinking about it.
+    /// Metric stress, applied by SUBTRACTING from the notes that are not accented:
+    /// the downbeat keeps its written velocity, other beats lose half this, and what
+    /// falls between them loses all of it.
+    ///
+    /// It used to add to the downbeat instead, which barely registered — parts are
+    /// often written near velocity 100, and instruments compress the top of their
+    /// velocity curve, so the loud notes could not get louder while the quiet ones
+    /// hardly moved. Taking away from the weak beats keeps the written velocity as the
+    /// ceiling and leaves the whole range to work in.
     var accent: Int? = nil
 
+    /// Note-to-note variation in velocity and length, derived from the note's position
+    /// in the song rather than drawn at random (see FeelNoise), so a song still
+    /// reproduces exactly and export still matches playback.
+    var variation: Int? = nil
+
     /// Clamped for use: a hand-edited or damaged file cannot push these out of range.
-    var effectiveChordSpread: Double { min(max(chordSpread ?? 0, 0), 40) }
-    var effectiveAccent: Int { min(max(accent ?? 0, 0), 40) }
+    var effectiveChordSpread: Double { min(max(chordSpread ?? 0, 0), 120) }
+    var effectiveAccent: Int { min(max(accent ?? 0, 0), 60) }
+    var effectiveVariation: Int { min(max(variation ?? 0, 0), 40) }
 }
 
 /// A named snapshot of a section's note data. Snapshots do not create arrangement

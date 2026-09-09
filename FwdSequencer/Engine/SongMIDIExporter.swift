@@ -43,7 +43,8 @@ nonisolated enum SongMIDIExporter {
         guard estimatedNoteEvents(in: song) <= maximumNoteEvents else {
             throw ExportError.tooLarge
         }
-        var generator = SeededRandomGenerator(seed: song.randomSeed ?? 0x465744)
+        let seed = song.randomSeed ?? 0x465744
+        var generator = SeededRandomGenerator(seed: seed)
         var trackEvents = Array(repeating: [Event](), count: song.tracks.count)
         var states = Dictionary(uniqueKeysWithValues: song.tracks.map { ($0.id, RenderState()) })
         var conductor: [Event] = []
@@ -164,12 +165,16 @@ nonisolated enum SongMIDIExporter {
                     if accent == 0 {
                         accentOffset = 0
                     } else if localTick % ticksPerBar == 0 {
-                        accentOffset = accent
+                        accentOffset = 0
                     } else if localTick % beatTicks == 0 {
-                        accentOffset = accent / 2
-                    } else {
                         accentOffset = -(accent / 2)
+                    } else {
+                        accentOffset = -accent
                     }
+                    // Same position identity the live scheduler uses: section index and
+                    // the trigger's ordinal within it. The two walk the song in
+                    // different orders, so only a position-addressed value can agree.
+                    let triggerIndex = localTick / trigger
 
                     // Chord roll, lowest note first. Milliseconds convert to ticks
                     // through the tempo, since the file's grid is musical, not real time.
@@ -182,16 +187,28 @@ nonisolated enum SongMIDIExporter {
                         guard track.effectiveChordSpread > 0, ordered.count > 1 else { return 0 }
                         let ticksPerSecond = Double(ticksPerQuarter) * song.tempo / 60.0
                         let perNote = track.effectiveChordSpread / 1000.0 * ticksPerSecond
-                        let maxTotal = min(0.045 * ticksPerSecond, Double(trigger) * 0.5)
+                        let maxTotal = min(0.18 * ticksPerSecond, Double(trigger) * 0.6)
                         return min(perNote, maxTotal / Double(ordered.count - 1))
                     }()
 
                     var soundingNotes: [Int] = []
                     for (order, poolIndex) in ordered.enumerated() {
                         let note = part.notePool[poolIndex]
-                        let gate = max(0.01, note.gateLength * resolved.gate)
+                        var velocityOffset = accentOffset
+                        var gateScale = 1.0
+                        if track.effectiveVariation > 0 {
+                            let v = FeelNoise.signedValue(seed: seed, section: sectionIndex,
+                                                          trigger: triggerIndex, midiNote: note.midiNote,
+                                                          salt: FeelNoise.velocitySalt)
+                            velocityOffset += Int((v * Double(track.effectiveVariation)).rounded())
+                            let g = FeelNoise.signedValue(seed: seed, section: sectionIndex,
+                                                          trigger: triggerIndex, midiNote: note.midiNote,
+                                                          salt: FeelNoise.gateSalt)
+                            gateScale = 1.0 + g * (Double(track.effectiveVariation) / 40.0) * 0.3
+                        }
+                        let gate = max(0.01, note.gateLength * resolved.gate * gateScale)
                         let duration = max(1, Int((subdivision * gate).rounded()))
-                        let velocity = UInt8(min(max(note.velocity + accentOffset, 1), 127))
+                        let velocity = UInt8(min(max(note.velocity + velocityOffset, 1), 127))
                         let spreadOffset = Int((spreadTicks * Double(order)).rounded())
                         for ratchet in 0..<ratchets {
                             let onTick = currentTick + spreadOffset

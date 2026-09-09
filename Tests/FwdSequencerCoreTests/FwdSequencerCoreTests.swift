@@ -841,8 +841,9 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(first, second, "feel must not introduce run-to-run variation")
     }
 
-    /// Accent is metric stress, not noise: the downbeat is emphasised, other beats get
-    /// half, and what falls between them sits back.
+    /// Accent is metric stress, not noise — and it SUBTRACTS: the downbeat keeps the
+    /// written velocity, other beats give up half, and what falls between gives up all
+    /// of it. Adding to the downbeat instead left no headroom on parts written near 100.
     func testAccentFollowsTheBarRatherThanBeingRandom() throws {
         var song = Song()
         var track = SongTrack(name: "T")
@@ -859,10 +860,11 @@ final class FwdSequencerCoreTests: XCTestCase {
             .map { Int($0.velocity) }
 
         XCTAssertGreaterThanOrEqual(velocities.count, 4)
-        XCTAssertEqual(velocities[0], 80 + 16, "downbeat takes the full accent")
-        XCTAssertEqual(velocities[1], 80 - 8, "between beats sits back")
-        XCTAssertEqual(velocities[2], 80 + 8, "beat two takes half")
-        XCTAssertEqual(velocities[3], 80 - 8)
+        XCTAssertEqual(velocities[0], 80, "the downbeat keeps the written velocity")
+        XCTAssertEqual(velocities[1], 80 - 16, "between beats gives up the full amount")
+        XCTAssertEqual(velocities[2], 80 - 8, "beat two gives up half")
+        XCTAssertEqual(velocities[3], 80 - 16)
+        XCTAssertLessThanOrEqual(velocities.max() ?? 0, 80, "nothing exceeds what was written")
     }
 
     /// A chord is rolled from the lowest note up rather than struck as a block, and each
@@ -893,6 +895,56 @@ final class FwdSequencerCoreTests: XCTestCase {
         let blockTicks = Set(try channelEvents(in: SongMIDIExporter.data(for: song), track: 1)
             .filter { $0.status & 0xF0 == 0x90 }.prefix(3).map(\.tick))
         XCTAssertEqual(blockTicks.count, 1, "off means a block chord")
+    }
+
+    /// Variation must be a function of POSITION, not a stream: playback and the exporter
+    /// walk the song in different orders, so a stream would hand them different numbers
+    /// and the exported file would stop matching what was heard.
+    func testVariationIsAddressedByPositionNotDrawnFromAStream() {
+        let a = FeelNoise.unitValue(seed: 99, section: 1, trigger: 4, midiNote: 60, salt: 0x11)
+        let b = FeelNoise.unitValue(seed: 99, section: 1, trigger: 4, midiNote: 60, salt: 0x11)
+        XCTAssertEqual(a, b, "the same note must always get the same value")
+
+        // Every input must actually change the result, or notes would move together.
+        XCTAssertNotEqual(a, FeelNoise.unitValue(seed: 98, section: 1, trigger: 4, midiNote: 60, salt: 0x11))
+        XCTAssertNotEqual(a, FeelNoise.unitValue(seed: 99, section: 2, trigger: 4, midiNote: 60, salt: 0x11))
+        XCTAssertNotEqual(a, FeelNoise.unitValue(seed: 99, section: 1, trigger: 5, midiNote: 60, salt: 0x11))
+        XCTAssertNotEqual(a, FeelNoise.unitValue(seed: 99, section: 1, trigger: 4, midiNote: 61, salt: 0x11))
+        // Velocity and gate must not move in lockstep at the same position.
+        XCTAssertNotEqual(a, FeelNoise.unitValue(seed: 99, section: 1, trigger: 4, midiNote: 60, salt: 0x22))
+
+        for trigger in 0..<200 {
+            let v = FeelNoise.unitValue(seed: 7, section: 0, trigger: trigger, midiNote: 64, salt: 0x11)
+            XCTAssertGreaterThanOrEqual(v, 0)
+            XCTAssertLessThan(v, 1)
+        }
+    }
+
+    /// Variation changes what is played, and repeated exports still match byte for byte.
+    func testVariationAltersVelocitiesWithoutBreakingReproducibility() throws {
+        var song = Song()
+        var track = SongTrack(name: "T")
+        song.tracks = [track]
+        var part = Part(trackID: track.id)
+        part.notePool = [NoteEntry(midiNote: 60, velocity: 80)]
+        part.steps = [Step(type: .play, n: 1)]
+        part.tempoDivision = .sixteenth
+        song.sections = [SongSection(name: "A", numberOfBars: 2, parts: [part])]
+        song.randomSeed = 12_345
+
+        func velocities(_ s: Song) throws -> [Int] {
+            try channelEvents(in: SongMIDIExporter.data(for: s), track: 1)
+                .filter { $0.status & 0xF0 == 0x90 }.map { Int($0.velocity) }
+        }
+
+        let flat = try velocities(song)
+        XCTAssertEqual(Set(flat).count, 1, "with variation off every note is identical")
+
+        track.variation = 32
+        song.tracks = [track]
+        let varied = try velocities(song)
+        XCTAssertGreaterThan(Set(varied).count, 3, "variation must actually vary velocity")
+        XCTAssertEqual(varied, try velocities(song), "and still be reproducible")
     }
 
     /// Songs saved before feel existed must still decode — SongTrack has the synthesised

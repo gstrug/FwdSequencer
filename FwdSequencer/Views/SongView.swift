@@ -1236,10 +1236,10 @@ private struct SongTrackRowView: View {
                             set: { track.chordSpread = Double($0) }
                         )) {
                             Text("Off (block chords)").tag(0)
-                            Text("Subtle — 6 ms").tag(6)
-                            Text("Played — 12 ms").tag(12)
-                            Text("Loose — 20 ms").tag(20)
-                            Text("Harp — 32 ms").tag(32)
+                            Text("Subtle — 15 ms").tag(15)
+                            Text("Played — 30 ms").tag(30)
+                            Text("Loose — 55 ms").tag(55)
+                            Text("Harp — 90 ms").tag(90)
                         }
                     } label: {
                         Label("Chord Roll", systemImage: "hand.draw")
@@ -1251,12 +1251,26 @@ private struct SongTrackRowView: View {
                             set: { track.accent = $0 }
                         )) {
                             Text("Off (even)").tag(0)
-                            Text("Light").tag(8)
-                            Text("Medium").tag(16)
-                            Text("Strong").tag(28)
+                            Text("Light").tag(12)
+                            Text("Medium").tag(24)
+                            Text("Strong").tag(40)
                         }
                     } label: {
                         Label("Accent", systemImage: "waveform.path.ecg")
+                    }
+
+                    Menu {
+                        Picker("Variation", selection: Binding(
+                            get: { track.effectiveVariation },
+                            set: { track.variation = $0 }
+                        )) {
+                            Text("Off (identical)").tag(0)
+                            Text("Light").tag(8)
+                            Text("Medium").tag(18)
+                            Text("Strong").tag(32)
+                        }
+                    } label: {
+                        Label("Variation", systemImage: "dice")
                     }
 
                     Divider()

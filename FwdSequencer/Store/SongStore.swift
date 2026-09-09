@@ -290,7 +290,8 @@ class SongStore: ObservableObject {
                     isMuted: st.mixer.isMuted,
                     isSoloed: st.mixer.isSoloed,
                     chordSpread: st.effectiveChordSpread,
-                    accent: st.effectiveAccent
+                    accent: st.effectiveAccent,
+                    variation: st.effectiveVariation
                 )
             }
             return SequencerSection(id: section.id, numberOfBars: section.numberOfBars, tracks: tracks)

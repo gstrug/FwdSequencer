@@ -26,14 +26,15 @@ nonisolated struct PlayTrack {
     /// existing caller and song behaves exactly as before.
     let chordSpread: Double
     let accent: Int
+    let variation: Int
 
     init(id: UUID, tempoDivision: TempoDivision, notePool: [NoteEntry],
          steps: [Step], isMuted: Bool, isSoloed: Bool,
-         chordSpread: Double = 0, accent: Int = 0) {
+         chordSpread: Double = 0, accent: Int = 0, variation: Int = 0) {
         self.id = id; self.tempoDivision = tempoDivision
         self.notePool = notePool; self.steps = steps
         self.isMuted = isMuted; self.isSoloed = isSoloed
-        self.chordSpread = chordSpread; self.accent = accent
+        self.chordSpread = chordSpread; self.accent = accent; self.variation = variation
     }
 }
 
@@ -563,16 +564,23 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                 //
                 // Accent: metric stress. A player leans on the downbeat, gives the
                 // other beats a little, and lets what falls between them sit back.
+                // SUBTRACTIVE: the downbeat keeps the written velocity and the weaker
+                // positions give some up. Adding to the downbeat instead barely
+                // registered, because parts are usually written near 100 and
+                // instruments compress the top of the velocity curve.
                 let accentOffset: Int
                 if track.accent == 0 {
                     accentOffset = 0
                 } else if globalStep % stepsPerBar == 0 {
-                    accentOffset = track.accent
+                    accentOffset = 0
                 } else if globalStep % stepsPerBeatTS == 0 {
-                    accentOffset = track.accent / 2
-                } else {
                     accentOffset = -(track.accent / 2)
+                } else {
+                    accentOffset = -track.accent
                 }
+
+                // Note-to-note variation, derived from position so export matches.
+                let triggerIndex = globalStep / max(1, triggerEvery)
 
                 // Chord spread: a roll from the lowest note up, rather than every note
                 // struck at once. Sorted by PITCH, not by pool order, since the pool is
@@ -584,7 +592,10 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                 let spreadStep: Double = {
                     guard track.chordSpread > 0, sortedIndices.count > 1 else { return 0 }
                     let perNote = track.chordSpread / 1000.0
-                    let maxTotal = min(0.045, stepDuration * 0.5)   // never past half the step
+                    // A played roll spans 50-150 ms; the old 45 ms ceiling sat below
+                    // the point where it registers at all, so a four-note chord rolled
+                    // over 36 ms and sounded like a block.
+                    let maxTotal = min(0.18, stepDuration * 0.6)
                     return min(perNote, maxTotal / Double(sortedIndices.count - 1))
                 }()
 
@@ -595,8 +606,22 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                     guard idx >= 0, idx < track.notePool.count else { continue }
                     let entry = track.notePool[idx]
                     let midiNote = UInt8(entry.midiNote)
+                    var velocityOffset = accentOffset
+                    var gateScale = 1.0
+                    if track.variation > 0 {
+                        let v = FeelNoise.signedValue(seed: initialRandomSeed, section: sectionIndex,
+                                                      trigger: triggerIndex, midiNote: entry.midiNote,
+                                                      salt: FeelNoise.velocitySalt)
+                        velocityOffset += Int((v * Double(track.variation)).rounded())
+                        let g = FeelNoise.signedValue(seed: initialRandomSeed, section: sectionIndex,
+                                                      trigger: triggerIndex, midiNote: entry.midiNote,
+                                                      salt: FeelNoise.gateSalt)
+                        // Length varies by up to +-30% at full setting: enough to break
+                        // the uniformity, not enough to blur the rhythm.
+                        gateScale = 1.0 + g * (Double(track.variation) / 40.0) * 0.3
+                    }
                     // MIDI velocity 0 is a note-off, so the floor is 1, not 0.
-                    let velocity = UInt8(min(max(entry.velocity + accentOffset, 1), 127))
+                    let velocity = UInt8(min(max(entry.velocity + velocityOffset, 1), 127))
                     let spreadDelay = spreadStep * Double(order)
                     if spreadDelay > 0 {
                         scheduleSpreadNoteOn(trackID: track.id, midiNote: midiNote,
@@ -605,7 +630,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                         audioEngine?.playNote(trackID: track.id, midiNote: midiNote, velocity: velocity)
                     }
                     notes.append(entry.midiNote)
-                    let noteGate = max(0.01, entry.gateLength * stepGate)
+                    let noteGate = max(0.01, entry.gateLength * stepGate * gateScale)
                     let subdivision = stepDuration / Double(ratchets)
                     // The release moves with the note-on, so a rolled note keeps its
                     // full length instead of being clipped short by the delay.
