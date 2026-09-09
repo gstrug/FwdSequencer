@@ -107,7 +107,34 @@ Each is separately shippable and independently revertable.
 4. **Unify the clock.** MIDI clock off the same timeline; delete `midiClockTimer`.
 5. **Then, cheaply:** timing jitter, swing templates, groove.
 
-## 6. Risks
+## 6. Keeping the AUv3 door open
+
+This work decides whether FwdSequencer can ever be hosted as a plugin, so it is worth
+being deliberate rather than discovering the constraint later.
+
+An AUv3 has no timer. The host calls `internalRenderBlock` once per buffer and the
+plugin emits events stamped with sample offsets *within that buffer*, taking transport,
+tempo and position from the host. Timer-driven, play-now code cannot be hosted at all —
+so the current design is the obstacle, and the look-ahead scheduler is the same shape as
+a render block with the horizon set to one buffer. The cancellation problem in §4 also
+mostly dissolves there: the horizon is a few milliseconds and the host calls back every
+buffer, so little is ever in flight.
+
+**Therefore the timeline is MUSICAL POSITION, not wall clock.** Ticks are beats; sample
+and host time are derived at the output. Standalone, the position comes from our own
+clock; hosted, from the host's `musicalContextBlock`. Building the horizon in seconds
+would work standalone and have to be torn out to be hosted.
+
+Already in our favour: `SequencerEngine` sits in the portable core package with no
+AVFoundation dependency, and `SequencerAudioOutput` is a clean seam.
+
+**Open product decision, needed before phase 3.** The app HOSTS AUv3 instruments, and an
+AUv3 hosting other AUv3s is not practical. A plugin build would therefore be a MIDI
+generator — sequencer only, notes out to the host, instruments the host's problem —
+while the standalone app keeps its internal instruments. Two shapes over one core. This
+affects where the seam goes, so settle it first.
+
+## 7. Risks
 
 - **Plugin fragility.** GeoShred crashed on MIDI it did not expect during instantiate.
   Changing *when* notes arrive is exactly the class of change that has bitten before.
