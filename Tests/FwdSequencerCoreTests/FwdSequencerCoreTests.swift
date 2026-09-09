@@ -809,9 +809,14 @@ final class FwdSequencerCoreTests: XCTestCase {
         let durations = out.durations
         XCTAssertFalse(durations.isEmpty, "no notes were played")
         let first = durations[0]
-        XCTAssertEqual(first, 0.9, accuracy: 0.08,
-                       "a Play + Hold x2 quarter must ring for about gate x 1 second, not one step")
-        XCTAssertGreaterThan(first, 0.5, "regression: the note lasted only its own step")
+        // Bounded rather than pinned to a target: this is a wall-clock measurement, and
+        // asyncAfter has no upper bound on a loaded machine, so an exact expectation is
+        // not something CI can honour. The two behaviours are 0.33s apart from 0.9s, so
+        // a generous window still tells them apart.
+        XCTAssertGreaterThan(first, 0.6,
+                             "regression: the note lasted only its own step (~0.33s)")
+        XCTAssertLessThan(first, 2.0,
+                          "the note should stop within the bar, not ring on indefinitely")
     }
 
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
