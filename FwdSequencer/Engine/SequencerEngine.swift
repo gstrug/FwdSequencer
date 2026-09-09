@@ -22,12 +22,18 @@ nonisolated struct PlayTrack {
     let steps: [Step]
     let isMuted: Bool
     let isSoloed: Bool
+    /// Feel, from SongTrack — see its Feel section. Both default to off so every
+    /// existing caller and song behaves exactly as before.
+    let chordSpread: Double
+    let accent: Int
 
     init(id: UUID, tempoDivision: TempoDivision, notePool: [NoteEntry],
-         steps: [Step], isMuted: Bool, isSoloed: Bool) {
+         steps: [Step], isMuted: Bool, isSoloed: Bool,
+         chordSpread: Double = 0, accent: Int = 0) {
         self.id = id; self.tempoDivision = tempoDivision
         self.notePool = notePool; self.steps = steps
         self.isMuted = isMuted; self.isSoloed = isSoloed
+        self.chordSpread = chordSpread; self.accent = accent
     }
 }
 
@@ -552,25 +558,65 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                     }
                 }
 
+                // Feel — see SongTrack's Feel section. Both are derived, not random, so
+                // playback, recording and export stay identical run to run.
+                //
+                // Accent: metric stress. A player leans on the downbeat, gives the
+                // other beats a little, and lets what falls between them sit back.
+                let accentOffset: Int
+                if track.accent == 0 {
+                    accentOffset = 0
+                } else if globalStep % stepsPerBar == 0 {
+                    accentOffset = track.accent
+                } else if globalStep % stepsPerBeatTS == 0 {
+                    accentOffset = track.accent / 2
+                } else {
+                    accentOffset = -(track.accent / 2)
+                }
+
+                // Chord spread: a roll from the lowest note up, rather than every note
+                // struck at once. Sorted by PITCH, not by pool order, since the pool is
+                // not required to be ordered. The total is capped so a wide voicing
+                // cannot arrive so late it reads as sloppy rather than played.
+                let sortedIndices = track.chordSpread > 0 && poolIndices.count > 1
+                    ? poolIndices.sorted { track.notePool[$0].midiNote < track.notePool[$1].midiNote }
+                    : poolIndices
+                let spreadStep: Double = {
+                    guard track.chordSpread > 0, sortedIndices.count > 1 else { return 0 }
+                    let perNote = track.chordSpread / 1000.0
+                    let maxTotal = min(0.045, stepDuration * 0.5)   // never past half the step
+                    return min(perNote, maxTotal / Double(sortedIndices.count - 1))
+                }()
+
                 var notes: [Int] = []
-                for idx in poolIndices {
+                for (order, idx) in sortedIndices.enumerated() {
                     // Belt and braces: every producer of poolIndices bounds-checks, but
                     // this is the one place a stale index would trap on the audio path.
                     guard idx >= 0, idx < track.notePool.count else { continue }
                     let entry = track.notePool[idx]
                     let midiNote = UInt8(entry.midiNote)
-                    audioEngine?.playNote(trackID: track.id, midiNote: midiNote, velocity: UInt8(entry.velocity))
+                    // MIDI velocity 0 is a note-off, so the floor is 1, not 0.
+                    let velocity = UInt8(min(max(entry.velocity + accentOffset, 1), 127))
+                    let spreadDelay = spreadStep * Double(order)
+                    if spreadDelay > 0 {
+                        scheduleSpreadNoteOn(trackID: track.id, midiNote: midiNote,
+                                             velocity: velocity, delay: spreadDelay)
+                    } else {
+                        audioEngine?.playNote(trackID: track.id, midiNote: midiNote, velocity: velocity)
+                    }
                     notes.append(entry.midiNote)
                     let noteGate = max(0.01, entry.gateLength * stepGate)
                     let subdivision = stepDuration / Double(ratchets)
+                    // The release moves with the note-on, so a rolled note keeps its
+                    // full length instead of being clipped short by the delay.
                     scheduleNoteOff(trackID: track.id, midiNote: midiNote,
-                                    delay: noteGate * subdivision * Double(sustainTriggers))
+                                    delay: spreadDelay + noteGate * subdivision * Double(sustainTriggers))
                     if ratchets > 1 {
                         for ratchet in 1..<ratchets {
                             scheduleRatchet(
                                 trackID: track.id,
                                 midiNote: midiNote,
-                                velocity: UInt8(entry.velocity),
+                                velocity: velocity,
                                 delay: Double(ratchet) * subdivision,
                                 gateDuration: noteGate * subdivision
                             )
@@ -621,6 +667,25 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             if pendingNoteOffs[trackID]?.isEmpty == true { pendingNoteOffs.removeValue(forKey: trackID) }
         }
         pendingNoteOffs[trackID, default: [:]][offID] = item
+        sequencerQueue.asyncAfter(deadline: .now() + delay, execute: item)
+    }
+
+    /// Queue a note-on slightly later than the step, for a chord roll. Shares the
+    /// pending-event map so a stop, rewind or section change cancels it like any other
+    /// scheduled event — a roll must never outlive the step that started it.
+    private func scheduleSpreadNoteOn(trackID: UUID, midiNote: UInt8, velocity: UInt8,
+                                      delay: Double) {
+        noteOffSeq += 1
+        let eventID = noteOffSeq
+        let item = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            pendingNoteOffs[trackID]?.removeValue(forKey: eventID)
+            if pendingNoteOffs[trackID]?.isEmpty == true {
+                pendingNoteOffs.removeValue(forKey: trackID)
+            }
+            audioEngine?.playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
+        }
+        pendingNoteOffs[trackID, default: [:]][eventID] = item
         sequencerQueue.asyncAfter(deadline: .now() + delay, execute: item)
     }
 

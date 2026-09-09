@@ -105,6 +105,7 @@ nonisolated enum SongMIDIExporter {
             let ticksPerBar = ticksPerQuarter * 4 * song.timeSignature.numerator
                 / song.timeSignature.denominator
             let sectionTicks = ticksPerBar * section.numberOfBars
+            let beatTicks = max(1, ticksPerQuarter * 4 / song.timeSignature.denominator)
             let anySoloed = song.tracks.contains { $0.mixer.isSoloed }
 
             for localTick in stride(from: 0, to: sectionTicks, by: baseTick) {
@@ -153,16 +154,51 @@ nonisolated enum SongMIDIExporter {
 
                     let ratchets = min(8, max(1, activeStep?.ratchets ?? 1))
                     let subdivision = Double(trigger) / Double(ratchets)
+
+                    // Feel, matched to the live scheduler. This must mirror
+                    // SequencerEngine exactly or the file disagrees with what was
+                    // played — a divergence this codebase has already been bitten by
+                    // once, with Hold sustaining on export but not in playback.
+                    let accent = track.effectiveAccent
+                    let accentOffset: Int
+                    if accent == 0 {
+                        accentOffset = 0
+                    } else if localTick % ticksPerBar == 0 {
+                        accentOffset = accent
+                    } else if localTick % beatTicks == 0 {
+                        accentOffset = accent / 2
+                    } else {
+                        accentOffset = -(accent / 2)
+                    }
+
+                    // Chord roll, lowest note first. Milliseconds convert to ticks
+                    // through the tempo, since the file's grid is musical, not real time.
+                    let ordered = track.effectiveChordSpread > 0 && resolved.indices.count > 1
+                        ? resolved.indices.sorted {
+                            part.notePool[$0].midiNote < part.notePool[$1].midiNote
+                          }
+                        : resolved.indices
+                    let spreadTicks: Double = {
+                        guard track.effectiveChordSpread > 0, ordered.count > 1 else { return 0 }
+                        let ticksPerSecond = Double(ticksPerQuarter) * song.tempo / 60.0
+                        let perNote = track.effectiveChordSpread / 1000.0 * ticksPerSecond
+                        let maxTotal = min(0.045 * ticksPerSecond, Double(trigger) * 0.5)
+                        return min(perNote, maxTotal / Double(ordered.count - 1))
+                    }()
+
                     var soundingNotes: [Int] = []
-                    for poolIndex in resolved.indices {
+                    for (order, poolIndex) in ordered.enumerated() {
                         let note = part.notePool[poolIndex]
                         let gate = max(0.01, note.gateLength * resolved.gate)
                         let duration = max(1, Int((subdivision * gate).rounded()))
+                        let velocity = UInt8(min(max(note.velocity + accentOffset, 1), 127))
+                        let spreadOffset = Int((spreadTicks * Double(order)).rounded())
                         for ratchet in 0..<ratchets {
-                            let onTick = currentTick + Int((Double(ratchet) * subdivision).rounded())
+                            let onTick = currentTick + spreadOffset
+                                + Int((Double(ratchet) * subdivision).rounded())
                             let noteByte = UInt8(note.midiNote)
                             trackEvents[trackIndex].append(event(
-                                onTick, 1, [0x90 | channel, noteByte, UInt8(note.velocity)]
+                                onTick, 1, [0x90 | channel, noteByte, velocity]
                             ))
                             if ratchet > 0 {
                                 state.pendingEventIndices.append(trackEvents[trackIndex].count - 1)

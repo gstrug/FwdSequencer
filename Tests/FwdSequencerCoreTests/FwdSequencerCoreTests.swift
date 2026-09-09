@@ -8,6 +8,7 @@ final class FwdSequencerCoreTests: XCTestCase {
         let tick: Int
         let status: UInt8
         let note: UInt8
+        let velocity: UInt8
     }
 
     /// Records when notes start and stop, for asserting how long they actually sound.
@@ -117,7 +118,10 @@ final class FwdSequencerCoreTests: XCTestCase {
                     let dataLength = ((status & 0xE0) == 0xC0) ? 1 : 2
                     guard offset + dataLength <= end else { throw TestError.corruptMIDI }
                     if (status & 0xF0) == 0x80 || (status & 0xF0) == 0x90 {
-                        result.append(MIDIChannelEvent(tick: tick, status: status, note: bytes[offset]))
+                        result.append(MIDIChannelEvent(
+                            tick: tick, status: status, note: bytes[offset],
+                            velocity: offset + 1 < end ? bytes[offset + 1] : 0
+                        ))
                     }
                     offset += dataLength
                 }
@@ -817,6 +821,95 @@ final class FwdSequencerCoreTests: XCTestCase {
                              "regression: the note lasted only its own step (~0.33s)")
         XCTAssertLessThan(first, 2.0,
                           "the note should stop within the bar, not ring on indefinitely")
+    }
+
+    /// Feel must be DERIVED, never random: probability already relies on a seeded
+    /// generator so a song reproduces exactly, and export is asserted byte-identical.
+    func testFeelIsDeterministicAcrossRepeatedExports() throws {
+        var song = Song()
+        var track = SongTrack(name: "Piano")
+        track.chordSpread = 12
+        track.accent = 16
+        song.tracks = [track]
+        var part = Part(trackID: track.id)
+        part.notePool = [NoteEntry(midiNote: 60), NoteEntry(midiNote: 64), NoteEntry(midiNote: 67)]
+        part.steps = [Step(type: .play, chordPositions: [1, 2, 3]), Step(type: .play, n: 1)]
+        song.sections = [SongSection(name: "A", numberOfBars: 1, parts: [part])]
+
+        let first = try SongMIDIExporter.data(for: song)
+        let second = try SongMIDIExporter.data(for: song)
+        XCTAssertEqual(first, second, "feel must not introduce run-to-run variation")
+    }
+
+    /// Accent is metric stress, not noise: the downbeat is emphasised, other beats get
+    /// half, and what falls between them sits back.
+    func testAccentFollowsTheBarRatherThanBeingRandom() throws {
+        var song = Song()
+        var track = SongTrack(name: "T")
+        track.accent = 16
+        song.tracks = [track]
+        var part = Part(trackID: track.id)
+        part.notePool = [NoteEntry(midiNote: 60, velocity: 80)]
+        part.steps = [Step(type: .play, n: 1)]
+        part.tempoDivision = .eighth      // two triggers a beat: on it, then between
+        song.sections = [SongSection(name: "A", numberOfBars: 1, parts: [part])]
+
+        let velocities = try channelEvents(in: SongMIDIExporter.data(for: song), track: 1)
+            .filter { $0.status & 0xF0 == 0x90 }
+            .map { Int($0.velocity) }
+
+        XCTAssertGreaterThanOrEqual(velocities.count, 4)
+        XCTAssertEqual(velocities[0], 80 + 16, "downbeat takes the full accent")
+        XCTAssertEqual(velocities[1], 80 - 8, "between beats sits back")
+        XCTAssertEqual(velocities[2], 80 + 8, "beat two takes half")
+        XCTAssertEqual(velocities[3], 80 - 8)
+    }
+
+    /// A chord is rolled from the lowest note up rather than struck as a block, and each
+    /// note keeps its length instead of being clipped by the delay.
+    func testChordSpreadRollsUpwardFromTheLowestNote() throws {
+        var song = Song()
+        var track = SongTrack(name: "T")
+        track.chordSpread = 12
+        song.tracks = [track]
+        var part = Part(trackID: track.id)
+        // Deliberately out of pitch order: the roll must follow PITCH, not pool order.
+        part.notePool = [NoteEntry(midiNote: 67), NoteEntry(midiNote: 60), NoteEntry(midiNote: 64)]
+        part.steps = [Step(type: .play, chordPositions: [1, 2, 3])]
+        song.sections = [SongSection(name: "A", numberOfBars: 1, parts: [part])]
+
+        let ons = try channelEvents(in: SongMIDIExporter.data(for: song), track: 1)
+            .filter { $0.status & 0xF0 == 0x90 }
+            .prefix(3)
+        let byNote = Dictionary(uniqueKeysWithValues: ons.map { (Int($0.note), $0.tick) })
+
+        XCTAssertEqual(byNote.count, 3)
+        let low = try XCTUnwrap(byNote[60]), mid = try XCTUnwrap(byNote[64]), high = try XCTUnwrap(byNote[67])
+        XCTAssertLessThan(low, mid, "the lowest note leads the roll")
+        XCTAssertLessThan(mid, high, "and the highest arrives last")
+
+        // Without spread they would all land together.
+        song.tracks[0].chordSpread = 0
+        let blockTicks = Set(try channelEvents(in: SongMIDIExporter.data(for: song), track: 1)
+            .filter { $0.status & 0xF0 == 0x90 }.prefix(3).map(\.tick))
+        XCTAssertEqual(blockTicks.count, 1, "off means a block chord")
+    }
+
+    /// Songs saved before feel existed must still decode — SongTrack has the synthesised
+    /// decoder, which throws on a missing key even where a default exists.
+    func testSongsWithoutFeelStillDecodeAndAreUnaffected() throws {
+        let json = """
+        {"id":"\(UUID().uuidString)","name":"Old","tempo":120,
+         "timeSignature":{"numerator":4,"denominator":4},"masterVolume":1,
+         "tracks":[{"id":"\(UUID().uuidString)","name":"T",
+                    "mixer":{"volume":0.8,"pan":0,"isMuted":false,"isSoloed":false}}],
+         "sections":[]}
+        """
+        let song = try JSONDecoder().decode(Song.self, from: Data(json.utf8))
+        XCTAssertNil(song.tracks[0].chordSpread)
+        XCTAssertNil(song.tracks[0].accent)
+        XCTAssertEqual(song.tracks[0].effectiveChordSpread, 0, "off by default")
+        XCTAssertEqual(song.tracks[0].effectiveAccent, 0)
     }
 
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {

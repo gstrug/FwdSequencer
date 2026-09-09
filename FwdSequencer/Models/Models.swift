@@ -64,6 +64,34 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     var pluginStateData: Data? = nil  // song-level sound (see AudioEngineManager.getPluginState)
     var mixer: MixerState = MixerState()
     var collapsed: Bool? = nil        // persisted minimized state (Optional → old songs decode)
+
+    // MARK: Feel
+    //
+    // How this instrument PLAYS, as opposed to what it plays — a performance
+    // characteristic, so it lives on the track and applies across every section rather
+    // than being set again per section.
+    //
+    // Both are deliberately DETERMINISTIC rather than random. Probability already
+    // depends on a seeded generator so a song reproduces exactly, and MIDI export is
+    // asserted to be byte-identical run to run; randomised feel would break that.
+    // These derive from the chord and the bar position, so playback, recording and
+    // export all agree and stay reproducible.
+    //
+    // Optional so songs saved before this decode unchanged — SongTrack has the
+    // synthesised decoder, which throws on a missing key even where a default exists.
+    // nil means off.
+
+    /// Milliseconds between successive notes of a chord, spreading upward from the
+    /// lowest. 0/nil plays the chord dead-simultaneously, which no player can do.
+    var chordSpread: Double? = nil
+
+    /// Velocity added on the downbeat, half of it on other beats, and half subtracted
+    /// off the beat — the metric stress a player gives without thinking about it.
+    var accent: Int? = nil
+
+    /// Clamped for use: a hand-edited or damaged file cannot push these out of range.
+    var effectiveChordSpread: Double { min(max(chordSpread ?? 0, 0), 40) }
+    var effectiveAccent: Int { min(max(accent ?? 0, 0), 40) }
 }
 
 /// A named snapshot of a section's note data. Snapshots do not create arrangement

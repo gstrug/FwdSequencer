@@ -1227,6 +1227,40 @@ private struct SongTrackRowView: View {
 
                     Divider()
 
+                    // Feel lives in the track menu rather than on the row: it is set
+                    // once per instrument and then left alone, so it does not earn
+                    // permanent space next to the controls used every take.
+                    Menu {
+                        Picker("Chord Roll", selection: Binding(
+                            get: { Int(track.effectiveChordSpread.rounded()) },
+                            set: { track.chordSpread = Double($0) }
+                        )) {
+                            Text("Off (block chords)").tag(0)
+                            Text("Subtle — 6 ms").tag(6)
+                            Text("Played — 12 ms").tag(12)
+                            Text("Loose — 20 ms").tag(20)
+                            Text("Harp — 32 ms").tag(32)
+                        }
+                    } label: {
+                        Label("Chord Roll", systemImage: "hand.draw")
+                    }
+
+                    Menu {
+                        Picker("Accent", selection: Binding(
+                            get: { track.effectiveAccent },
+                            set: { track.accent = $0 }
+                        )) {
+                            Text("Off (even)").tag(0)
+                            Text("Light").tag(8)
+                            Text("Medium").tag(16)
+                            Text("Strong").tag(28)
+                        }
+                    } label: {
+                        Label("Accent", systemImage: "waveform.path.ecg")
+                    }
+
+                    Divider()
+
                     Button(role: .destructive) { showDeleteAlert = true } label: {
                         Label("Delete Track", systemImage: "trash")
                     }

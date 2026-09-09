@@ -288,7 +288,9 @@ class SongStore: ObservableObject {
                     notePool: part?.notePool ?? [],
                     steps: part?.steps ?? [],
                     isMuted: st.mixer.isMuted,
-                    isSoloed: st.mixer.isSoloed
+                    isSoloed: st.mixer.isSoloed,
+                    chordSpread: st.effectiveChordSpread,
+                    accent: st.effectiveAccent
                 )
             }
             return SequencerSection(id: section.id, numberOfBars: section.numberOfBars, tracks: tracks)
