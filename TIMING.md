@@ -101,12 +101,18 @@ Each is separately shippable and independently revertable.
    ticks ↔ seconds, signed offsets, the tick window due in a horizon, and tempo change
    by REBASE so already-played ticks keep their times. No behaviour change — nothing
    drives playback from it yet.
-2. **Stamped output.** ✅ Done. `SequencerAudioOutput` gained offset-carrying
-   `playNote`/`stopNote` plus `placesScheduledEvents`, which an output must opt into
-   rather than silently mistiming events. `AudioEngineManager` stamps AUv3 notes on the
-   render timeline via `lastRenderTime`, and drives the built-in sampler — which cannot
-   schedule — from a serial queue so a note-off cannot overtake its note-on. No
-   behaviour change: the tick loop does not call these yet.
+2. **Stamped output.** ✅ Done, with one part RETRACTED. `SequencerAudioOutput` gained
+   offset-carrying `playNote`/`stopNote` plus `placesScheduledEvents`, which an output
+   must opt into rather than silently mistiming events. Delayed events go through a
+   serial queue, so a note-off cannot overtake its note-on.
+
+   **What did not work:** stamping AUv3 notes with a future `AUEventSampleTime` computed
+   from `outputNode.lastRenderTime`. `scheduleMIDIEventBlock` takes times in the AUDIO
+   UNIT'S OWN render timeline and AVAudioEngine does not expose it — the output node
+   counts from engine start, a plugin attached later has its own baseline — so events
+   were scheduled far in the plugin's future and never sounded. On device, a song whose
+   first track was the built-in sampler and the rest AUv3s played only its first track.
+   Removed; delayed delivery is uniform and dispatch-based.
 3. **Horizon and flush.** ✅ Done, but UNPROVEN ON DEVICE — see below. Implemented as a
    fixed LEAD rather than a window-emitting loop: the timer runs `scheduleLead` (20 ms)
    ahead of each tick's moment and every event is stamped for that moment, so dispatch
@@ -120,6 +126,13 @@ Each is separately shippable and independently revertable.
 
    `scheduleLead = 0` restores the old behaviour exactly — every offset becomes "now" —
    and is the first thing to try if a plugin misbehaves. A test pins that.
+
+   **Corrected after device testing:** the lead does NOT buy sample-accurate placement,
+   because §2's stamping had to be withdrawn. What it does buy is a two-directional
+   window — an event can be delivered before its nominal tick, which is what swing and
+   jitter need — while accuracy stays as good as a dispatch queue, i.e. what it was
+   before. The unit tests assert the sequencer emits the right OFFSETS, which it does;
+   they cannot see how the output layer delivers them, which is where this went wrong.
 4. **Unify the clock.** ✅ Done. `midiClockTimer` is gone. The sequencer emits clock
    pulses and transport bytes itself, from the same ticks and the same stamps as the
    notes, so the two cannot drift — the grid is 24 ticks per quarter and MIDI clock is
@@ -172,6 +185,10 @@ affects where the seam goes, so settle it first.
 
 ## 7. Risks
 
+- **Verify the primitive on device before building on it.** The AUv3 timeline
+  assumption in §2 was flagged as uncertain in a code comment and then had phases 3, 4
+  and 5 built on top of it before anyone had heard it. Two phases of that work were
+  fine; the foundation was not.
 - **Plugin fragility.** GeoShred crashed on MIDI it did not expect during instantiate.
   Changing *when* notes arrive is exactly the class of change that has bitten before.
   Phase 3 needs testing against the awkward plugins specifically.

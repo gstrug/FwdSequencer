@@ -943,9 +943,11 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
-    /// This output does place events at the offsets it is given: an AUv3 is stamped on
-    /// the render timeline, and the built-in sampler — which has no way to schedule —
-    /// is driven from a serial queue so ordering still holds.
+    /// This output honours the offsets it is given — every delayed event goes through
+    /// `scheduleQueue` — but NOT sample-accurately. Placement is as good as a dispatch
+    /// queue, because AVAudioEngine gives a host no way to schedule into a hosted
+    /// plugin's render timeline (see sendMIDI). Good enough for swing, chord roll and
+    /// jitter; not the sample accuracy TIMING.md originally hoped for.
     var placesScheduledEvents: Bool { true }
 
     /// The delayed half of the flush (TIMING.md §4): a sweep stamped past the end of
@@ -954,20 +956,10 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// itself — an unsettled one has nothing ringing and can crash on the flush.
     func allNotesOff(afterSeconds: Double) {
         guard afterSeconds > 0 else { allNotesOff(); return }
-        withLock {
-            for (id, unit) in auv3Units where settledInstruments.contains(id) {
-                sendMIDI(to: unit, bytes: [0xB0, 123, 0], afterSeconds: afterSeconds)   // All Notes Off
-            }
-            activeNotes.removeAll()
-        }
-        // Samplers cannot be stamped, so they are swept on the serial queue instead.
+        // Delayed on the same queue as everything else, so it lands after the events it
+        // is meant to catch (TIMING.md §4).
         scheduleQueue.asyncAfter(deadline: .now() + afterSeconds) { [weak self] in
-            guard let self else { return }
-            withLock {
-                for (_, sampler) in self.samplers {
-                    for n in 0...127 { sampler.stopNote(UInt8(n), onChannel: 0) }
-                }
-            }
+            self?.allNotesOff()
         }
     }
 
@@ -976,14 +968,8 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
             return
         }
-        let stamped = withLock { () -> Bool in
-            guard !isSuspended(trackID) else { return true }   // gated: drop it entirely
-            guard let unit = auv3Units[trackID] else { return false }
-            activeNotes[trackID, default: []].insert(midiNote)
-            sendMIDI(to: unit, bytes: [0x90, midiNote, velocity], afterSeconds: afterSeconds)
-            return true
-        }
-        guard !stamped else { return }
+        // Serial and shared by every track: a concurrent queue could let a note-off
+        // overtake its note-on and hang the note.
         scheduleQueue.asyncAfter(deadline: .now() + afterSeconds) { [weak self] in
             self?.playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
         }
@@ -994,14 +980,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             stopNote(trackID: trackID, midiNote: midiNote)
             return
         }
-        let stamped = withLock { () -> Bool in
-            guard !isSuspended(trackID) else { return true }
-            guard let unit = auv3Units[trackID] else { return false }
-            activeNotes[trackID]?.remove(midiNote)
-            sendMIDI(to: unit, bytes: [0x80, midiNote, 0], afterSeconds: afterSeconds)
-            return true
-        }
-        guard !stamped else { return }
         scheduleQueue.asyncAfter(deadline: .now() + afterSeconds) { [weak self] in
             self?.stopNote(trackID: trackID, midiNote: midiNote)
         }
@@ -1024,10 +1002,21 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
-    private func sendMIDI(to unit: AVAudioUnit, bytes: [UInt8], afterSeconds delay: Double = 0) {
+    /// Always IMMEDIATE.
+    ///
+    /// Stamping a future `AUEventSampleTime` was tried and reverted. `scheduleMIDIEventBlock`
+    /// takes times in the AUDIO UNIT'S OWN render timeline, and AVAudioEngine does not
+    /// expose it — `outputNode.lastRenderTime` counts from when the engine started, while
+    /// a plugin attached later has its own baseline. Events were therefore scheduled far
+    /// in the plugin's future and never sounded: a song whose first track was the
+    /// built-in sampler and the rest AUv3s played only its first track.
+    ///
+    /// Delayed delivery for hosted plugins goes through `scheduleQueue` instead, below.
+    /// That keeps swing, jitter and chord roll working and costs only the accuracy this
+    /// was meant to buy, which is not available to a host built on AVAudioEngine.
+    private func sendMIDI(to unit: AVAudioUnit, bytes: [UInt8]) {
         let au = unit.auAudioUnit
-        let when = delay > 0 ? (sampleTime(inSeconds: delay) ?? AUEventSampleTimeImmediate)
-                             : AUEventSampleTimeImmediate
+        let when = AUEventSampleTimeImmediate
         if let legacyBlock = au.scheduleMIDIEventBlock {
             bytes.withUnsafeBytes { ptr in
                 guard let base = ptr.bindMemory(to: UInt8.self).baseAddress else { return }
@@ -1038,22 +1027,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         } else {
             print("[FWD] No MIDI block available for \(au.audioUnitName ?? "unknown")")
         }
-    }
-
-    /// A render-timeline sample time `delay` seconds from now, or nil when the engine
-    /// cannot say where it is — before the first render, or with no valid sample time —
-    /// in which case the caller falls back to immediate.
-    ///
-    /// Anchored on `lastRenderTime`, which is the START of the buffer most recently
-    /// rendered and therefore already slightly in the past. Events land up to one buffer
-    /// late as a result. That is fine for placing an event a few tens of milliseconds
-    /// out, which is all this is used for now; the horizon in phase 3 has to account for
-    /// it properly (TIMING.md §3).
-    private func sampleTime(inSeconds delay: Double) -> AUEventSampleTime? {
-        guard let render = engine.outputNode.lastRenderTime, render.isSampleTimeValid else { return nil }
-        let rate = engine.outputNode.outputFormat(forBus: 0).sampleRate
-        guard rate > 0 else { return nil }
-        return AUEventSampleTime(render.sampleTime + AVAudioFramePosition((delay * rate).rounded()))
     }
 
     @available(iOS 15.0, *)
