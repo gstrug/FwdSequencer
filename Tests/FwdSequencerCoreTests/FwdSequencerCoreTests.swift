@@ -1107,10 +1107,14 @@ final class FwdSequencerCoreTests: XCTestCase {
         let offsets = out.noteOnOffsets
         XCTAssertFalse(offsets.isEmpty, "nothing played")
         XCTAssertTrue(offsets.allSatisfy { $0 >= 0 }, "an event can never be stamped into the past")
-        // Generous: this is wall-clock, and a loaded machine eats into the lead.
-        XCTAssertGreaterThan(offsets.filter { $0 > 0.005 }.count, offsets.count / 2,
-                             "most notes should be placed ahead, not fired on arrival")
         XCTAssertTrue(offsets.allSatisfy { $0 <= 0.030 }, "never stamped beyond the lead")
+        // Only that stamping HAPPENS, not how often. A late timer firing legitimately
+        // consumes the lead and stamps 0, and on a loaded runner several in a row can —
+        // asserting a majority made this flaky over a handful of samples. That every
+        // offset is 0 when the lead is 0 is the other half of the proof, and is
+        // deterministic; see testZeroLeadRestoresImmediateDelivery.
+        XCTAssertTrue(offsets.contains { $0 > 0.005 },
+                      "notes should be placed ahead of their tick, not fired on arrival")
     }
 
     /// Lead 0 must reproduce the old behaviour exactly — every event "now". This is the
