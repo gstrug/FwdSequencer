@@ -29,6 +29,7 @@ let package = Package(
                 "Models/SongValidation.swift",
                 "Models/SongTemplates.swift",
                 "Engine/SequencerRandom.swift",
+                "Engine/MusicalTimeline.swift",
                 "Engine/SequencerEngine.swift",
                 "Engine/PluginLoadTracker.swift",
                 "Engine/SongMIDIExporter.swift",

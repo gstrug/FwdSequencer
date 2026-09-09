@@ -7,6 +7,35 @@ nonisolated protocol SequencerAudioOutput: AnyObject {
     func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8)
     func stopNote(trackID: UUID, midiNote: UInt8)
     func allNotesOff()
+
+    // MARK: Scheduled delivery (look-ahead scheduler, phase 2 — see TIMING.md)
+    //
+    // The two above mean "now", which is all the sequencer has ever been able to say.
+    // These carry an offset, so an event can be placed rather than fired, which is what
+    // the horizon in phase 3 needs and what an AUv3 render block would require.
+
+    /// True when this output actually honours the offsets below. False means the caller
+    /// must keep scheduling events itself — the offset-taking methods then fall back to
+    /// firing immediately, which would be silently mistimed if the caller assumed
+    /// otherwise. Deliberately explicit rather than a silent default.
+    var placesScheduledEvents: Bool { get }
+
+    func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8, afterSeconds: Double)
+    func stopNote(trackID: UUID, midiNote: UInt8, afterSeconds: Double)
+}
+
+extension SequencerAudioOutput {
+    // An output that has not opted in cannot place events, and says so rather than
+    // quietly playing them at the wrong time.
+    var placesScheduledEvents: Bool { false }
+
+    func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8, afterSeconds: Double) {
+        playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
+    }
+
+    func stopNote(trackID: UUID, midiNote: UInt8, afterSeconds: Double) {
+        stopNote(trackID: trackID, midiNote: midiNote)
+    }
 }
 
 // MARK: - Playable views

@@ -97,10 +97,16 @@ a direct trade — longer tolerates worse timer jitter, longer is more to flush.
 
 Each is separately shippable and independently revertable.
 
-1. **Timing primitive.** Host-time to `AUEventSampleTime`/`MIDITimeStamp` conversion,
-   with unit tests. No behaviour change.
-2. **Stamped output.** `SequencerAudioOutput` gains offset-carrying variants; the
-   sampler and test fakes keep the dispatch fallback. Still no behaviour change.
+1. **Timing primitive.** ✅ Done. `MusicalTimeline` (portable core, no AVFoundation):
+   ticks ↔ seconds, signed offsets, the tick window due in a horizon, and tempo change
+   by REBASE so already-played ticks keep their times. No behaviour change — nothing
+   drives playback from it yet.
+2. **Stamped output.** ✅ Done. `SequencerAudioOutput` gained offset-carrying
+   `playNote`/`stopNote` plus `placesScheduledEvents`, which an output must opt into
+   rather than silently mistiming events. `AudioEngineManager` stamps AUv3 notes on the
+   render timeline via `lastRenderTime`, and drives the built-in sampler — which cannot
+   schedule — from a serial queue so a note-off cannot overtake its note-on. No
+   behaviour change: the tick loop does not call these yet.
 3. **Horizon and flush.** Tick loop emits a window ahead; stop/panic flush past the
    horizon. This is the risky one — plugin hosting is fragile and this changes when
    every note reaches it.

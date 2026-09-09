@@ -55,6 +55,9 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     private let recordingLock = NSLock()
     private var recordingFile: AVAudioFile?
     private let midiClockQueue = DispatchQueue(label: "com.fwd.midi-clock", qos: .userInteractive)
+    /// Serial, for outputs that cannot be stamped (the built-in sampler): a concurrent
+    /// queue could let a note-off overtake its note-on and hang the note.
+    private let scheduleQueue = DispatchQueue(label: "com.fwd.schedule", qos: .userInteractive)
     private var midiClient = MIDIClientRef()
     private var midiClockSource = MIDIEndpointRef()
     private var midiClockTimer: DispatchSourceTimer?
@@ -938,6 +941,47 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
+    /// This output does place events at the offsets it is given: an AUv3 is stamped on
+    /// the render timeline, and the built-in sampler — which has no way to schedule —
+    /// is driven from a serial queue so ordering still holds.
+    var placesScheduledEvents: Bool { true }
+
+    func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8, afterSeconds: Double) {
+        guard afterSeconds > 0 else {
+            playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
+            return
+        }
+        let stamped = withLock { () -> Bool in
+            guard !isSuspended(trackID) else { return true }   // gated: drop it entirely
+            guard let unit = auv3Units[trackID] else { return false }
+            activeNotes[trackID, default: []].insert(midiNote)
+            sendMIDI(to: unit, bytes: [0x90, midiNote, velocity], afterSeconds: afterSeconds)
+            return true
+        }
+        guard !stamped else { return }
+        scheduleQueue.asyncAfter(deadline: .now() + afterSeconds) { [weak self] in
+            self?.playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
+        }
+    }
+
+    func stopNote(trackID: UUID, midiNote: UInt8, afterSeconds: Double) {
+        guard afterSeconds > 0 else {
+            stopNote(trackID: trackID, midiNote: midiNote)
+            return
+        }
+        let stamped = withLock { () -> Bool in
+            guard !isSuspended(trackID) else { return true }
+            guard let unit = auv3Units[trackID] else { return false }
+            activeNotes[trackID]?.remove(midiNote)
+            sendMIDI(to: unit, bytes: [0x80, midiNote, 0], afterSeconds: afterSeconds)
+            return true
+        }
+        guard !stamped else { return }
+        scheduleQueue.asyncAfter(deadline: .now() + afterSeconds) { [weak self] in
+            self?.stopNote(trackID: trackID, midiNote: midiNote)
+        }
+    }
+
     func stopNote(trackID: UUID, midiNote: UInt8) {
         withLock {
             // Note-offs are gated too. A note-off is still a MIDI event: delivering one
@@ -955,22 +999,41 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
-    private func sendMIDI(to unit: AVAudioUnit, bytes: [UInt8]) {
+    private func sendMIDI(to unit: AVAudioUnit, bytes: [UInt8], afterSeconds delay: Double = 0) {
         let au = unit.auAudioUnit
+        let when = delay > 0 ? (sampleTime(inSeconds: delay) ?? AUEventSampleTimeImmediate)
+                             : AUEventSampleTimeImmediate
         if let legacyBlock = au.scheduleMIDIEventBlock {
             bytes.withUnsafeBytes { ptr in
                 guard let base = ptr.bindMemory(to: UInt8.self).baseAddress else { return }
-                legacyBlock(AUEventSampleTimeImmediate, 0, bytes.count, base)
+                legacyBlock(when, 0, bytes.count, base)
             }
         } else if #available(iOS 15.0, *), let listBlock = au.scheduleMIDIEventListBlock {
-            sendMIDIList(to: listBlock, bytes: bytes)
+            sendMIDIList(to: listBlock, bytes: bytes, at: when)
         } else {
             print("[FWD] No MIDI block available for \(au.audioUnitName ?? "unknown")")
         }
     }
 
+    /// A render-timeline sample time `delay` seconds from now, or nil when the engine
+    /// cannot say where it is — before the first render, or with no valid sample time —
+    /// in which case the caller falls back to immediate.
+    ///
+    /// Anchored on `lastRenderTime`, which is the START of the buffer most recently
+    /// rendered and therefore already slightly in the past. Events land up to one buffer
+    /// late as a result. That is fine for placing an event a few tens of milliseconds
+    /// out, which is all this is used for now; the horizon in phase 3 has to account for
+    /// it properly (TIMING.md §3).
+    private func sampleTime(inSeconds delay: Double) -> AUEventSampleTime? {
+        guard let render = engine.outputNode.lastRenderTime, render.isSampleTimeValid else { return nil }
+        let rate = engine.outputNode.outputFormat(forBus: 0).sampleRate
+        guard rate > 0 else { return nil }
+        return AUEventSampleTime(render.sampleTime + AVAudioFramePosition((delay * rate).rounded()))
+    }
+
     @available(iOS 15.0, *)
-    private func sendMIDIList(to block: AUMIDIEventListBlock, bytes: [UInt8]) {
+    private func sendMIDIList(to block: AUMIDIEventListBlock, bytes: [UInt8],
+                              at when: AUEventSampleTime = AUEventSampleTimeImmediate) {
         let status = bytes[0]
         let d1 = bytes.count > 1 ? bytes[1] : 0
         let d2 = bytes.count > 2 ? bytes[2] : 0
@@ -984,7 +1047,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         let listPtr = buf.bindMemory(to: MIDIEventList.self, capacity: 1)
         let pktPtr = MIDIEventListInit(listPtr, MIDIProtocolID._1_0)
         _ = MIDIEventListAdd(listPtr, bufSize, pktPtr, 0, 1, &word)
-        _ = block(AUEventSampleTimeImmediate, 0, listPtr)
+        _ = block(when, 0, listPtr)
     }
 
     /// The nuclear stop for a hung note, distinct from allNotesOff (which only releases

@@ -964,6 +964,88 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(song.tracks[0].effectiveAccent, 0)
     }
 
+    // MARK: - Look-ahead scheduler, phase 1: the musical timeline
+
+    /// The timeline is musical, so a tick means the same thing whatever the tempo, and
+    /// real time is derived from it rather than the other way round (TIMING.md §6).
+    func testTimelineConvertsBetweenTicksAndSeconds() {
+        let line = MusicalTimeline(ticksPerBeat: 24, tempo: 120)
+        XCTAssertEqual(line.secondsPerBeat, 0.5, accuracy: 1e-12)
+        XCTAssertEqual(line.secondsPerTick, 0.5 / 24, accuracy: 1e-12)
+
+        XCTAssertEqual(line.seconds(atTick: 0), 0, accuracy: 1e-12)
+        XCTAssertEqual(line.seconds(atTick: 24), 0.5, accuracy: 1e-12, "a beat later")
+        XCTAssertEqual(line.seconds(atTick: 96), 2.0, accuracy: 1e-12, "a 4/4 bar later")
+
+        // Round trip: the tick containing a moment is the one that began at or before it.
+        for tick in Int64(0)...200 {
+            XCTAssertEqual(line.tick(atSeconds: line.seconds(atTick: tick) + 1e-9), tick)
+        }
+    }
+
+    /// Ticks before the origin are earlier, not clamped. Today an event can only be
+    /// pushed later; a signed timeline is what lets the horizon nudge one EARLIER.
+    func testTimelineIsSignedSoEventsCanBePulledEarlier() {
+        let line = MusicalTimeline(ticksPerBeat: 24, tempo: 60, originTick: 100, originSeconds: 10)
+        XCTAssertEqual(line.seconds(atTick: 100), 10, accuracy: 1e-12)
+        XCTAssertLessThan(line.seconds(atTick: 76), 10, "a beat before the origin")
+        XCTAssertEqual(line.offset(ofTick: 76, from: 10), -1.0, accuracy: 1e-12)
+        XCTAssertEqual(line.offset(ofTick: 124, from: 10), 1.0, accuracy: 1e-12)
+    }
+
+    /// A tempo change must not retime what has already been played. Assigning tempo
+    /// directly would reinterpret every past tick and shift the whole timeline under the
+    /// sequencer; rebasing pins the present and stretches only the future.
+    func testTempoChangeRebasesInsteadOfRetimingThePast() {
+        let slow = MusicalTimeline(ticksPerBeat: 24, tempo: 60)
+        let changeAt: Int64 = 48                       // two beats in, at 2.0 s
+        XCTAssertEqual(slow.seconds(atTick: changeAt), 2.0, accuracy: 1e-12)
+
+        let fast = slow.rebased(toTempo: 120, atTick: changeAt)
+        XCTAssertEqual(fast.seconds(atTick: changeAt), 2.0, accuracy: 1e-12,
+                       "the moment of the change must not move")
+        XCTAssertEqual(fast.seconds(atTick: changeAt + 24), 2.5, accuracy: 1e-12,
+                       "the next beat arrives at the new tempo")
+        XCTAssertEqual(fast.tempo, 120)
+    }
+
+    /// Tempo is clamped to the range the tick loop will actually run at, so the timeline
+    /// cannot describe playback the sequencer would refuse.
+    func testTimelineClampsTempoToThePlayableRange() {
+        XCTAssertEqual(MusicalTimeline(ticksPerBeat: 24, tempo: 5).tempo, 20)
+        XCTAssertEqual(MusicalTimeline(ticksPerBeat: 24, tempo: 10_000).tempo, 400)
+        XCTAssertGreaterThan(MusicalTimeline(ticksPerBeat: 0, tempo: 120).secondsPerTick, 0,
+                             "a zero resolution must not divide by zero")
+    }
+
+    /// The window a horizon-based scheduler — or an AUv3 render block — asks for.
+    func testTimelineReportsTheTicksDueInAWindow() throws {
+        let line = MusicalTimeline(ticksPerBeat: 24, tempo: 120)   // 1/48 s per tick
+        let window = try XCTUnwrap(line.ticks(from: 0, horizon: 0.5))
+        XCTAssertEqual(window.lowerBound, 0)
+        XCTAssertEqual(window.upperBound, 24, "half a second is a beat at 120")
+
+        // Consecutive windows must not drop or repeat a tick.
+        let first = try XCTUnwrap(line.ticks(from: 0, horizon: 0.1))
+        let second = try XCTUnwrap(line.ticks(from: 0.1, horizon: 0.1))
+        XCTAssertEqual(second.lowerBound, first.upperBound + 1)
+
+        XCTAssertNil(line.ticks(from: 0, horizon: 0), "an empty window has no ticks")
+    }
+
+    // MARK: - Phase 2: the stamped output boundary
+
+    /// An output that has not opted in must SAY it cannot place events, rather than
+    /// quietly firing them at the wrong time and leaving the caller none the wiser.
+    func testUnstampedOutputsDeclareThemselvesAndFallBackToImmediate() {
+        let out = RecordingAudioOutput()
+        XCTAssertFalse(out.placesScheduledEvents,
+                       "the default must be honest about not scheduling")
+
+        out.playNote(trackID: UUID(), midiNote: 60, velocity: 100, afterSeconds: 5)
+        XCTAssertEqual(out.playedNotes, 1, "the fallback fires immediately, not in 5s")
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)
