@@ -70,16 +70,26 @@ struct PianoKeyboardView: View {
         }
     }
 
+    // Black keys take DARKER variants of the same two highlight colours. Lit in the
+    // identical blue or yellow, a black key and its white neighbours merge into one
+    // block and the keyboard stops reading as a keyboard — you can no longer tell which
+    // of a semitone pair is selected or sounding. Darker keeps the hue (so the meaning
+    // is unchanged) while preserving the black/white relief.
+    private static let selectedWhite = Color.blue
+    private static let selectedBlack = Color(red: 0.08, green: 0.20, blue: 0.62)
+    private static let playingWhite  = Color.yellow
+    private static let playingBlack  = Color(red: 0.72, green: 0.55, blue: 0.04)
+
     private func whiteColor(_ midi: Int) -> Color {
-        if playingNotes.contains(midi) { return .yellow }
-        if isSelected(midi)    { return .blue }
+        if playingNotes.contains(midi) { return Self.playingWhite }
+        if isSelected(midi)    { return Self.selectedWhite }
         if !isInScale(midi)    { return Color.gray.opacity(0.25) }
         return .white
     }
 
     private func blackColor(_ midi: Int) -> Color {
-        if playingNotes.contains(midi) { return .yellow }
-        if isSelected(midi)    { return .blue }
+        if playingNotes.contains(midi) { return Self.playingBlack }
+        if isSelected(midi)    { return Self.selectedBlack }
         if !isInScale(midi)    { return Color(white: 0.45) }
         return .black
     }
