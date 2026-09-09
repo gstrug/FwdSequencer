@@ -110,8 +110,9 @@ class SongStore: ObservableObject {
     @Published var midiClockEnabled: Bool = UserDefaults.standard.bool(forKey: "MIDIClockOutputEnabled") {
         didSet {
             UserDefaults.standard.set(midiClockEnabled, forKey: "MIDIClockOutputEnabled")
-            if !midiClockEnabled { audioEngine.stopMIDIClock() }
-            else if isPlaying { audioEngine.startMIDIClock(tempo: song.tempo) }
+            // The sequencer emits clock on its own timeline whenever it runs; this only
+            // decides whether it leaves the app, so there is no timer to start or stop.
+            audioEngine.midiClockOutputEnabled = midiClockEnabled
         }
     }
 
@@ -204,7 +205,6 @@ class SongStore: ObservableObject {
         sequencer.onSongFinished = { [weak self] in
             DispatchQueue.main.async {
                 guard let self else { return }
-                if self.midiClockEnabled { self.audioEngine.stopMIDIClock() }
                 self.isPlaying = false
                 self.isPaused = false
                 self.currentSection = 0
@@ -220,14 +220,9 @@ class SongStore: ObservableObject {
             .sink { [weak self] vol in self?.audioEngine.setMasterVolume(vol) }
             .store(in: &cancellables)
 
-        $song
-            .map(\.tempo)
-            .removeDuplicates()
-            .sink { [weak self] tempo in
-                guard let self, midiClockEnabled, isPlaying else { return }
-                audioEngine.updateMIDIClockTempo(tempo)
-            }
-            .store(in: &cancellables)
+        // No tempo subscription for the clock any more: a tempo change restarts the
+        // sequencer's timer, which rebuilds the timeline the clock rides on, so the
+        // clock follows without being told.
 
         // Push volume/pan to mixer nodes only when a value actually changed.
         $song
@@ -254,6 +249,9 @@ class SongStore: ObservableObject {
     /// Claim the shared engine's level callbacks for this store. Call when the
     /// song view comes to the front so meter telemetry routes to *these* monitors.
     func activate() {
+        // didSet does not fire on initialisation, so the saved setting has to be pushed
+        // once here or clock output would stay off until the user toggled it.
+        audioEngine.midiClockOutputEnabled = midiClockEnabled
         audioEngine.onLevelUpdate = { [weak self] id, level in
             DispatchQueue.main.async { self?.levels.trackLevels[id] = level }
         }
@@ -474,11 +472,9 @@ class SongStore: ObservableObject {
             heldSection: holdsSection && song.sections.indices.contains(selectedSection)
                 ? song.sections[selectedSection].id : nil
         )
-        if midiClockEnabled { audioEngine.startMIDIClock(tempo: song.tempo) }
     }
 
     func pause() {
-        if midiClockEnabled { audioEngine.stopMIDIClock() }
         isPlaying = false
         isPaused = true
         playback.playingNotes.removeAll()
@@ -495,14 +491,12 @@ class SongStore: ObservableObject {
     func resume() {
         updateLiveSong()
         sequencer.resume(tempo: song.tempo)
-        if midiClockEnabled { audioEngine.startMIDIClock(tempo: song.tempo, continuing: true) }
         isPlaying = true
         isPaused = false
     }
 
     func stop() {
         sequencer.stop()
-        if midiClockEnabled { audioEngine.stopMIDIClock() }
         isPlaying = false
         isPaused = false
         currentSection = 0
@@ -513,7 +507,6 @@ class SongStore: ObservableObject {
 
     func rewind() {
         sequencer.rewind()
-        if midiClockEnabled && isPlaying { audioEngine.startMIDIClock(tempo: song.tempo) }
         currentSection = 0
         playback.currentBar = 0
         playback.playingNotes.removeAll()
@@ -522,7 +515,6 @@ class SongStore: ObservableObject {
 
     func midiPanic() {
         sequencer.stop()                       // cancels pending note-offs and ratchets
-        if midiClockEnabled { audioEngine.stopMIDIClock() }
         audioEngine.panic()                    // aggressive: clears notes we may not be tracking
         isPlaying = false
         isPaused = false
@@ -566,7 +558,6 @@ class SongStore: ObservableObject {
             completion?(false)
             return
         }
-        if midiClockEnabled { audioEngine.stopMIDIClock() }
         isPlaying = false
         isPaused = false
         currentSection = 0
@@ -940,7 +931,6 @@ class SongStore: ObservableObject {
             notice = message
             return
         }
-        if midiClockEnabled { audioEngine.stopMIDIClock() }
         sequencer.pause()
         isPlaying = false
         isPaused = true

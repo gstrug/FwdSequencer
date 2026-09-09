@@ -53,6 +53,17 @@ final class FwdSequencerCoreTests: XCTestCase {
         func allNotesOff(afterSeconds: Double) {
             lock.lock(); _flushOffsets.append(afterSeconds); lock.unlock()
         }
+
+        private var _clockOffsets: [Double] = []
+        private var _transport: [UInt8] = []
+        var clockOffsets: [Double] { lock.lock(); defer { lock.unlock() }; return _clockOffsets }
+        var transport: [UInt8] { lock.lock(); defer { lock.unlock() }; return _transport }
+        func sendMIDIClockPulse(afterSeconds: Double) {
+            lock.lock(); _clockOffsets.append(afterSeconds); lock.unlock()
+        }
+        func sendMIDITransport(_ status: UInt8) {
+            lock.lock(); _transport.append(status); lock.unlock()
+        }
     }
 
     private final class RecordingAudioOutput: SequencerAudioOutput {
@@ -1128,6 +1139,48 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertFalse(flushes.isEmpty, "a stop must sweep past the look-ahead window")
         XCTAssertTrue(flushes.allSatisfy { $0 > 0.020 },
                       "the sweep must land after anything already stamped, not with it")
+    }
+
+    // MARK: - Phase 4: one timeline for notes and clock
+
+    /// Clock used to run on its OWN timer, started separately from playback, so notes
+    /// and clock began at different instants and drifted apart. Riding the same ticks
+    /// and the same stamps makes drift impossible rather than merely small.
+    func testClockRidesTheSameTicksAndStampsAsTheNotes() {
+        let (engine, out, _) = makeStampingEngine(lead: 0.020)
+        Thread.sleep(forTimeInterval: 1.0)
+        engine.stop()
+
+        let clock = out.clockOffsets
+        let notes = out.noteOnOffsets
+        XCTAssertFalse(clock.isEmpty, "no clock was emitted")
+
+        // 24 PPQN at 240 BPM is 96 pulses a second; a quarter-note track gives 4 notes.
+        XCTAssertGreaterThan(clock.count, notes.count * 10,
+                             "a pulse per tick, not per note")
+        XCTAssertTrue(clock.allSatisfy { $0 >= 0 && $0 <= 0.030 },
+                      "pulses are stamped on the same basis as notes, never fired blind")
+    }
+
+    /// Transport is driven by the sequencer's own transport, so slaves start, continue
+    /// and stop with us rather than with a separate timer that could disagree.
+    func testTransportBytesFollowTheSequencersOwnTransport() {
+        let (engine, out, _) = makeStampingEngine(lead: 0.020)
+        Thread.sleep(forTimeInterval: 0.3)
+        XCTAssertEqual(out.transport.first, 0xFA, "starting playback sends Start")
+
+        let paused = expectation(description: "paused")
+        engine.pause { paused.fulfill() }
+        wait(for: [paused], timeout: 1)
+        XCTAssertEqual(out.transport.last, 0xFC, "pausing sends Stop")
+
+        engine.resume(tempo: 240)
+        Thread.sleep(forTimeInterval: 0.2)
+        XCTAssertEqual(out.transport.last, 0xFB, "resuming sends Continue, not Start")
+
+        engine.stop()
+        Thread.sleep(forTimeInterval: 0.1)
+        XCTAssertEqual(out.transport.last, 0xFC, "stopping sends Stop")
     }
 
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {

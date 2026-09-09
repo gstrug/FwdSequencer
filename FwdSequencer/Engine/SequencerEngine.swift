@@ -27,6 +27,22 @@ nonisolated protocol SequencerAudioOutput: AnyObject {
     /// into a plugin cannot be recalled, so the flush has to land AFTER them or a
     /// note-on scheduled just past the stop would hang (TIMING.md §4).
     func allNotesOff(afterSeconds: Double)
+
+    // MARK: MIDI clock (phase 4)
+    //
+    // The clock is emitted BY the sequencer, on the sequencer's own timeline, rather
+    // than by a second independent timer. It used to have one, started separately, so
+    // notes and clock were never phase-locked: they began at slightly different instants
+    // and drifted apart — the worst of these problems for an app meant to be a MIDI
+    // source. Sharing the timeline makes drift impossible rather than small.
+    //
+    // Whether anything is actually transmitted is the output's business, not the
+    // sequencer's: it emits unconditionally and the output honours the user's setting.
+
+    /// One 24-PPQN pulse, stamped like every other event so it cannot drift from notes.
+    func sendMIDIClockPulse(afterSeconds: Double)
+    /// Transport: 0xFA Start, 0xFB Continue, 0xFC Stop.
+    func sendMIDITransport(_ status: UInt8)
 }
 
 extension SequencerAudioOutput {
@@ -43,6 +59,8 @@ extension SequencerAudioOutput {
     }
 
     func allNotesOff(afterSeconds: Double) { allNotesOff() }
+    func sendMIDIClockPulse(afterSeconds: Double) {}
+    func sendMIDITransport(_ status: UInt8) {}
 }
 
 // MARK: - Playable views
@@ -212,6 +230,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             flushAllNotes()
             states = Dictionary(uniqueKeysWithValues: trackIDs.map { ($0, TrackState()) })
             onSectionChange?(sectionIndex)
+            audioEngine?.sendMIDITransport(0xFA)   // Start
             startTimer(tempo: tempo, immediate: true)
         }
     }
@@ -273,6 +292,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         for key in Array(states.keys) { states[key] = TrackState() }
         cancelAllPendingNoteOffs()
         flushAllNotes()
+        audioEngine?.sendMIDITransport(0xFC)   // Stop
         if resetPosition { onBarChange?(0) }
     }
 
@@ -309,6 +329,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             stopTimer()
             cancelAllPendingNoteOffs()
             flushAllNotes()
+            audioEngine?.sendMIDITransport(0xFC)   // Stop
             if let completion { DispatchQueue.main.async { completion() } }
         }
     }
@@ -317,6 +338,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         sequencerQueue.async { [weak self] in
             guard let self, timer == nil else { return }
             _songTempo = tempo
+            audioEngine?.sendMIDITransport(0xFB)   // Continue
             startTimer(tempo: tempo, immediate: false)
         }
     }
@@ -332,6 +354,8 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             for key in Array(states.keys) { states[key] = TrackState() }
             cancelAllPendingNoteOffs()
             flushAllNotes()
+            // Rewinding to the top is a Start for anything slaved to us, not a Continue.
+            if timer != nil { audioEngine?.sendMIDITransport(0xFA) }
             onBarChange?(0)
             onSectionChange?(sectionIndex)
         }
@@ -381,6 +405,11 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// How far ahead of the tick being processed we currently are. Every event this tick
     /// emits is stamped by at least this much, which is what makes placement accurate.
     private var currentTickLead: Double = 0
+
+    /// MIDI clock is 24 pulses per quarter and the tick grid is 24 per quarter, so
+    /// today this is one pulse per tick. Derived rather than assumed, so changing the
+    /// grid cannot silently put the clock out by a factor.
+    private var ticksPerClockPulse: Int { max(1, stepsPerBeat / 24) }
 
     private func nowSeconds() -> Double {
         Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
@@ -432,6 +461,12 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             // Negative when the timer ran late — the moment has passed and the best we
             // can do is "now", which is what the old scheduler always did.
             currentTickLead = max(0, timeline.seconds(atTick: ticksIssued - 1) - nowSeconds())
+            // Clock rides the same tick and the same stamp as the notes, so the two
+            // cannot drift. Emitted from here rather than tick() because globalStep
+            // restarts at every section boundary while the clock must run continuously.
+            if (ticksIssued - 1) % Int64(ticksPerClockPulse) == 0 {
+                audioEngine?.sendMIDIClockPulse(afterSeconds: currentTickLead)
+            }
             tick()
             // finishSong() stops the timer mid-catch-up; anything further would start
             // replaying the song from the top.
@@ -761,6 +796,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         for key in Array(states.keys) { states[key] = TrackState() }
         cancelAllPendingNoteOffs()
         flushAllNotes()
+        audioEngine?.sendMIDITransport(0xFC)   // Stop
         onSongFinished?()
     }
 

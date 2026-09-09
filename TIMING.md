@@ -120,7 +120,14 @@ Each is separately shippable and independently revertable.
 
    `scheduleLead = 0` restores the old behaviour exactly — every offset becomes "now" —
    and is the first thing to try if a plugin misbehaves. A test pins that.
-4. **Unify the clock.** MIDI clock off the same timeline; delete `midiClockTimer`.
+4. **Unify the clock.** ✅ Done. `midiClockTimer` is gone. The sequencer emits clock
+   pulses and transport bytes itself, from the same ticks and the same stamps as the
+   notes, so the two cannot drift — the grid is 24 ticks per quarter and MIDI clock is
+   24 PPQN, so it is one pulse per tick (derived, not assumed). Pulses carry a CoreMIDI
+   host-time stamp rather than "now", so the clock does not inherit the dispatch jitter
+   the look-ahead exists to remove. `AudioEngineManager` only decides whether pulses
+   leave the app; tempo changes need no special handling, since they restart the timer
+   and so rebuild the timeline the clock rides on.
 5. **Then, cheaply:** timing jitter, swing templates, groove.
 
 ## 6. Keeping the AUv3 door open

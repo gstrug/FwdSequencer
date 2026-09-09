@@ -60,7 +60,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     private let scheduleQueue = DispatchQueue(label: "com.fwd.schedule", qos: .userInteractive)
     private var midiClient = MIDIClientRef()
     private var midiClockSource = MIDIEndpointRef()
-    private var midiClockTimer: DispatchSourceTimer?
     private var samplers: [UUID: AVAudioUnitSampler] = [:]
     private var auv3Units: [UUID: AVAudioUnit] = [:]
     private var trackMixers: [UUID: AVAudioMixerNode] = [:]
@@ -101,6 +100,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         set { withCallbackLock { _onRecordingError = newValue } }
     }
     var currentStatus: AudioEngineStatus { withCallbackLock { status } }
+    private var _midiClockOutputEnabled = false
     private var _telemetryPaused = false
     /// Suspends VU metering and level callbacks. Set while a plugin's UI is being
     /// constructed: hosting an out-of-process AUv3 view is main-thread and CoreAnimation
@@ -217,7 +217,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
     deinit {
         for observer in sessionObservers { NotificationCenter.default.removeObserver(observer) }
-        midiClockTimer?.cancel()
         if midiClockSource != 0 { MIDIEndpointDispose(midiClockSource) }
         if midiClient != 0 { MIDIClientDispose(midiClient) }
     }
@@ -230,51 +229,54 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
-    func startMIDIClock(tempo: Double, continuing: Bool = false) {
-        midiClockQueue.async { [weak self] in
-            guard let self else { return }
-            stopMIDIClockTimer()
-            sendMIDIRealtime(continuing ? 0xFB : 0xFA)
-            installMIDIClockTimer(tempo: tempo)
-        }
+    /// Whether MIDI clock is transmitted. The sequencer emits pulses unconditionally on
+    /// its own timeline; this decides whether they leave the app.
+    var midiClockOutputEnabled: Bool {
+        get { withCallbackLock { _midiClockOutputEnabled } }
+        set { withCallbackLock { _midiClockOutputEnabled = newValue } }
     }
 
-    func updateMIDIClockTempo(_ tempo: Double) {
-        midiClockQueue.async { [weak self] in
-            guard let self, midiClockTimer != nil else { return }
-            stopMIDIClockTimer()
-            installMIDIClockTimer(tempo: tempo)
-        }
+    // MARK: SequencerAudioOutput — MIDI clock (phase 4, TIMING.md §5)
+    //
+    // There used to be a second DispatchSourceTimer here driving the clock, started
+    // separately from playback. Two independent timers meant notes and clock began at
+    // slightly different instants and drifted apart — for an app intended as a MIDI
+    // source, the most serious of the timing problems. The sequencer now emits both from
+    // one timeline with one stamp, so they cannot drift; this just transmits.
+
+    func sendMIDIClockPulse(afterSeconds: Double) {
+        guard midiClockOutputEnabled else { return }
+        sendMIDIRealtime(0xF8, afterSeconds: afterSeconds)
     }
 
-    func stopMIDIClock() {
-        midiClockQueue.async { [weak self] in
-            guard let self else { return }
-            stopMIDIClockTimer()
-            sendMIDIRealtime(0xFC)
-        }
+    func sendMIDITransport(_ status: UInt8) {
+        guard midiClockOutputEnabled else { return }
+        sendMIDIRealtime(status)
     }
 
-    private func installMIDIClockTimer(tempo: Double) {
-        let interval = 60.0 / min(400, max(20, tempo)) / 24.0
-        let timer = DispatchSource.makeTimerSource(queue: midiClockQueue)
-        timer.schedule(deadline: .now() + interval, repeating: interval,
-                       leeway: .microseconds(200))
-        timer.setEventHandler { [weak self] in self?.sendMIDIRealtime(0xF8) }
-        timer.resume()
-        midiClockTimer = timer
+    /// A timestamp of 0 means "as soon as possible". A non-zero offset is converted to
+    /// host time so CoreMIDI places the pulse itself, the same way notes are stamped
+    /// into the audio unit — otherwise the clock would carry the dispatch jitter that
+    /// the look-ahead exists to remove, and would wander against the notes.
+    /// Nanoseconds to mach host ticks. `AudioConvertNanosToHostTime` would do this but
+    /// is macOS-only, so the timebase is read once and cached — it cannot change while
+    /// the process runs.
+    private static let hostTicksPerNanosecond: Double = {
+        var info = mach_timebase_info_data_t()
+        guard mach_timebase_info(&info) == KERN_SUCCESS, info.numer > 0 else { return 1 }
+        return Double(info.denom) / Double(info.numer)
+    }()
+
+    private static func hostTicks(forSeconds seconds: Double) -> UInt64 {
+        UInt64(max(0, seconds) * 1_000_000_000 * hostTicksPerNanosecond)
     }
 
-    private func stopMIDIClockTimer() {
-        midiClockTimer?.setEventHandler {}
-        midiClockTimer?.cancel()
-        midiClockTimer = nil
-    }
-
-    private func sendMIDIRealtime(_ status: UInt8) {
+    private func sendMIDIRealtime(_ status: UInt8, afterSeconds: Double = 0) {
         guard midiClockSource != 0 else { return }
         var packet = MIDIPacket()
-        packet.timeStamp = 0
+        packet.timeStamp = afterSeconds > 0
+            ? mach_absolute_time() + Self.hostTicks(forSeconds: afterSeconds)
+            : 0
         packet.length = 1
         packet.data.0 = status
         var list = MIDIPacketList(numPackets: 1, packet: packet)
@@ -403,7 +405,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
         switch type {
         case .began:
-            stopMIDIClock()
+            sendMIDITransport(0xFC)   // Stop — anything slaved to us must not run on
             allNotesOff()
             engine.pause()
             setStatus(.interrupted)
@@ -430,13 +432,13 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         guard let raw = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
               let reason = AVAudioSession.RouteChangeReason(rawValue: raw),
               reason == .oldDeviceUnavailable else { return }
-        stopMIDIClock()
+        sendMIDITransport(0xFC)   // Stop
         allNotesOff()
         onPlaybackInterrupted?("Playback paused because the audio output changed.")
     }
 
     private func rebuildAfterMediaServicesReset() {
-        stopMIDIClock()
+        sendMIDITransport(0xFC)   // Stop
         setStatus(.recovering)
         var recordingWasInterrupted = false
         let cancelled = withLock { () -> [(Result<Void, PluginLoadError>) -> Void] in
