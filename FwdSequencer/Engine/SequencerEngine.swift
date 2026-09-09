@@ -22,6 +22,11 @@ nonisolated protocol SequencerAudioOutput: AnyObject {
 
     func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8, afterSeconds: Double)
     func stopNote(trackID: UUID, midiNote: UInt8, afterSeconds: Double)
+
+    /// Silence everything, at an offset. Stopping needs this: events already stamped
+    /// into a plugin cannot be recalled, so the flush has to land AFTER them or a
+    /// note-on scheduled just past the stop would hang (TIMING.md §4).
+    func allNotesOff(afterSeconds: Double)
 }
 
 extension SequencerAudioOutput {
@@ -36,6 +41,8 @@ extension SequencerAudioOutput {
     func stopNote(trackID: UUID, midiNote: UInt8, afterSeconds: Double) {
         stopNote(trackID: trackID, midiNote: midiNote)
     }
+
+    func allNotesOff(afterSeconds: Double) { allNotesOff() }
 }
 
 // MARK: - Playable views
@@ -202,7 +209,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             initialRandomSeed = randomSeed
             random = SeededRandomGenerator(seed: randomSeed)
             cancelAllPendingNoteOffs()
-            audioEngine?.allNotesOff()
+            flushAllNotes()
             states = Dictionary(uniqueKeysWithValues: trackIDs.map { ($0, TrackState()) })
             onSectionChange?(sectionIndex)
             startTimer(tempo: tempo, immediate: true)
@@ -265,8 +272,25 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         }
         for key in Array(states.keys) { states[key] = TrackState() }
         cancelAllPendingNoteOffs()
-        audioEngine?.allNotesOff()
+        flushAllNotes()
         if resetPosition { onBarChange?(0) }
+    }
+
+    /// Silence everything, including anything already handed to a plugin.
+    ///
+    /// Cancelling work items is not enough once events are stamped ahead: a note-on
+    /// stamped just before the stop is already inside the audio unit and cannot be
+    /// recalled, so an immediate all-notes-off would land BEFORE it and the note would
+    /// hang — the exact failure the panic button exists for (TIMING.md §4).
+    ///
+    /// So the flush is sent twice: once now, for what is already sounding, and once
+    /// stamped past the end of the look-ahead window, to catch whatever was in flight.
+    /// The margin is what makes the horizon safe to have at all, which is why it stays
+    /// short.
+    private func flushAllNotes() {
+        audioEngine?.allNotesOff()
+        guard scheduleLead > 0 else { return }
+        audioEngine?.allNotesOff(afterSeconds: scheduleLead + 0.005)
     }
 
     private func stopTimer() {
@@ -284,7 +308,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             guard let self else { return }
             stopTimer()
             cancelAllPendingNoteOffs()
-            audioEngine?.allNotesOff()
+            flushAllNotes()
             if let completion { DispatchQueue.main.async { completion() } }
         }
     }
@@ -307,7 +331,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             random = SeededRandomGenerator(seed: initialRandomSeed)
             for key in Array(states.keys) { states[key] = TrackState() }
             cancelAllPendingNoteOffs()
-            audioEngine?.allNotesOff()
+            flushAllNotes()
             onBarChange?(0)
             onSectionChange?(sectionIndex)
         }
@@ -338,13 +362,44 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     private var firstTickNanos: Int64 = 0
     private var ticksIssued: Int64 = 0
 
+    // MARK: Look-ahead (TIMING.md §3)
+    //
+    // The timer runs `scheduleLead` AHEAD of each tick's intended moment, and every
+    // event is stamped for that moment rather than fired when the handler happens to
+    // run. Dispatch jitter is then absorbed rather than heard: it only matters if a
+    // firing is later than the whole lead.
+    //
+    // 20 ms comfortably covers normal dispatch jitter while staying small enough that a
+    // plugin ignoring our timestamps would be uniformly early by an inaudible constant
+    // rather than audibly out of time. Set it to 0 to get exactly the old behaviour —
+    // every offset becomes 0, which is "now" — which is the first thing to try if a
+    // fragile plugin misbehaves.
+    var scheduleLead: Double = 0.020
+
+    /// The musical timeline the current timer is running against.
+    private var timeline = MusicalTimeline(ticksPerBeat: 24, tempo: 120)
+    /// How far ahead of the tick being processed we currently are. Every event this tick
+    /// emits is stamped by at least this much, which is what makes placement accurate.
+    private var currentTickLead: Double = 0
+
+    private func nowSeconds() -> Double {
+        Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
+    }
+
     private func startTimer(tempo: Double, immediate: Bool) {
         let safeTempo = min(max(tempo, 20), 400)
         let interval = 60.0 / safeTempo / Double(stepsPerBeat)
-        let deadline = DispatchTime.now() + (immediate ? 0 : interval)
+        let firstTickAt = nowSeconds() + (immediate ? 0 : interval) + scheduleLead
+        timeline = MusicalTimeline(ticksPerBeat: stepsPerBeat, tempo: safeTempo,
+                                   originTick: 0, originSeconds: firstTickAt)
         tickIntervalNanos = Int64((interval * 1_000_000_000).rounded())
-        firstTickNanos = Int64(bitPattern: deadline.uptimeNanoseconds)
+        firstTickNanos = Int64((firstTickAt * 1_000_000_000).rounded())
         ticksIssued = 0
+        currentTickLead = 0
+        // Fire a lead EARLY, so each tick can be stamped for its own moment. The first
+        // tick is pushed out by the lead rather than the lead being stolen from it, so
+        // playback still starts when asked instead of a fraction early.
+        let deadline = DispatchTime.now() + max(0, firstTickAt - nowSeconds() - scheduleLead)
         let t = DispatchSource.makeTimerSource(queue: sequencerQueue)
         t.schedule(deadline: deadline, repeating: interval, leeway: .milliseconds(1))
         t.setEventHandler { [weak self] in self?.fireDueTicks() }
@@ -355,7 +410,10 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// Issue every tick the timeline says is owed, not just one per callback.
     private func fireDueTicks() {
         guard tickIntervalNanos > 0 else { tick(); return }
+        // Look `scheduleLead` into the future: a tick is due once it falls inside the
+        // window we are stamping for, not once its moment has already passed.
         let now = Int64(bitPattern: DispatchTime.now().uptimeNanoseconds)
+            + Int64((scheduleLead * 1_000_000_000).rounded())
         let elapsed = max(0, now - firstTickNanos)
         let due = elapsed / tickIntervalNanos + 1
         var backlog = due - ticksIssued
@@ -371,6 +429,9 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
 
         for _ in 0..<backlog {
             ticksIssued += 1
+            // Negative when the timer ran late — the moment has passed and the best we
+            // can do is "now", which is what the old scheduler always did.
+            currentTickLead = max(0, timeline.seconds(atTick: ticksIssued - 1) - nowSeconds())
             tick()
             // finishSong() stops the timer mid-catch-up; anything further would start
             // replaying the song from the top.
@@ -656,7 +717,10 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                         scheduleSpreadNoteOn(trackID: track.id, midiNote: midiNote,
                                              velocity: velocity, delay: spreadDelay)
                     } else {
-                        audioEngine?.playNote(trackID: track.id, midiNote: midiNote, velocity: velocity)
+                        // Stamped for the tick's own moment, not for whenever this
+                        // handler happened to run.
+                        audioEngine?.playNote(trackID: track.id, midiNote: midiNote,
+                                              velocity: velocity, afterSeconds: currentTickLead)
                     }
                     notes.append(entry.midiNote)
                     let noteGate = max(0.01, entry.gateLength * stepGate * gateScale)
@@ -696,20 +760,27 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         sectionIndex = 0
         for key in Array(states.keys) { states[key] = TrackState() }
         cancelAllPendingNoteOffs()
-        audioEngine?.allNotesOff()
+        flushAllNotes()
         onSongFinished?()
     }
 
     // Schedule a single note's release on the sequencer queue so it serialises with
     // ticks. Each work item self-removes from the per-track map when it fires, so the
     // non-empty check in the skip-extend path reliably means notes still ring.
+    /// Schedule a release for `delay` after the CURRENT TICK'S moment.
+    ///
+    /// The work item runs a lead early and stamps the lead, rather than running at the
+    /// moment and firing immediately. That keeps the event cancellable right up until
+    /// `scheduleLead` before it sounds — which stop, rewind and section changes depend
+    /// on — while still placing it accurately (TIMING.md §4).
     private func scheduleNoteOff(trackID: UUID, midiNote: UInt8, delay: Double) {
         noteOffSeq += 1
         let offID = noteOffSeq
         let noteInt = Int(midiNote)
+        let lead = scheduleLead
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
-            audioEngine?.stopNote(trackID: trackID, midiNote: midiNote)
+            audioEngine?.stopNote(trackID: trackID, midiNote: midiNote, afterSeconds: lead)
             // Repeated ratchets of the same pitch overlap. Remove only the note-on
             // paired with this release; removing every occurrence loses ownership of
             // a later ratchet and can leave it sounding when the next step cancels
@@ -721,7 +792,8 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             if pendingNoteOffs[trackID]?.isEmpty == true { pendingNoteOffs.removeValue(forKey: trackID) }
         }
         pendingNoteOffs[trackID, default: [:]][offID] = item
-        sequencerQueue.asyncAfter(deadline: .now() + delay, execute: item)
+        sequencerQueue.asyncAfter(deadline: .now() + max(0, currentTickLead + delay - lead),
+                                  execute: item)
     }
 
     /// Queue a note-on slightly later than the step, for a chord roll. Shares the
@@ -731,16 +803,19 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                                       delay: Double) {
         noteOffSeq += 1
         let eventID = noteOffSeq
+        let lead = scheduleLead
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
             pendingNoteOffs[trackID]?.removeValue(forKey: eventID)
             if pendingNoteOffs[trackID]?.isEmpty == true {
                 pendingNoteOffs.removeValue(forKey: trackID)
             }
-            audioEngine?.playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
+            audioEngine?.playNote(trackID: trackID, midiNote: midiNote,
+                                  velocity: velocity, afterSeconds: lead)
         }
         pendingNoteOffs[trackID, default: [:]][eventID] = item
-        sequencerQueue.asyncAfter(deadline: .now() + delay, execute: item)
+        sequencerQueue.asyncAfter(deadline: .now() + max(0, currentTickLead + delay - lead),
+                                  execute: item)
     }
 
     /// Queue a later note-on as a cancellable sequencer event. Reusing the pending
@@ -750,18 +825,23 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                                  delay: Double, gateDuration: Double) {
         noteOffSeq += 1
         let eventID = noteOffSeq
+        let lead = scheduleLead
         let item = DispatchWorkItem { [weak self] in
             guard let self else { return }
             pendingNoteOffs[trackID]?.removeValue(forKey: eventID)
             if pendingNoteOffs[trackID]?.isEmpty == true {
                 pendingNoteOffs.removeValue(forKey: trackID)
             }
-            audioEngine?.playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
+            audioEngine?.playNote(trackID: trackID, midiNote: midiNote,
+                                  velocity: velocity, afterSeconds: lead)
             states[trackID]?.lastMidiNotes.append(Int(midiNote))
+            // This ratchet is now the current moment for anything it schedules.
+            currentTickLead = lead
             scheduleNoteOff(trackID: trackID, midiNote: midiNote, delay: gateDuration)
         }
         pendingNoteOffs[trackID, default: [:]][eventID] = item
-        sequencerQueue.asyncAfter(deadline: .now() + delay, execute: item)
+        sequencerQueue.asyncAfter(deadline: .now() + max(0, currentTickLead + delay - lead),
+                                  execute: item)
     }
 
     // MARK: - Step Execution

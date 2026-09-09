@@ -946,6 +946,29 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// is driven from a serial queue so ordering still holds.
     var placesScheduledEvents: Bool { true }
 
+    /// The delayed half of the flush (TIMING.md §4): a sweep stamped past the end of
+    /// the look-ahead window, so it lands after anything already scheduled into a
+    /// plugin. Only settled AUv3s are addressed, for the same reason panic() restricts
+    /// itself — an unsettled one has nothing ringing and can crash on the flush.
+    func allNotesOff(afterSeconds: Double) {
+        guard afterSeconds > 0 else { allNotesOff(); return }
+        withLock {
+            for (id, unit) in auv3Units where settledInstruments.contains(id) {
+                sendMIDI(to: unit, bytes: [0xB0, 123, 0], afterSeconds: afterSeconds)   // All Notes Off
+            }
+            activeNotes.removeAll()
+        }
+        // Samplers cannot be stamped, so they are swept on the serial queue instead.
+        scheduleQueue.asyncAfter(deadline: .now() + afterSeconds) { [weak self] in
+            guard let self else { return }
+            withLock {
+                for (_, sampler) in self.samplers {
+                    for n in 0...127 { sampler.stopNote(UInt8(n), onChannel: 0) }
+                }
+            }
+        }
+    }
+
     func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8, afterSeconds: Double) {
         guard afterSeconds > 0 else {
             playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)

@@ -31,6 +31,30 @@ final class FwdSequencerCoreTests: XCTestCase {
         func allNotesOff() {}
     }
 
+    /// Records the OFFSET each event was stamped with, which is what phase 3 changes.
+    private final class StampingAudioOutput: SequencerAudioOutput {
+        private let lock = NSLock()
+        private var _onOffsets: [Double] = []
+        private var _flushOffsets: [Double] = []
+        var placesScheduledEvents: Bool { true }
+
+        var noteOnOffsets: [Double] { lock.lock(); defer { lock.unlock() }; return _onOffsets }
+        var flushOffsets: [Double] { lock.lock(); defer { lock.unlock() }; return _flushOffsets }
+
+        func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8) {
+            lock.lock(); _onOffsets.append(0); lock.unlock()
+        }
+        func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8, afterSeconds: Double) {
+            lock.lock(); _onOffsets.append(afterSeconds); lock.unlock()
+        }
+        func stopNote(trackID: UUID, midiNote: UInt8) {}
+        func stopNote(trackID: UUID, midiNote: UInt8, afterSeconds: Double) {}
+        func allNotesOff() {}
+        func allNotesOff(afterSeconds: Double) {
+            lock.lock(); _flushOffsets.append(afterSeconds); lock.unlock()
+        }
+    }
+
     private final class RecordingAudioOutput: SequencerAudioOutput {
         private let lock = NSLock()
         private var _playedNotes = 0
@@ -1044,6 +1068,66 @@ final class FwdSequencerCoreTests: XCTestCase {
 
         out.playNote(trackID: UUID(), midiNote: 60, velocity: 100, afterSeconds: 5)
         XCTAssertEqual(out.playedNotes, 1, "the fallback fires immediately, not in 5s")
+    }
+
+    // MARK: - Phase 3: the look-ahead horizon
+
+    private func makeStampingEngine(lead: Double) -> (SequencerEngine, StampingAudioOutput, UUID) {
+        let out = StampingAudioOutput()
+        let id = UUID()
+        let engine = SequencerEngine()
+        engine.audioEngine = out
+        engine.scheduleLead = lead
+        let track = PlayTrack(id: id, tempoDivision: .quarter,
+                              notePool: [NoteEntry(midiNote: 60)],
+                              steps: [Step(type: .play)], isMuted: false, isSoloed: false)
+        engine.startSong(sections: [SequencerSection(id: UUID(), numberOfBars: 1, tracks: [track])],
+                         tempo: 240, timeSignature: TimeSignature(), trackIDs: [id], loop: true)
+        return (engine, out, id)
+    }
+
+    /// Notes are STAMPED for their tick's moment rather than fired whenever the handler
+    /// runs, so dispatch jitter stops being audible. The offset should sit near the lead.
+    func testNotesAreStampedAheadRatherThanFiredOnArrival() {
+        let (engine, out, _) = makeStampingEngine(lead: 0.020)
+        Thread.sleep(forTimeInterval: 0.9)
+        engine.stop()
+
+        let offsets = out.noteOnOffsets
+        XCTAssertFalse(offsets.isEmpty, "nothing played")
+        XCTAssertTrue(offsets.allSatisfy { $0 >= 0 }, "an event can never be stamped into the past")
+        // Generous: this is wall-clock, and a loaded machine eats into the lead.
+        XCTAssertGreaterThan(offsets.filter { $0 > 0.005 }.count, offsets.count / 2,
+                             "most notes should be placed ahead, not fired on arrival")
+        XCTAssertTrue(offsets.allSatisfy { $0 <= 0.030 }, "never stamped beyond the lead")
+    }
+
+    /// Lead 0 must reproduce the old behaviour exactly — every event "now". This is the
+    /// escape hatch if a fragile plugin dislikes being given future timestamps.
+    func testZeroLeadRestoresImmediateDelivery() {
+        let (engine, out, _) = makeStampingEngine(lead: 0)
+        Thread.sleep(forTimeInterval: 0.6)
+        engine.stop()
+
+        let offsets = out.noteOnOffsets
+        XCTAssertFalse(offsets.isEmpty)
+        XCTAssertTrue(offsets.allSatisfy { $0 == 0 }, "lead 0 means every event is immediate")
+        XCTAssertTrue(out.flushOffsets.isEmpty, "and there is nothing in flight to flush")
+    }
+
+    /// Stopping must flush PAST the horizon as well as immediately. Cancelling work
+    /// items cannot recall an event already stamped into a plugin, so an immediate
+    /// all-notes-off alone would land before it and leave the note hanging.
+    func testStoppingFlushesPastTheHorizonSoNothingCanHang() {
+        let (engine, out, _) = makeStampingEngine(lead: 0.020)
+        Thread.sleep(forTimeInterval: 0.5)
+        engine.stop()
+        Thread.sleep(forTimeInterval: 0.1)
+
+        let flushes = out.flushOffsets
+        XCTAssertFalse(flushes.isEmpty, "a stop must sweep past the look-ahead window")
+        XCTAssertTrue(flushes.allSatisfy { $0 > 0.020 },
+                      "the sweep must land after anything already stamped, not with it")
     }
 
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {

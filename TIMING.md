@@ -107,9 +107,19 @@ Each is separately shippable and independently revertable.
    render timeline via `lastRenderTime`, and drives the built-in sampler — which cannot
    schedule — from a serial queue so a note-off cannot overtake its note-on. No
    behaviour change: the tick loop does not call these yet.
-3. **Horizon and flush.** Tick loop emits a window ahead; stop/panic flush past the
-   horizon. This is the risky one — plugin hosting is fragile and this changes when
-   every note reaches it.
+3. **Horizon and flush.** ✅ Done, but UNPROVEN ON DEVICE — see below. Implemented as a
+   fixed LEAD rather than a window-emitting loop: the timer runs `scheduleLead` (20 ms)
+   ahead of each tick's moment and every event is stamped for that moment, so dispatch
+   jitter is absorbed instead of heard. Far less disruption to a tick loop that has been
+   stabilised twice already, and the same result.
+
+   Delayed events (note-offs, ratchets, chord roll) keep their cancellable work items
+   but run a lead early and stamp the lead — so nothing is ever in a plugin's hands more
+   than 20 ms before it sounds, which is what makes §4 tractable. Stops flush twice:
+   immediately for what is sounding, and stamped past the horizon for what is in flight.
+
+   `scheduleLead = 0` restores the old behaviour exactly — every offset becomes "now" —
+   and is the first thing to try if a plugin misbehaves. A test pins that.
 4. **Unify the clock.** MIDI clock off the same timeline; delete `midiClockTimer`.
 5. **Then, cheaply:** timing jitter, swing templates, groove.
 
