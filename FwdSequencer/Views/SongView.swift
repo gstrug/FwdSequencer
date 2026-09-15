@@ -808,6 +808,30 @@ private struct SectionSnapshotsSheet: View {
     }
 }
 
+/// Effects, alongside Mute and Solo.
+///
+/// Lettered rather than an icon so it reads as one set with M and S, and fixed-width so
+/// adding it cannot disturb the column alignment of the collapsed rows. Tinted when the
+/// track has effects, so their presence is visible without opening anything.
+private struct TrackEffectsButton: View {
+    let trackID: UUID
+    let trackName: String
+    let count: Int
+    @State private var showEffects = false
+
+    var body: some View {
+        Button { showEffects = true } label: {
+            Text("FX").font(.caption2.bold()).frame(minWidth: 16)
+        }
+        .buttonStyle(.bordered)
+        .tint(count > 0 ? .accentColor : .secondary)
+        .accessibilityLabel(count == 0
+                            ? "Effects for \(trackName)"
+                            : "Effects for \(trackName), \(count) loaded")
+        .sheet(isPresented: $showEffects) { TrackEffectsView(trackID: trackID) }
+    }
+}
+
 /// Process CPU load, as a fraction of one core.
 ///
 /// Hosting AUv3s is where this app spends its time and the ceiling is real — a single
@@ -1148,6 +1172,8 @@ private struct SongTrackRowView: View {
                 .accessibilityLabel("Mute \(track.name)")
             Toggle("S", isOn: $track.mixer.isSoloed).toggleStyle(.button).tint(.yellow).font(.caption2.bold())
                 .accessibilityLabel("Solo \(track.name)")
+            TrackEffectsButton(trackID: track.id, trackName: track.name,
+                               count: track.effectSlots.count)
 
             Divider().frame(height: 16)
 
@@ -1204,6 +1230,8 @@ private struct SongTrackRowView: View {
                 Toggle("S", isOn: $track.mixer.isSoloed)
                     .toggleStyle(.button).tint(.yellow).font(.caption2.bold())
                     .accessibilityLabel("Solo \(track.name)")
+                TrackEffectsButton(trackID: track.id, trackName: track.name,
+                                   count: track.effectSlots.count)
             }
             HStack(spacing: 8) {
                 Text(part.tempoDivision.abbreviation).font(.caption2).foregroundStyle(.secondary)
@@ -1424,6 +1452,8 @@ private struct SongTrackRowView: View {
                 Toggle("S", isOn: $track.mixer.isSoloed)
                     .toggleStyle(.button).tint(.yellow).font(.caption2.bold())
                     .accessibilityLabel("Solo \(track.name)")
+                TrackEffectsButton(trackID: track.id, trackName: track.name,
+                                   count: track.effectSlots.count)
             }
 
             // Level meter spans the row beneath the controls, where it has room to read.
