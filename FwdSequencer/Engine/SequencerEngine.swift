@@ -39,6 +39,11 @@ nonisolated protocol SequencerAudioOutput: AnyObject {
     // Whether anything is actually transmitted is the output's business, not the
     // sequencer's: it emits unconditionally and the output honours the user's setting.
 
+    /// Seconds between a track being sent a note and that note being HEARD — the
+    /// instrument's own reported latency, plus any effects in front of it once there
+    /// are any. Drives delay compensation; 0 for an output that cannot report it.
+    func latency(ofTrack trackID: UUID) -> Double
+
     /// One 24-PPQN pulse, stamped like every other event so it cannot drift from notes.
     func sendMIDIClockPulse(afterSeconds: Double)
     /// Transport: 0xFA Start, 0xFB Continue, 0xFC Stop.
@@ -59,6 +64,7 @@ extension SequencerAudioOutput {
     }
 
     func allNotesOff(afterSeconds: Double) { allNotesOff() }
+    func latency(ofTrack trackID: UUID) -> Double { 0 }
     func sendMIDIClockPulse(afterSeconds: Double) {}
     func sendMIDITransport(_ status: UInt8) {}
 }
@@ -425,6 +431,33 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// grid cannot silently put the clock out by a factor.
     private var ticksPerClockPulse: Int { max(1, stepsPerBeat / 24) }
 
+    // MARK: Plugin delay compensation
+    //
+    // Instruments and effects do not sound the instant they are given a note: each
+    // reports a latency, and a track with more of it lags one with less. A DAW measures
+    // this and holds the others back to match. AVAudioEngine does not, so we do.
+    //
+    // Every track is delayed by (the largest latency in the song - its own), so all of
+    // them are HEARD together. The cost is inherent to compensation: the whole song
+    // sounds that largest latency after the transport says it does.
+    //
+    // Worth having before any effects exist — instruments report latency too, and a
+    // sampler against a plugin that reports 10 ms have been out by that much all along.
+
+    /// Ceiling on compensation. A plugin reporting something absurd would otherwise
+    /// delay the entire song by it.
+    static let maximumLatencyCompensation: Double = 0.200
+
+    /// The largest latency among the tracks currently playing — the point every track is
+    /// aligned to. Recomputed each tick, so a plugin finishing loading is picked up.
+    private var latencyBase: Double = 0
+
+    private func currentMaxLatency(_ tracks: [PlayTrack]) -> Double {
+        guard let output = audioEngine else { return 0 }
+        let worst = tracks.reduce(0.0) { max($0, output.latency(ofTrack: $1.id)) }
+        return min(worst, Self.maximumLatencyCompensation)
+    }
+
     private func nowSeconds() -> Double {
         Double(DispatchTime.now().uptimeNanoseconds) / 1_000_000_000
     }
@@ -475,11 +508,16 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             // Negative when the timer ran late — the moment has passed and the best we
             // can do is "now", which is what the old scheduler always did.
             currentTickLead = max(0, timeline.seconds(atTick: ticksIssued - 1) - nowSeconds())
+            latencyBase = currentMaxLatency(currentFrame().tracks)
             // Clock rides the same tick and the same stamp as the notes, so the two
             // cannot drift. Emitted from here rather than tick() because globalStep
             // restarts at every section boundary while the clock must run continuously.
+            //
+            // Shifted by latencyBase so the clock matches what is HEARD rather than when
+            // the notes were handed over: a slave should line up with our audio, not with
+            // a transport position we are deliberately running behind.
             if (ticksIssued - 1) % Int64(ticksPerClockPulse) == 0 {
-                audioEngine?.sendMIDIClockPulse(afterSeconds: currentTickLead)
+                audioEngine?.sendMIDIClockPulse(afterSeconds: currentTickLead + latencyBase)
             }
             tick()
             // finishSong() stops the timer mid-catch-up; anything further would start
@@ -739,9 +777,13 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                                                   salt: FeelNoise.timingSalt)
                     timingOffset += t * track.timingJitter / 1000.0
                 }
+                // Delay compensation: hold this track back by however much less latency
+                // it has than the most latent one, so they are heard together.
+                let compensation = max(0, latencyBase - (audioEngine?.latency(ofTrack: track.id) ?? 0))
+
                 // Clamped at zero: pulling earlier than the lead would ask for a moment
                 // that has already gone, so the whole track would drift late instead.
-                let trackLead = max(0, currentTickLead + timingOffset)
+                let trackLead = max(0, currentTickLead + timingOffset) + compensation
 
                 // Chord spread: a roll from the lowest note up, rather than every note
                 // struck at once. Sorted by PITCH, not by pool order, since the pool is

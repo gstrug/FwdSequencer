@@ -196,7 +196,29 @@ generator — sequencer only, notes out to the host, instruments the host's prob
 while the standalone app keeps its internal instruments. Two shapes over one core. This
 affects where the seam goes, so settle it first.
 
-## 7. Risks
+## 7. Plugin delay compensation
+
+Instruments and effects do not sound the instant they are given a note: each reports a
+`latency`, and a track with more of it lags one with less. A DAW measures this and holds
+the other tracks back to match. AVAudioEngine does not, so the sequencer does.
+
+Every track is delayed by (the largest latency among the playing tracks − its own), so
+all of them are HEARD together. The most latent track sets the pace and waits for
+nobody. Compensation is about the DIFFERENCE between tracks: if they all report the same
+figure there is nothing to do.
+
+The cost is inherent to compensation, not a flaw: the whole song sounds that largest
+latency after the transport says it does. MIDI clock is shifted by the same amount, so a
+slave lines up with what it HEARS from us rather than with a transport position we are
+deliberately running behind.
+
+Capped at 200 ms, so a plugin reporting something absurd cannot delay the entire song by
+it. Recomputed every tick, so a plugin that finishes loading mid-playback is picked up.
+
+Worth having before any effects exist: instruments report latency too, so a built-in
+sampler playing against a plugin that claims 10 ms has been out by that much all along.
+
+## 8. Risks
 
 - **Verify the primitive on device before building on it.** The AUv3 timeline
   assumption in §2 was flagged as uncertain in a code comment and then had phases 3, 4

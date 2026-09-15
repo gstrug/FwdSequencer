@@ -244,6 +244,17 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     // source, the most serious of the timing problems. The sequencer now emits both from
     // one timeline with one stamp, so they cannot drift; this just transmits.
 
+    /// What this track's instrument reports it needs between being given a note and
+    /// sounding it. Once effects can be inserted this becomes the sum down the chain.
+    ///
+    /// The built-in sampler reports nothing and is treated as zero. A hosted AUv3 may
+    /// report anything — a lookahead limiter or linear-phase EQ several milliseconds,
+    /// some instruments a little — which is what makes compensation worth doing even
+    /// before there are any effects to insert.
+    func latency(ofTrack trackID: UUID) -> Double {
+        withLock { auv3Units[trackID]?.auAudioUnit.latency ?? 0 }
+    }
+
     func sendMIDIClockPulse(afterSeconds: Double) {
         guard midiClockOutputEnabled else { return }
         sendMIDIRealtime(0xF8, afterSeconds: afterSeconds)

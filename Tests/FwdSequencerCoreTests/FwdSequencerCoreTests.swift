@@ -46,6 +46,7 @@ final class FwdSequencerCoreTests: XCTestCase {
         }
         func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8, afterSeconds: Double) {
             lock.lock(); _onOffsets.append(afterSeconds); lock.unlock()
+            record(trackID, afterSeconds)
         }
         func stopNote(trackID: UUID, midiNote: UInt8) {}
         func stopNote(trackID: UUID, midiNote: UInt8, afterSeconds: Double) {}
@@ -63,6 +64,17 @@ final class FwdSequencerCoreTests: XCTestCase {
         }
         func sendMIDITransport(_ status: UInt8) {
             lock.lock(); _transport.append(status); lock.unlock()
+        }
+
+        /// Per-track latency the engine should compensate for, and the offsets it chose.
+        var latencies: [UUID: Double] = [:]
+        private var _offsetsByTrack: [UUID: [Double]] = [:]
+        func offsets(for track: UUID) -> [Double] {
+            lock.lock(); defer { lock.unlock() }; return _offsetsByTrack[track] ?? []
+        }
+        func latency(ofTrack trackID: UUID) -> Double { latencies[trackID] ?? 0 }
+        func record(_ track: UUID, _ offset: Double) {
+            lock.lock(); _offsetsByTrack[track, default: []].append(offset); lock.unlock()
         }
     }
 
@@ -1311,6 +1323,93 @@ final class FwdSequencerCoreTests: XCTestCase {
 
         let loose = try deltas(swing: 0, jitter: 15)
         XCTAssertGreaterThan(Set(loose).count, 3, "jitter differs note to note")
+    }
+
+    // MARK: - Plugin delay compensation
+
+    /// Instruments and effects do not sound the instant they are given a note. A track
+    /// reporting more latency than another lags it, and AVAudioEngine does nothing about
+    /// that, so the sequencer holds the quicker tracks back to match.
+    func testTracksWithLessLatencyAreHeldBackToMatchTheSlowest() {
+        let out = StampingAudioOutput()
+        let fast = UUID(), slow = UUID()
+        out.latencies = [fast: 0, slow: 0.030]
+
+        func track(_ id: UUID) -> PlayTrack {
+            PlayTrack(id: id, tempoDivision: .quarter, notePool: [NoteEntry(midiNote: 60)],
+                      steps: [Step(type: .play)], isMuted: false, isSoloed: false)
+        }
+        let engine = SequencerEngine()
+        engine.audioEngine = out
+        engine.scheduleLead = 0        // isolate compensation from the look-ahead
+        engine.startSong(sections: [SequencerSection(id: UUID(), numberOfBars: 1,
+                                                     tracks: [track(fast), track(slow)])],
+                         tempo: 240, timeSignature: TimeSignature(),
+                         trackIDs: [fast, slow], loop: true)
+        Thread.sleep(forTimeInterval: 0.8)
+        engine.stop()
+
+        let fastOffsets = out.offsets(for: fast)
+        let slowOffsets = out.offsets(for: slow)
+        XCTAssertFalse(fastOffsets.isEmpty)
+        XCTAssertFalse(slowOffsets.isEmpty)
+
+        // The most latent track is the reference and waits for nobody.
+        XCTAssertTrue(slowOffsets.allSatisfy { $0 == 0 }, "the slowest track sets the pace")
+        // The quick one is held back by exactly the difference, so both are HEARD together.
+        XCTAssertTrue(fastOffsets.allSatisfy { abs($0 - 0.030) < 0.001 },
+                      "the quicker track waits out the difference")
+    }
+
+    /// With every track equally latent there is nothing to compensate — compensation is
+    /// about the difference between tracks, not the absolute figure.
+    func testEqualLatencyAcrossTracksNeedsNoCompensation() {
+        let out = StampingAudioOutput()
+        let a = UUID(), b = UUID()
+        out.latencies = [a: 0.020, b: 0.020]
+
+        func track(_ id: UUID) -> PlayTrack {
+            PlayTrack(id: id, tempoDivision: .quarter, notePool: [NoteEntry(midiNote: 60)],
+                      steps: [Step(type: .play)], isMuted: false, isSoloed: false)
+        }
+        let engine = SequencerEngine()
+        engine.audioEngine = out
+        engine.scheduleLead = 0
+        engine.startSong(sections: [SequencerSection(id: UUID(), numberOfBars: 1,
+                                                     tracks: [track(a), track(b)])],
+                         tempo: 240, timeSignature: TimeSignature(),
+                         trackIDs: [a, b], loop: true)
+        Thread.sleep(forTimeInterval: 0.6)
+        engine.stop()
+
+        XCTAssertTrue(out.offsets(for: a).allSatisfy { $0 == 0 })
+        XCTAssertTrue(out.offsets(for: b).allSatisfy { $0 == 0 })
+    }
+
+    /// A plugin reporting something absurd must not delay the entire song by it.
+    func testCompensationIsCappedAgainstAbsurdReportedLatency() {
+        let out = StampingAudioOutput()
+        let fast = UUID(), silly = UUID()
+        out.latencies = [fast: 0, silly: 5.0]
+
+        func track(_ id: UUID) -> PlayTrack {
+            PlayTrack(id: id, tempoDivision: .quarter, notePool: [NoteEntry(midiNote: 60)],
+                      steps: [Step(type: .play)], isMuted: false, isSoloed: false)
+        }
+        let engine = SequencerEngine()
+        engine.audioEngine = out
+        engine.scheduleLead = 0
+        engine.startSong(sections: [SequencerSection(id: UUID(), numberOfBars: 1,
+                                                     tracks: [track(fast), track(silly)])],
+                         tempo: 240, timeSignature: TimeSignature(),
+                         trackIDs: [fast, silly], loop: true)
+        Thread.sleep(forTimeInterval: 0.6)
+        engine.stop()
+
+        let offsets = out.offsets(for: fast)
+        XCTAssertFalse(offsets.isEmpty)
+        XCTAssertTrue(offsets.allSatisfy { $0 <= SequencerEngine.maximumLatencyCompensation + 0.001 },
+                      "a five-second claim must not push the song five seconds late")
     }
 
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
