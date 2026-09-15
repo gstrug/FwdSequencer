@@ -20,6 +20,7 @@ let package = Package(
                 "FwdSequencerApp.swift",
                 "Store/PlaybackMonitor.swift",
                 "Store/SongStore.swift",
+                "Store/CPUMonitor.swift",
                 "Views",
                 "Engine/AudioEngineManager.swift",
                 "Engine/PluginManager.swift"

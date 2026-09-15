@@ -319,6 +319,11 @@ private struct KeyButton: View {
 struct PluginEditorView: View {
     let trackID: UUID
     let trackName: String
+    /// Which unit on the track to edit: nil for its instrument, otherwise the effect at
+    /// that position in the chain. One editor serves both — an effect's UI is hosted
+    /// exactly like an instrument's, and the only differences are which unit is resolved
+    /// and that an effect has nothing to audition.
+    var effectIndex: Int? = nil
     /// Called when the native plugin UI is about to close, so the host document
     /// (pattern or song) can capture the plugin's current state into its model.
     var onCommitState: (() -> Void)? = nil
@@ -346,7 +351,13 @@ struct PluginEditorView: View {
 
     // The audio engine is a shared singleton, so the editor needs no store.
     private var engine: AudioEngineManager { .shared }
-    private var avUnit: AVAudioUnit? { engine.auv3Unit(for: trackID) }
+    private var avUnit: AVAudioUnit? {
+        if let effectIndex { return engine.effectUnit(at: effectIndex, for: trackID) }
+        return engine.auv3Unit(for: trackID)
+    }
+    /// An effect takes audio, not notes, so the audition keyboard would send MIDI that
+    /// goes nowhere.
+    private var isEditingEffect: Bool { effectIndex != nil }
 
     var body: some View {
         NavigationStack {
@@ -381,7 +392,7 @@ struct PluginEditorView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 // Audition keyboard strip
-                if avUnit != nil {
+                if avUnit != nil && !isEditingEffect {
                     Divider()
                     AuditionKeyboard(
                         onNoteOn:  { midi in engine.playNote(trackID: trackID, midiNote: midi, velocity: 100) },

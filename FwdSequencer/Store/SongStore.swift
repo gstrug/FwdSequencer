@@ -346,7 +346,9 @@ class SongStore: ObservableObject {
             if let plugin = track.pluginInfo {
                 loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
             }
-        }
+            loadEffects(for: track)
+            }
+
 
         // The manual Play-dock instrument, if this song has one.
         if let perf = song.performance {
@@ -460,7 +462,9 @@ class SongStore: ObservableObject {
             if let plugin = track.pluginInfo {
                 loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
             }
-        }
+            loadEffects(for: track)
+            }
+
         isPlaying = true
         isPaused = false
         playback.currentBar = 0
@@ -749,6 +753,72 @@ class SongStore: ObservableObject {
         }
     }
 
+    // MARK: - Effects
+    //
+    // A list throughout, capped only by SongTrack.maximumEffects in the UI.
+
+    /// Load a track's saved effect chain. Called wherever its instrument is loaded, so
+    /// the chain is rebuilt with the sound rather than needing the song reopened.
+    private func loadEffects(for track: SongTrack) {
+        for (index, slot) in track.effectSlots.enumerated() {
+            audioEngine.loadEffect(slot.pluginInfo, at: index, for: track.id,
+                                   stateData: slot.stateData) { [weak self] result in
+                guard case .failure(let error) = result else { return }
+                self?.notice = error.localizedDescription
+            }
+            if slot.bypassed {
+                audioEngine.setEffectBypassed(true, at: index, for: track.id)
+            }
+        }
+    }
+
+    func addEffect(_ info: PluginInfo, to trackID: UUID) {
+        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        guard song.tracks[idx].effectSlots.count < SongTrack.maximumEffects else {
+            notice = SongTrack.maximumEffects == 1
+                ? "A track can have one effect for now."
+                : "A track can have up to \(SongTrack.maximumEffects) effects."
+            return
+        }
+        let slot = PluginSlot(pluginInfo: info)
+        let position = song.tracks[idx].effectSlots.count
+        song.tracks[idx].effects = song.tracks[idx].effectSlots + [slot]
+        audioEngine.loadEffect(info, at: position, for: trackID) { [weak self] result in
+            guard case .failure(let error) = result else { return }
+            self?.notice = error.localizedDescription
+        }
+    }
+
+    func removeEffect(at index: Int, from trackID: UUID) {
+        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        var slots = song.tracks[idx].effectSlots
+        guard slots.indices.contains(index) else { return }
+        slots.remove(at: index)
+        song.tracks[idx].effects = slots
+        audioEngine.removeEffect(at: index, for: trackID)
+    }
+
+    func setEffectBypassed(_ bypassed: Bool, at index: Int, for trackID: UUID) {
+        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        var slots = song.tracks[idx].effectSlots
+        guard slots.indices.contains(index) else { return }
+        slots[index].isBypassed = bypassed
+        song.tracks[idx].effects = slots
+        audioEngine.setEffectBypassed(bypassed, at: index, for: trackID)
+    }
+
+    /// Capture an effect's own state, so its settings persist with the song exactly as
+    /// an instrument's do.
+    func captureEffectState(at index: Int, for trackID: UUID) {
+        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        var slots = song.tracks[idx].effectSlots
+        guard slots.indices.contains(index) else { return }
+        if let state = audioEngine.captureEffectState(at: index, for: trackID) {
+            slots[index].stateData = state
+            song.tracks[idx].effects = slots
+        }
+    }
+
     // MARK: - Section editing (independent clones — no cross-section reuse)
 
     func addSection() {
@@ -951,7 +1021,9 @@ class SongStore: ObservableObject {
             if let plugin = track.pluginInfo {
                 loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
             }
-        }
+            loadEffects(for: track)
+            }
+
         if let perf = song.performance {
             audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan)
             if let plugin = perf.pluginInfo {

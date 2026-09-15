@@ -62,6 +62,10 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     private var midiClockSource = MIDIEndpointRef()
     private var samplers: [UUID: AVAudioUnitSampler] = [:]
     private var auv3Units: [UUID: AVAudioUnit] = [:]
+    /// AUv3 effects per track, in signal order between the instrument and the mixer.
+    /// An array rather than a single optional so raising SongTrack.maximumEffects is a
+    /// constant change rather than a restructuring here.
+    private var effectUnits: [UUID: [AVAudioUnit]] = [:]
     private var trackMixers: [UUID: AVAudioMixerNode] = [:]
 
     private let callbackLock = NSLock()
@@ -252,7 +256,14 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// some instruments a little — which is what makes compensation worth doing even
     /// before there are any effects to insert.
     func latency(ofTrack trackID: UUID) -> Double {
-        withLock { auv3Units[trackID]?.auAudioUnit.latency ?? 0 }
+        withLock {
+            let instrument = auv3Units[trackID]?.auAudioUnit.latency ?? 0
+            // A bypassed effect is still in the graph and still delays its audio, so it
+            // counts. Excluding it would make bypassing shift the track in time.
+            let effects = (effectUnits[trackID] ?? [])
+                .reduce(0.0) { $0 + $1.auAudioUnit.latency }
+            return instrument + effects
+        }
     }
 
     func sendMIDIClockPulse(afterSeconds: Double) {
@@ -456,6 +467,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             engine.stop()
             samplers.removeAll()
             auv3Units.removeAll()
+            effectUnits.removeAll()
             trackMixers.removeAll()
             suspendCounts.removeAll()
             // Must go with the units themselves. A track left in the settled set has no
@@ -566,6 +578,109 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
+    // MARK: - Effects
+    //
+    // Written for a chain of N even though the UI offers one (SongTrack.maximumEffects),
+    // so raising that limit needs no change here.
+
+    /// Instantiate an effect and insert it at `index` in the track's chain.
+    ///
+    /// The track's MIDI is suspended for the duration: instantiating is asynchronous and
+    /// rebuilding the graph disconnects the instrument mid-flight, which is exactly the
+    /// window that has crashed fragile plugins before (see PLUGIN_HOSTING.md §2).
+    func loadEffect(_ pluginInfo: PluginInfo, at index: Int, for trackID: UUID,
+                    stateData: Data? = nil,
+                    completion: @escaping (Result<Void, PluginLoadError>) -> Void = { _ in }) {
+        let desc = AudioComponentDescription(
+            componentType: pluginInfo.componentType,
+            componentSubType: pluginInfo.componentSubType,
+            componentManufacturer: pluginInfo.componentManufacturer,
+            componentFlags: 0, componentFlagsMask: 0
+        )
+        suspendTrack(trackID)
+        AVAudioUnit.instantiate(with: desc, options: []) { [weak self] avAudioUnit, error in
+            guard let self else { return }
+            DispatchQueue.main.async {
+                defer { self.resumeTrack(trackID) }
+                guard let unit = avAudioUnit else {
+                    let detail = error?.localizedDescription ?? "The Audio Unit returned no effect."
+                    self.deliver(.failure(.instantiationFailed(pluginInfo.name, detail)), to: completion)
+                    return
+                }
+                self.withLock {
+                    self.engine.attach(unit)
+                    var chain = self.effectUnits[trackID] ?? []
+                    chain.insert(unit, at: min(max(0, index), chain.count))
+                    self.effectUnits[trackID] = chain
+                    self.rebuildChainLocked(for: trackID)
+                    _ = self.startEngineIfNeeded()
+                }
+                // Same settle rationale as an instrument: many AUv3s will not accept
+                // fullState until a runloop turn after being attached.
+                if let stateData {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Self.instrumentSettleDelay) {
+                        self.withLock {
+                            guard let chain = self.effectUnits[trackID], index < chain.count else { return }
+                            self.applyPluginStateLocked(stateData, to: chain[index])
+                        }
+                        self.deliver(.success(()), to: completion)
+                    }
+                } else {
+                    self.deliver(.success(()), to: completion)
+                }
+            }
+        }
+    }
+
+    func removeEffect(at index: Int, for trackID: UUID) {
+        suspendTrack(trackID)
+        defer { resumeTrack(trackID) }
+        withLock {
+            guard var chain = effectUnits[trackID], chain.indices.contains(index) else { return }
+            let unit = chain.remove(at: index)
+            effectUnits[trackID] = chain
+            engine.disconnectNodeOutput(unit)
+            engine.detach(unit)
+            rebuildChainLocked(for: trackID)
+        }
+    }
+
+    /// Bypass leaves the effect in the graph — and so in the latency sum — rather than
+    /// unplugging it, so toggling it cannot shift the track in time.
+    func setEffectBypassed(_ bypassed: Bool, at index: Int, for trackID: UUID) {
+        withLock {
+            guard let chain = effectUnits[trackID], chain.indices.contains(index) else { return }
+            chain[index].auAudioUnit.shouldBypassEffect = bypassed
+        }
+    }
+
+    func effectUnit(at index: Int, for trackID: UUID) -> AVAudioUnit? {
+        withLock {
+            guard let chain = effectUnits[trackID], chain.indices.contains(index) else { return nil }
+            return chain[index]
+        }
+    }
+
+    func effectCount(for trackID: UUID) -> Int { withLock { effectUnits[trackID]?.count ?? 0 } }
+
+    /// Capture an effect's state, with the track quiesced — same reasoning as
+    /// `captureState` for an instrument.
+    func captureEffectState(at index: Int, for trackID: UUID) -> Data? {
+        suspendTrack(trackID)
+        defer { resumeTrack(trackID) }
+        return withLock {
+            guard let chain = effectUnits[trackID], chain.indices.contains(index) else { return nil }
+            return getPluginStateLocked(from: chain[index])
+        }
+    }
+
+    private func detachEffectsLocked(for trackID: UUID) {
+        for unit in effectUnits.removeValue(forKey: trackID) ?? [] {
+            engine.disconnectNodeOutput(unit)
+            engine.detach(unit)
+        }
+    }
+
     func hasInstrument(for id: UUID) -> Bool {
         withLock { auv3Units[id] != nil || samplers[id] != nil }
     }
@@ -580,6 +695,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                 mixer.removeTap(onBus: 0)
                 engine.detach(mixer)
             }
+            detachEffectsLocked(for: id)
             if let auv3 = auv3Units.removeValue(forKey: id) {
                 // No deallocateRenderResources() here either — see retireInstrument.
                 engine.detach(auv3)
@@ -718,6 +834,12 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
     private func getPluginStateLocked(for id: UUID) -> Data? {
         guard let unit = auv3Units[id] else { return nil }
+        return getPluginStateLocked(from: unit)
+    }
+
+    /// State capture works on any hosted unit — an instrument or an effect. The logic
+    /// below never cared which; it only ever needed the unit.
+    private func getPluginStateLocked(from unit: AVAudioUnit) -> Data? {
         let au = unit.auAudioUnit
 
         // Read the document state first; only fall back to fullState if it's absent.
@@ -794,6 +916,10 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
     private func applyPluginStateLocked(_ data: Data, for id: UUID) {
         guard let unit = auv3Units[id] else { return }
+        applyPluginStateLocked(data, to: unit)
+    }
+
+    private func applyPluginStateLocked(_ data: Data, to unit: AVAudioUnit) {
         let au = unit.auAudioUnit
 
         // Try plist format first (current), fall back to legacy NSKeyedArchiver format.
@@ -874,12 +1000,43 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
+    /// The node the track's audio starts from — its AUv3 instrument, or the GM sampler.
+    private func instrumentNode(for trackID: UUID) -> AVAudioNode? {
+        auv3Units[trackID] ?? samplers[trackID]
+    }
+
+    /// Wire instrument → effects (in order) → mixer.
+    ///
+    /// Everything downstream of the instrument is rebuilt from scratch rather than
+    /// patched, because working out which single connection changed for an insert,
+    /// removal or reorder is more error-prone than redoing a chain that is at most a
+    /// few nodes long. Caller must hold auLock.
+    private func rebuildChainLocked(for trackID: UUID) {
+        guard let mixer = trackMixers[trackID], let source = instrumentNode(for: trackID) else { return }
+        let chain = effectUnits[trackID] ?? []
+
+        engine.disconnectNodeInput(mixer)
+        for unit in chain { engine.disconnectNodeOutput(unit) }
+        engine.disconnectNodeOutput(source)
+
+        // `format: nil` throughout, as for the instrument: let the engine negotiate
+        // rather than forcing stereo, which has silenced plugins here before.
+        var upstream: AVAudioNode = source
+        for unit in chain {
+            engine.connect(upstream, to: unit, format: nil)
+            upstream = unit
+        }
+        engine.connect(upstream, to: mixer, format: nil)
+    }
+
     private func swapInstrument(_ newUnit: AVAudioUnit, for trackID: UUID, mixer: AVAudioMixerNode) {
         withLock {
             retireInstrument(for: trackID, mixer: mixer)
             engine.attach(newUnit)
-            engine.connect(newUnit, to: mixer, format: nil)
             auv3Units[trackID] = newUnit
+            // Through the effects, not straight to the mixer: swapping the instrument
+            // must not silently drop the chain in front of it.
+            rebuildChainLocked(for: trackID)
             _ = startEngineIfNeeded()
         }
     }
@@ -889,9 +1046,9 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             retireInstrument(for: trackID, mixer: mixer)
             let sampler = AVAudioUnitSampler()
             engine.attach(sampler)
-            engine.connect(sampler, to: mixer, format: nil)
             loadGMBank(sampler)
             samplers[trackID] = sampler
+            rebuildChainLocked(for: trackID)
             _ = startEngineIfNeeded()
         }
     }

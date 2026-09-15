@@ -77,6 +77,17 @@ nonisolated enum SongValidator {
         for track in song.tracks {
             try validateDisplayName(track.name, context: "A track")
             try validate(track.pluginInfo, context: "Track \"\(track.name)\"")
+            // Checked against the hard ceiling, not the UI limit, so raising the latter
+            // later cannot make an already-saved song invalid.
+            guard track.effectSlots.count <= SongTrack.effectSlotLimit else {
+                throw SongValidationError.invalid(
+                    "Track \"\(track.name)\" has more than \(SongTrack.effectSlotLimit) effects.")
+            }
+            try requireUnique(track.effectSlots.map(\.id), name: "effect in track \"\(track.name)\"")
+            for slot in track.effectSlots {
+                try validate(slot.pluginInfo, context: "Effect in track \"\(track.name)\"")
+                try validatePluginState(slot.stateData, context: "Effect in track \"\(track.name)\"")
+            }
             try validate(track.mixer, context: "Track \"\(track.name)\"")
             try validatePluginState(track.pluginStateData, context: "Track \"\(track.name)\"")
         }

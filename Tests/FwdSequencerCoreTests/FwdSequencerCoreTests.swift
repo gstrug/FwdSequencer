@@ -1412,6 +1412,69 @@ final class FwdSequencerCoreTests: XCTestCase {
                       "a five-second claim must not push the song five seconds late")
     }
 
+    // MARK: - Effect slots
+
+    /// Songs saved before effects existed must decode unchanged, and a track without
+    /// them must behave exactly as it did.
+    func testSongsWithoutEffectsStillDecode() throws {
+        let json = """
+        {"id":"\(UUID().uuidString)","name":"Old","tempo":120,
+         "timeSignature":{"numerator":4,"denominator":4},"masterVolume":1,
+         "tracks":[{"id":"\(UUID().uuidString)","name":"T",
+                    "mixer":{"volume":0.8,"pan":0,"isMuted":false,"isSoloed":false}}],
+         "sections":[]}
+        """
+        let song = try JSONDecoder().decode(Song.self, from: Data(json.utf8))
+        XCTAssertNil(song.tracks[0].effects)
+        XCTAssertTrue(song.tracks[0].effectSlots.isEmpty, "absent reads as an empty chain")
+    }
+
+    /// A slot round-trips with its state and bypass, and an older slot without the
+    /// bypass key still decodes — the same tolerance every other optional field has.
+    func testEffectSlotsRoundTripAndToleratePartialData() throws {
+        let info = PluginInfo(name: "Reverb", manufacturerName: "Acme",
+                              componentType: 1_635_083_896, componentSubType: 2, componentManufacturer: 3)
+        var track = SongTrack(name: "T")
+        track.effects = [PluginSlot(pluginInfo: info, stateData: Data([1, 2, 3]), isBypassed: true)]
+        var song = Song()
+        song.tracks = [track]
+
+        let decoded = try JSONDecoder().decode(Song.self, from: JSONEncoder().encode(song))
+        let slot = try XCTUnwrap(decoded.tracks[0].effectSlots.first)
+        XCTAssertEqual(slot.pluginInfo.name, "Reverb")
+        XCTAssertEqual(slot.stateData, Data([1, 2, 3]))
+        XCTAssertTrue(slot.bypassed)
+
+        let partial = """
+        {"id":"\(UUID().uuidString)",
+         "pluginInfo":{"id":"\(UUID().uuidString)","name":"Delay","manufacturerName":"A",
+                       "componentType":1,"componentSubType":2,"componentManufacturer":3}}
+        """
+        let bare = try JSONDecoder().decode(PluginSlot.self, from: Data(partial.utf8))
+        XCTAssertNil(bare.stateData)
+        XCTAssertFalse(bare.bypassed, "absent bypass means active")
+    }
+
+    /// The validator enforces the HARD ceiling, not the UI limit, so raising the latter
+    /// cannot retrospectively invalidate songs — which is the point of modelling a list.
+    func testValidatorEnforcesTheHardEffectCeilingNotTheUILimit() throws {
+        let info = PluginInfo(name: "FX", manufacturerName: "A",
+                              componentType: 1, componentSubType: 2, componentManufacturer: 3)
+        var track = SongTrack(name: "T")
+        var song = Song()
+
+        // More than the UI allows today, but within the ceiling: must remain valid.
+        track.effects = (0..<SongTrack.effectSlotLimit).map { _ in PluginSlot(pluginInfo: info) }
+        song.tracks = [track]
+        song.sections = [SongSection(name: "A", parts: [Part(trackID: track.id)])]
+        XCTAssertGreaterThan(SongTrack.effectSlotLimit, SongTrack.maximumEffects)
+        XCTAssertNoThrow(try SongValidator.validateAndNormalize(song))
+
+        track.effects = (0...SongTrack.effectSlotLimit).map { _ in PluginSlot(pluginInfo: info) }
+        song.tracks = [track]
+        XCTAssertThrowsError(try SongValidator.validateAndNormalize(song))
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)

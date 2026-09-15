@@ -7,6 +7,10 @@ class PluginManager: ObservableObject {
     static let shared = PluginManager()
 
     @Published var instruments: [PluginInfo] = []
+    /// Effects, scanned alongside instruments. `aufx` is the plain audio effect;
+    /// `aumf` is a music effect, which also takes MIDI — both sit in a track's chain
+    /// the same way, so they are listed together.
+    @Published var effects: [PluginInfo] = []
     @Published var isScanning = false
     @Published private(set) var favoriteIdentifiers: Set<String>
 
@@ -51,26 +55,28 @@ class PluginManager: ObservableObject {
     }
 
     private func performScan() {
-        var seen = Set<String>()
-        var results: [PluginInfo] = []
-
-        // Instruments only ("aumu").
-        let instrDesc = AudioComponentDescription(
-            componentType: kAudioUnitType_MusicDevice, componentSubType: 0,
-            componentManufacturer: 0,
-            componentFlags: 0, componentFlagsMask: 0
-        )
-        for c in AVAudioUnitComponentManager.shared().components(matching: instrDesc) {
-            let key = makeKey(c.audioComponentDescription)
-            guard seen.insert(key).inserted else { continue }
-            results.append(makeInfo(c))
-        }
-
-        let sorted = results.sorted { $0.name < $1.name }
+        let foundInstruments = scan(type: kAudioUnitType_MusicDevice)
+        let foundEffects = (scan(type: kAudioUnitType_Effect) + scan(type: kAudioUnitType_MusicEffect))
+            .sorted { $0.name < $1.name }
         DispatchQueue.main.async { [weak self] in
-            self?.instruments = sorted
+            self?.instruments = foundInstruments
+            self?.effects = foundEffects
             self?.isScanning = false
         }
+    }
+
+    private func scan(type: OSType) -> [PluginInfo] {
+        var seen = Set<String>()
+        var results: [PluginInfo] = []
+        let desc = AudioComponentDescription(
+            componentType: type, componentSubType: 0, componentManufacturer: 0,
+            componentFlags: 0, componentFlagsMask: 0
+        )
+        for c in AVAudioUnitComponentManager.shared().components(matching: desc) {
+            guard seen.insert(makeKey(c.audioComponentDescription)).inserted else { continue }
+            results.append(makeInfo(c))
+        }
+        return results.sorted { $0.name < $1.name }
     }
 
     private func makeKey(_ d: AudioComponentDescription) -> String {

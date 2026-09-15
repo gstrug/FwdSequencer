@@ -57,6 +57,39 @@ nonisolated struct Song: Codable, Identifiable, Equatable {
     var performance: SongTrack? = nil
 }
 
+/// One AUv3 effect in a track's chain.
+///
+/// Modelled as an element of a LIST from the outset even though the UI allows one, so
+/// raising the limit is a change to `SongTrack.maximumEffects` and the chain wiring
+/// rather than a migration of every saved song. The plumbing beneath — per-slot state,
+/// load tracking, latency — is written for N and costs nothing extra at one.
+nonisolated struct PluginSlot: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    var pluginInfo: PluginInfo
+    /// PropertyList-serialised AUv3 state, exactly as for an instrument.
+    var stateData: Data? = nil
+    /// Optional so slots saved before bypass existed still decode; nil means active.
+    var isBypassed: Bool? = nil
+
+    var bypassed: Bool { isBypassed == true }
+
+    init(id: UUID = UUID(), pluginInfo: PluginInfo, stateData: Data? = nil,
+         isBypassed: Bool? = nil) {
+        self.id = id; self.pluginInfo = pluginInfo
+        self.stateData = stateData; self.isBypassed = isBypassed
+    }
+
+    // Tolerant decoder: the synthesised one throws on a missing key even with a default.
+    private enum CodingKeys: String, CodingKey { case id, pluginInfo, stateData, isBypassed }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        pluginInfo = try c.decode(PluginInfo.self, forKey: .pluginInfo)
+        stateData = try c.decodeIfPresent(Data.self, forKey: .stateData)
+        isBypassed = try c.decodeIfPresent(Bool.self, forKey: .isBypassed)
+    }
+}
+
 nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     var id: UUID = UUID()             // stable instrument key in AudioEngineManager
     var name: String = "Track"
@@ -64,6 +97,22 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     var pluginStateData: Data? = nil  // song-level sound (see AudioEngineManager.getPluginState)
     var mixer: MixerState = MixerState()
     var collapsed: Bool? = nil        // persisted minimized state (Optional → old songs decode)
+
+    /// AUv3 effects between this track's instrument and its mixer, in signal order.
+    /// Optional so songs saved before effects existed decode unchanged.
+    var effects: [PluginSlot]? = nil
+
+    /// How many effects the UI offers. Deliberately a constant rather than a shape in
+    /// the data: everything under it is built for a list, so raising this is a UI change
+    /// and a graph-wiring change, not a format migration. Held at one until the runtime
+    /// cost of more — load time behind the blocking overlay, and CPU — is known on real
+    /// hardware, which is not something that can be settled by reading code.
+    static let maximumEffects = 1
+    /// The hard ceiling the validator enforces, so raising the UI limit later cannot
+    /// make already-saved songs invalid.
+    static let effectSlotLimit = 8
+
+    var effectSlots: [PluginSlot] { effects ?? [] }
 
     // MARK: Feel
     //

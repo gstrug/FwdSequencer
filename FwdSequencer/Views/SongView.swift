@@ -263,6 +263,10 @@ private struct SongTransportBar: View {
 
                         Divider().frame(height: 26)
                         SongBarCounter(totalBars: currentSectionBars)
+
+                        Divider().frame(height: 26)
+
+                        CPUReadout()
                         Divider().frame(height: 26)
 
                         HStack(spacing: 4) {
@@ -804,6 +808,37 @@ private struct SectionSnapshotsSheet: View {
     }
 }
 
+/// Process CPU load, as a fraction of one core.
+///
+/// Hosting AUv3s is where this app spends its time and the ceiling is real — a single
+/// master limiter once caused audible crackle with a heavy sampled instrument. With
+/// effects able to multiply that, the point is to watch the limit approach rather than
+/// meet it as a dropout.
+private struct CPUReadout: View {
+    @StateObject private var monitor = CPUMonitor()
+
+    private var tint: Color {
+        monitor.load >= CPUMonitor.warningLoad ? .orange
+            : monitor.load >= CPUMonitor.warningLoad * 0.7 ? .yellow : .secondary
+    }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "cpu").font(.caption2)
+            Text("\(Int((monitor.load * 100).rounded()))%")
+                .font(.caption.monospacedDigit())
+                // Fixed width so the transport does not shuffle as the number changes.
+                .frame(minWidth: 34, alignment: .trailing)
+        }
+        .foregroundStyle(tint)
+        .fixedSize()
+        .help("Processor load. Hosted plugins are the main cost; crackle and dropouts "
+              + "start when this runs out.")
+        .onAppear { monitor.start() }
+        .onDisappear { monitor.stop() }
+    }
+}
+
 // MARK: - Song track row
 
 private struct SongTrackRowView: View {
@@ -814,6 +849,7 @@ private struct SongTrackRowView: View {
     @Binding var isCollapsed: Bool
     @EnvironmentObject var songStore: SongStore
 
+    @State private var showEffects = false
     @State private var showPluginPicker = false
     @State private var showPluginEditor = false
     @State private var showSteps = false
@@ -1000,6 +1036,9 @@ private struct SongTrackRowView: View {
                 let target = pinnedPartBinding(sectionID: sectionID)
                 StepsView(steps: target.steps, noteCount: target.wrappedValue.notePool.count)
             }
+        }
+        .sheet(isPresented: $showEffects) {
+            TrackEffectsView(trackID: track.id)
         }
         .sheet(isPresented: $showNoteParams, onDismiss: {
             noteParametersSectionID = nil
@@ -1300,6 +1339,14 @@ private struct SongTrackRowView: View {
                         }
                     } label: {
                         Label("Timing", systemImage: "waveform.path")
+                    }
+
+                    Divider()
+
+                    Button { showEffects = true } label: {
+                        Label(track.effectSlots.isEmpty
+                              ? "Effects" : "Effects (\(track.effectSlots.count))",
+                              systemImage: "fx")
                     }
 
                     Divider()

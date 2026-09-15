@@ -49,6 +49,7 @@ struct SongMixerView: View {
 
 struct SongChannelStrip: View {
     @Binding var track: SongTrack
+    @State private var showEffects = false
 
     var body: some View {
         VStack(spacing: 14) {
@@ -61,6 +62,17 @@ struct SongChannelStrip: View {
             FaderWithMeter(value: $track.mixer.volume) { TrackVUMeter(trackID: track.id) }
 
             Text("Vol").font(.caption2).foregroundStyle(.secondary)
+
+            // Inserts belong on the channel strip, as in a DAW — the sequencer rows
+            // stay about notes.
+            Button { showEffects = true } label: {
+                Label(track.effectSlots.isEmpty ? "FX" : "FX \(track.effectSlots.count)",
+                      systemImage: "fx")
+                    .font(.caption2)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .sheet(isPresented: $showEffects) { TrackEffectsView(trackID: track.id) }
 
             VStack(spacing: 2) {
                 Text(panLabel).font(.caption2).monospacedDigit()
