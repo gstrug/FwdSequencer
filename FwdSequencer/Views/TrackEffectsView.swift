@@ -27,12 +27,17 @@ struct TrackEffectsView: View {
                         ForEach(Array(slots.enumerated()), id: \.element.id) { index, slot in
                             row(index: index, slot: slot)
                         }
+                        .onMove { source, destination in
+                            songStore.moveEffects(from: source, to: destination, for: trackID)
+                        }
                     }
                 } header: {
                     Text("Chain")
                 } footer: {
                     Text("Effects process this track's instrument before it reaches the "
-                         + "mixer. Their own settings are saved with the song.")
+                         + "mixer, top to bottom. Their own settings are saved with the "
+                         + "song."
+                         + (slots.count > 1 ? " Use Edit to reorder them." : ""))
                 }
 
                 Section {
@@ -56,6 +61,10 @@ struct TrackEffectsView: View {
             .navigationTitle(track?.name ?? "Effects")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                // Only worth offering once there is an order to change.
+                if slots.count > 1 {
+                    ToolbarItem(placement: .navigationBarLeading) { EditButton() }
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }

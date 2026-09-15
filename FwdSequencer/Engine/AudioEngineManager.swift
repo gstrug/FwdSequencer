@@ -632,6 +632,29 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
+    /// Reorder the chain, matching the move semantics the list UI uses so the graph and
+    /// the model cannot disagree about what an order means.
+    ///
+    /// Spelled out rather than calling `move(fromOffsets:toOffset:)`, which comes from
+    /// SwiftUI — the audio layer has no business importing it. `destination` indexes the
+    /// array BEFORE anything is removed, hence the adjustment.
+    func moveEffect(from source: IndexSet, to destination: Int, for trackID: UUID) {
+        suspendTrack(trackID)
+        defer { resumeTrack(trackID) }
+        withLock {
+            guard let chain = effectUnits[trackID], !chain.isEmpty else { return }
+            let moving = source.sorted().compactMap { chain.indices.contains($0) ? chain[$0] : nil }
+            guard !moving.isEmpty else { return }
+            var remaining = chain.enumerated()
+                .filter { !source.contains($0.offset) }
+                .map(\.element)
+            let insertAt = destination - source.filter { $0 < destination }.count
+            remaining.insert(contentsOf: moving, at: min(max(0, insertAt), remaining.count))
+            effectUnits[trackID] = remaining
+            rebuildChainLocked(for: trackID)
+        }
+    }
+
     func removeEffect(at index: Int, for trackID: UUID) {
         suspendTrack(trackID)
         defer { resumeTrack(trackID) }

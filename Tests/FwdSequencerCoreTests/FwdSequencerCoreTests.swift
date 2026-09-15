@@ -1467,12 +1467,36 @@ final class FwdSequencerCoreTests: XCTestCase {
         track.effects = (0..<SongTrack.effectSlotLimit).map { _ in PluginSlot(pluginInfo: info) }
         song.tracks = [track]
         song.sections = [SongSection(name: "A", parts: [Part(trackID: track.id)])]
-        XCTAssertGreaterThan(SongTrack.effectSlotLimit, SongTrack.maximumEffects)
+        XCTAssertGreaterThanOrEqual(SongTrack.effectSlotLimit, SongTrack.maximumEffects,
+                                    "the UI limit must never exceed the validator's ceiling")
         XCTAssertNoThrow(try SongValidator.validateAndNormalize(song))
 
         track.effects = (0...SongTrack.effectSlotLimit).map { _ in PluginSlot(pluginInfo: info) }
         song.tracks = [track]
         XCTAssertThrowsError(try SongValidator.validateAndNormalize(song))
+    }
+
+    /// Order is signal order, so a chain of more than one needs reordering to be usable.
+    /// The model's move must match the list UI's semantics — `destination` indexes the
+    /// array BEFORE anything is removed — or the graph and the model would disagree.
+    func testReorderingEffectsMatchesTheListMoveSemantics() {
+        func info(_ name: String) -> PluginInfo {
+            PluginInfo(name: name, manufacturerName: "A",
+                       componentType: 1, componentSubType: 2, componentManufacturer: 3)
+        }
+        var slots = ["A", "B", "C", "D"].map { PluginSlot(pluginInfo: info($0)) }
+
+        // Move the first to the end: SwiftUI passes count, not count - 1.
+        slots.move(fromOffsets: IndexSet(integer: 0), toOffset: 4)
+        XCTAssertEqual(slots.map(\.pluginInfo.name), ["B", "C", "D", "A"])
+
+        // And back to the front.
+        slots.move(fromOffsets: IndexSet(integer: 3), toOffset: 0)
+        XCTAssertEqual(slots.map(\.pluginInfo.name), ["A", "B", "C", "D"])
+
+        // A move to a later position drops by one for the item removed ahead of it.
+        slots.move(fromOffsets: IndexSet(integer: 0), toOffset: 2)
+        XCTAssertEqual(slots.map(\.pluginInfo.name), ["B", "A", "C", "D"])
     }
 
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {

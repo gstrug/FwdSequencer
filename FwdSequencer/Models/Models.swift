@@ -103,11 +103,16 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     var effects: [PluginSlot]? = nil
 
     /// How many effects the UI offers. Deliberately a constant rather than a shape in
-    /// the data: everything under it is built for a list, so raising this is a UI change
-    /// and a graph-wiring change, not a format migration. Held at one until the runtime
-    /// cost of more — load time behind the blocking overlay, and CPU — is known on real
-    /// hardware, which is not something that can be settled by reading code.
-    static let maximumEffects = 1
+    /// the data: everything under it is built for a list, so raising it is this line —
+    /// the graph already wires a chain of any length, and saved songs need no migration.
+    ///
+    /// Started at one so the runtime cost could be measured on real hardware rather than
+    /// guessed. Four is a working chain — EQ, compressor, delay, reverb — and leaves
+    /// `effectSlotLimit` as headroom. What governs going further is the CPU readout on
+    /// the transport, not anything that can be settled by reading code: each slot is
+    /// another out-of-process extension to instantiate behind the loading overlay and
+    /// another renderer competing for the same buffer.
+    static let maximumEffects = 4
     /// The hard ceiling the validator enforces, so raising the UI limit later cannot
     /// make already-saved songs invalid.
     static let effectSlotLimit = 8

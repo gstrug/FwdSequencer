@@ -789,6 +789,17 @@ class SongStore: ObservableObject {
         }
     }
 
+    /// Order is signal order, so moving a slot rewires the chain. The identical move is
+    /// applied to the model and to the units, which keeps them in step by construction.
+    func moveEffects(from source: IndexSet, to destination: Int, for trackID: UUID) {
+        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        var slots = song.tracks[idx].effectSlots
+        guard !slots.isEmpty else { return }
+        slots.move(fromOffsets: source, toOffset: destination)
+        song.tracks[idx].effects = slots
+        audioEngine.moveEffect(from: source, to: destination, for: trackID)
+    }
+
     func removeEffect(at index: Int, from trackID: UUID) {
         guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
         var slots = song.tracks[idx].effectSlots
