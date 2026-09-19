@@ -8,11 +8,21 @@ enum TrackPluginStatus: Equatable {
     case failed(String)
 }
 
+/// Reshapes a section's note pools in place.
+///
+/// Two cases were dropped. **Flip Direction** swapped every Fwd for a Back, which for a
+/// typical sequence lands in nearly the same place as Reverse Notes — walking a reversed
+/// pool forwards differs from walking the original backwards only in where the pointer
+/// starts. Two controls for one idea, told apart by a detail nobody could predict from
+/// the names.
+///
+/// **Evolve** changed a single step to a random type, which was too small to be worth a
+/// press, and did it by advancing `song.randomSeed` — the seed behind every Random step
+/// in the WHOLE song and all of its derived feel. Using it on one section silently
+/// re-rolled the others. Generating steps replaces it and leaves the seed alone.
 enum SectionTransform: String, CaseIterable, Identifiable {
     case rotateNotes = "Rotate Notes"
     case reverseNotes = "Reverse Notes"
-    case flipDirection = "Flip Direction"
-    case evolve = "Evolve One Step"
 
     var id: String { rawValue }
 
@@ -20,8 +30,6 @@ enum SectionTransform: String, CaseIterable, Identifiable {
         switch self {
         case .rotateNotes: return "arrow.triangle.2.circlepath"
         case .reverseNotes: return "arrow.left.arrow.right"
-        case .flipDirection: return "arrow.uturn.left"
-        case .evolve: return "wand.and.stars"
         }
     }
 }
@@ -888,28 +896,6 @@ class SongStore: ObservableObject {
             for index in song.sections[selectedSection].parts.indices {
                 song.sections[selectedSection].parts[index].notePool.reverse()
             }
-        case .flipDirection:
-            for partIndex in song.sections[selectedSection].parts.indices {
-                for stepIndex in song.sections[selectedSection].parts[partIndex].steps.indices {
-                    let type = song.sections[selectedSection].parts[partIndex].steps[stepIndex].type
-                    if type == .fwd { song.sections[selectedSection].parts[partIndex].steps[stepIndex].type = .back }
-                    else if type == .back { song.sections[selectedSection].parts[partIndex].steps[stepIndex].type = .fwd }
-                }
-            }
-        case .evolve:
-            var seed = song.randomSeed ?? Self.seed(from: song.id)
-            seed &+= 0x9E3779B97F4A7C15
-            var generator = SeededRandomGenerator(seed: seed)
-            let candidates: [StepType] = [.fwd, .back, .rep, .random, .hold, .pause]
-            for partIndex in song.sections[selectedSection].parts.indices {
-                guard !song.sections[selectedSection].parts[partIndex].steps.isEmpty else { continue }
-                let stepIndex = generator.nextIndex(
-                    upperBound: song.sections[selectedSection].parts[partIndex].steps.count
-                )
-                let typeIndex = generator.nextIndex(upperBound: candidates.count)
-                song.sections[selectedSection].parts[partIndex].steps[stepIndex].type = candidates[typeIndex]
-            }
-            song.randomSeed = seed
         }
     }
 
@@ -921,6 +907,34 @@ class SongStore: ObservableObject {
     /// in the UI so the rule lives with the operations rather than with the buttons.
     var canAlterSelectedSection: Bool {
         holdsSection && song.sections.indices.contains(selectedSection)
+    }
+
+    // MARK: - Generating steps
+
+    /// Replace the step sequences of the given tracks in the selected section.
+    ///
+    /// Each track gets its OWN sequence — one shared draw would have every instrument
+    /// moving in lockstep, which is the opposite of what this is for. Seeded from a
+    /// fresh value each press so repeated presses explore, while any single result stays
+    /// reproducible once saved.
+    ///
+    /// Deliberately does NOT touch `song.randomSeed`, unlike the Evolve it replaces:
+    /// that seed drives Random steps and derived feel across the entire song, so
+    /// generating steps in one section must not disturb any other.
+    func generateSteps(count: Int, character: StepCharacter, for trackIDs: Set<UUID>) {
+        guard canAlterSelectedSection, !trackIDs.isEmpty else { return }
+        reportDroppedSnapshot(
+            song.sections[selectedSection].saveSnapshot(named: "Before \(character.rawValue)")
+        )
+        var seed = UInt64.random(in: UInt64.min...UInt64.max)
+        for index in song.sections[selectedSection].parts.indices
+        where trackIDs.contains(song.sections[selectedSection].parts[index].trackID) {
+            let poolSize = song.sections[selectedSection].parts[index].notePool.count
+            song.sections[selectedSection].parts[index].steps = StepGenerator.steps(
+                count: count, character: character, poolSize: poolSize, seed: seed
+            )
+            seed &+= 0x9E3779B97F4A7C15
+        }
     }
 
     /// Snapshot semantics live on SongSection; these wrap them for the selected section

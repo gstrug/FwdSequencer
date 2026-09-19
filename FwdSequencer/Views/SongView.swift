@@ -568,6 +568,7 @@ private struct SectionSettingsBar: View {
     @State private var selectAllName = false
 
     @State private var showSnapshots = false
+    @State private var showGenerate = false
 
     var body: some View {
         let sel = songStore.selectedSection
@@ -614,6 +615,15 @@ private struct SectionSettingsBar: View {
                       ? "Reshape this section's notes and steps in place. A snapshot is saved first, so you can get back."
                       : "Turn on Hold first — a transform is only worth judging by ear, and Hold repeats this section so you can hear it.")
 
+                Button { showGenerate = true } label: {
+                    Label("Generate", systemImage: "dice")
+                }
+                .buttonStyle(.bordered)
+                .disabled(!songStore.canAlterSelectedSection)
+                .help(songStore.canAlterSelectedSection
+                      ? "Build new step sequences for this section and re-roll until one catches"
+                      : "Turn on Hold first — generating is only worth doing while you can hear it.")
+
                 // A sheet rather than a Menu: snapshots are renameable now, and a menu
                 // cannot host an editable text field.
                 Button { showSnapshots = true } label: {
@@ -652,6 +662,7 @@ private struct SectionSettingsBar: View {
         .padding(.vertical, 6)
         .background(.regularMaterial)
         .sheet(isPresented: $showSnapshots) { SectionSnapshotsSheet() }
+        .sheet(isPresented: $showGenerate) { GenerateStepsView() }
     }
 }
 

@@ -1499,6 +1499,121 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(slots.map(\.pluginInfo.name), ["B", "A", "C", "D"])
     }
 
+    // MARK: - Generated steps
+
+    /// Seeded, so a generated part reproduces on reload and in export like everything
+    /// else — and so re-rolling means passing a different seed rather than getting an
+    /// unrepeatable result.
+    func testGeneratedStepsAreReproducibleAndVaryWithTheSeed() {
+        let a = StepGenerator.steps(count: 16, character: .flowing, poolSize: 5, seed: 42)
+        let b = StepGenerator.steps(count: 16, character: .flowing, poolSize: 5, seed: 42)
+        XCTAssertEqual(a.map(\.label), b.map(\.label), "same seed, same sequence")
+
+        let c = StepGenerator.steps(count: 16, character: .flowing, poolSize: 5, seed: 43)
+        XCTAssertNotEqual(a.map(\.label), c.map(\.label), "a different seed must explore")
+        XCTAssertEqual(c.count, 16)
+    }
+
+    /// The rules that stop a generated sequence reading as a broken generator rather
+    /// than a musical choice: it must open on something audible, and it must not fall
+    /// silent for long stretches.
+    func testGeneratedSequencesStartSoundingAndDoNotStallInSilence() {
+        for character in StepCharacter.allCases {
+            for seed in UInt64(1)...40 {
+                let steps = StepGenerator.steps(count: 32, character: character,
+                                                poolSize: 6, seed: seed)
+                XCTAssertEqual(steps.count, 32)
+
+                let first = try? XCTUnwrap(steps.first)
+                XCTAssertNotEqual(first?.type, .hold,
+                                  "\(character) seed \(seed): nothing to hold at the start")
+                XCTAssertNotEqual(first?.type, .pause,
+                                  "\(character) seed \(seed): must not open on silence")
+
+                var run = 0
+                for step in steps {
+                    run = (step.type == .hold || step.type == .pause) ? run + 1 : 0
+                    XCTAssertLessThanOrEqual(run, 3,
+                        "\(character) seed \(seed): \(run) rests in a row is a gap, not phrasing")
+                }
+            }
+        }
+    }
+
+    /// Character has to mean something, or it is a decorative control. Sparse must
+    /// genuinely rest more than Flowing, and Jumpy must move further.
+    func testCharactersProduceMeasurablyDifferentSequences() {
+        func profile(_ character: StepCharacter) -> (rests: Int, reach: Int) {
+            var rests = 0, reach = 0
+            for seed in UInt64(1)...60 {
+                for step in StepGenerator.steps(count: 32, character: character,
+                                                poolSize: 8, seed: seed) {
+                    if step.type == .hold || step.type == .pause { rests += 1 }
+                    if step.type == .fwd || step.type == .back { reach += step.n }
+                }
+            }
+            return (rests, reach)
+        }
+
+        let flowing = profile(.flowing), sparse = profile(.sparse), jumpy = profile(.jumpy)
+        // Sparse is defined by rests, and must be unmistakably airier than the others —
+        // not marginally so, or the choice is decorative.
+        XCTAssertGreaterThan(sparse.rests, flowing.rests * 2, "Sparse must rest far more")
+        XCTAssertGreaterThan(sparse.rests, jumpy.rests * 2)
+        // Flowing and Jumpy are deliberately NOT separated by rests: neither is about
+        // silence. They are told apart by reach and by how often they leap or surprise,
+        // which is what the assertions below measure.
+
+        // Average distance per move, so the comparison is not just "Jumpy moves more often".
+        func averageStride(_ character: StepCharacter) -> Double {
+            var total = 0, moves = 0
+            for seed in UInt64(1)...60 {
+                for step in StepGenerator.steps(count: 32, character: character,
+                                                poolSize: 8, seed: seed)
+                where step.type == .fwd || step.type == .back {
+                    total += step.n; moves += 1
+                }
+            }
+            return moves == 0 ? 0 : Double(total) / Double(moves)
+        }
+        XCTAssertGreaterThan(averageStride(.jumpy), averageStride(.flowing) + 0.4,
+                             "Jumpy must leap further, not merely more often")
+
+        // And it must actually surprise: Play and Random carry the unpredictability.
+        func surprises(_ character: StepCharacter) -> Int {
+            var count = 0
+            for seed in UInt64(1)...60 {
+                for step in StepGenerator.steps(count: 32, character: character,
+                                                poolSize: 8, seed: seed)
+                where step.type == .play || step.type == .random { count += 1 }
+            }
+            return count
+        }
+        XCTAssertGreaterThan(surprises(.jumpy), surprises(.flowing) * 2,
+                             "Jumpy must leap about the pool, not walk it")
+    }
+
+    /// Play steps index the pool, so a generated one must never name a position that is
+    /// not there — the tick loop would skip it and the step would be silently dead.
+    func testGeneratedPlayStepsStayInsideTheNotePool() {
+        for poolSize in 1...8 {
+            for character in StepCharacter.allCases {
+                for seed in UInt64(1)...25 {
+                    for step in StepGenerator.steps(count: 24, character: character,
+                                                    poolSize: poolSize, seed: seed)
+                    where step.type == .play {
+                        XCTAssertTrue((1...poolSize).contains(step.n),
+                                      "pool \(poolSize): Play \(step.n) is out of range")
+                        for position in step.chordPositions {
+                            XCTAssertTrue((1...poolSize).contains(position),
+                                          "pool \(poolSize): chord position \(position) is out of range")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)
