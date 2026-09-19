@@ -443,11 +443,16 @@ private extension View {
 
 // MARK: - Arrangement strip
 
+/// Identifiable wrapper so a section index can drive `.sheet(item:)`.
+private struct SectionTarget: Identifiable {
+    let index: Int
+    var id: Int { index }
+}
+
 private struct ArrangementStrip: View {
     @EnvironmentObject var songStore: SongStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var renaming: Int? = nil
-    @State private var renameText = ""
+    @State private var editingSection: Int? = nil
 
     var body: some View {
         HStack(spacing: 8) {
@@ -472,30 +477,8 @@ private struct ArrangementStrip: View {
                 }
             }
 
-            let sel = songStore.selectedSection
             Menu {
-                Button { songStore.addSection() } label: {
-                    Label("Add Section", systemImage: "plus")
-                }
-                .disabled(songStore.song.sections.count >= SongStore.maximumEditableSectionCount)
-                Button { songStore.duplicateSection(at: sel) } label: {
-                    Label("Duplicate Selected", systemImage: "plus.square.on.square")
-                }
-                .disabled(songStore.song.sections.count >= SongStore.maximumEditableSectionCount)
-                Divider()
-                Button { songStore.moveSection(from: sel, to: sel - 1) } label: {
-                    Label("Move Earlier", systemImage: "arrow.left")
-                }
-                .disabled(sel <= 0)
-                Button { songStore.moveSection(from: sel, to: sel + 1) } label: {
-                    Label("Move Later", systemImage: "arrow.right")
-                }
-                .disabled(sel >= songStore.song.sections.count - 1)
-                Divider()
-                Button(role: .destructive) { songStore.deleteSection(at: sel) } label: {
-                    Label("Delete Selected", systemImage: "trash")
-                }
-                .disabled(songStore.song.sections.count <= 1)
+                sectionActions(for: songStore.selectedSection)
             } label: {
                 Label("Section", systemImage: "ellipsis.circle")
                     .frame(minHeight: 44)
@@ -504,20 +487,62 @@ private struct ArrangementStrip: View {
             .padding(.trailing, 8)
         }
         .background(.regularMaterial)
-        .alert("Rename Section", isPresented: Binding(
-            get: { renaming != nil }, set: { if !$0 { renaming = nil } }
-        )) {
-            TextField("Name", text: $renameText)
-            Button("Rename") {
-                if let i = renaming, songStore.song.sections.indices.contains(i) {
-                    songStore.song.sections[i].name = String(renameText.prefix(SongValidator.maximumNameLength))
-                }
-                renaming = nil
-            }
-            Button("Cancel", role: .cancel) { renaming = nil }
+        .sheet(item: Binding(
+            get: { editingSection.map { SectionTarget(index: $0) } },
+            set: { editingSection = $0?.index }
+        )) { target in
+            SectionEditorSheet(sectionIndex: target.index)
         }
     }
 
+    /// The actions for one section. Shared by the Section button and by a long press on
+    /// a chip, so the two cannot drift apart.
+    @ViewBuilder
+    private func sectionActions(for index: Int) -> some View {
+        Button {
+            songStore.selectedSection = index
+            editingSection = index
+        } label: {
+            Label("Rename & Length…", systemImage: "pencil")
+        }
+        Divider()
+        Button { songStore.addSection() } label: {
+            Label("Add Section", systemImage: "plus")
+        }
+        .disabled(songStore.song.sections.count >= SongStore.maximumEditableSectionCount)
+        Button { songStore.duplicateSection(at: index) } label: {
+            Label("Duplicate", systemImage: "plus.square.on.square")
+        }
+        .disabled(songStore.song.sections.count >= SongStore.maximumEditableSectionCount)
+        Divider()
+        Button { songStore.moveSection(from: index, to: index - 1) } label: {
+            Label("Move Earlier", systemImage: "arrow.left")
+        }
+        .disabled(index <= 0)
+        Button { songStore.moveSection(from: index, to: index + 1) } label: {
+            Label("Move Later", systemImage: "arrow.right")
+        }
+        .disabled(index >= songStore.song.sections.count - 1)
+        Divider()
+        Button(role: .destructive) { songStore.deleteSection(at: index) } label: {
+            Label("Delete", systemImage: "trash")
+        }
+        .disabled(songStore.song.sections.count <= 1)
+    }
+
+    @ViewBuilder
+    /// Built outside the view body: inline, this concatenation pushed the SwiftUI
+    /// type-checker past its limit once the chip gained a context menu.
+    private func chipAccessibilityValue(_ section: SongSection,
+                                        isSelected: Bool, isPlaying: Bool) -> String {
+        var value = "\(section.numberOfBars) bars"
+        if isSelected { value += ", selected" }
+        if isPlaying { value += ", playing" }
+        return value
+    }
+
+    // @ViewBuilder so the body can keep its local lets: without it the function needs
+    // an explicit return, and the chain is long enough that inference gives up.
     @ViewBuilder
     private func chip(_ idx: Int, _ section: SongSection) -> some View {
         let isSelected = songStore.selectedSection == idx
@@ -541,22 +566,18 @@ private struct ArrangementStrip: View {
         )
         .contentShape(Rectangle())
         .onTapGesture { songStore.selectedSection = idx }
-        .onLongPressGesture {
-            renameText = section.name
-            renaming = idx
-        }
+        // Long press gives the whole menu for THIS section, not just rename — the same
+        // actions the Section button offers, without having to select it first.
+        .contextMenu { sectionActions(for: idx) }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel("Section \(idx + 1), \(section.name)")
-        .accessibilityValue(
-            "\(section.numberOfBars) bars"
-                + (isSelected ? ", selected" : "")
-                + (isPlaying ? ", playing" : "")
-        )
+        .accessibilityValue(chipAccessibilityValue(section, isSelected: isSelected,
+                                                   isPlaying: isPlaying))
         .accessibilityAction { songStore.selectedSection = idx }
-        .accessibilityAction(named: Text("Rename section")) {
-            renameText = section.name
-            renaming = idx
+        .accessibilityAction(named: Text("Edit section")) {
+            songStore.selectedSection = idx
+            editingSection = idx
         }
     }
 }
@@ -565,38 +586,41 @@ private struct ArrangementStrip: View {
 
 private struct SectionSettingsBar: View {
     @EnvironmentObject var songStore: SongStore
-    @State private var selectAllName = false
-
     @State private var showSnapshots = false
     @State private var showGenerate = false
+
+    /// Names the interval as well as the count — "7 semitones" is a fifth, and knowing
+    /// that is the difference between choosing one and guessing.
+    private func transposeLabel(_ semitones: Int) -> String {
+        let names = ["", "Semitone", "Whole tone", "Minor third", "Major third",
+                     "Fourth", "Tritone", "Fifth", "Minor sixth", "Major sixth",
+                     "Minor seventh", "Major seventh", "Octave"]
+        let interval = semitones < names.count ? names[semitones] : ""
+        return interval.isEmpty ? "\(semitones)" : "\(semitones) — \(interval)"
+    }
+
+    /// Pulled out of the view body: inline, the string building pushed the SwiftUI
+    /// type-checker past its limit for the whole bar.
+    private func barsLabel(_ index: Int) -> String {
+        guard songStore.song.sections.indices.contains(index) else { return "" }
+        let bars = songStore.song.sections[index].numberOfBars
+        return "\(bars) bar" + (bars == 1 ? "" : "s")
+    }
 
     var body: some View {
         let sel = songStore.selectedSection
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
                 if songStore.song.sections.indices.contains(sel) {
+                // Name and length are not here any more: they are set once per section
+                // and then permanently in the way. They live in the section menu and on
+                // a long press of a section, which leaves this bar for the tools that
+                // are used over and over. Shown read-only so you still know where you are.
                 Image(systemName: "square.stack").foregroundStyle(.secondary)
-                // Inline, editable name — same as track naming: long-press to select all.
-                SelectAllTextField(
-                    text: $songStore.song.sections[sel].name,
-                    placeholder: "Section",
-                    font: .preferredBold(.caption1),
-                    selectAllTrigger: $selectAllName
-                )
-                .frame(maxWidth: 160)
-                .onLongPressGesture { selectAllName = true }
-                // Rebuild the field when the selected section changes, so the reused
-                // UITextField can't carry a stale cursor/text between sections.
-                .id(songStore.song.sections[sel].id)
-
-                Divider().frame(height: 20)
-
-                Text("Bars").font(.caption).foregroundStyle(.secondary)
-                Stepper(value: $songStore.song.sections[sel].numberOfBars, in: 1...256) {
-                    Text("\(songStore.song.sections[sel].numberOfBars)")
-                        .font(.caption.monospacedDigit()).frame(minWidth: 18)
-                }
-                .fixedSize()
+                Text(songStore.song.sections[sel].name)
+                    .font(.caption.bold()).lineLimit(1)
+                Text(barsLabel(sel))
+                    .font(.caption2).foregroundStyle(.secondary)
 
                 Divider().frame(height: 20)
 
@@ -605,6 +629,30 @@ private struct SectionSettingsBar: View {
                         Button { songStore.transformSelectedSection(transform) } label: {
                             Label(transform.rawValue, systemImage: transform.systemImage)
                         }
+                    }
+
+                    Divider()
+
+                    // Up to an octave each way. Further than that is the same move
+                    // applied twice, which is easier to offer than a list of 24.
+                    Menu {
+                        ForEach((1...12).reversed(), id: \.self) { semitones in
+                            Button { songStore.transposeSelectedSection(by: semitones) } label: {
+                                Text(transposeLabel(semitones))
+                            }
+                        }
+                    } label: {
+                        Label("Transpose Up", systemImage: "arrow.up")
+                    }
+
+                    Menu {
+                        ForEach(1...12, id: \.self) { semitones in
+                            Button { songStore.transposeSelectedSection(by: -semitones) } label: {
+                                Text(transposeLabel(semitones))
+                            }
+                        }
+                    } label: {
+                        Label("Transpose Down", systemImage: "arrow.down")
                     }
                 } label: {
                     Label("Transform", systemImage: "wand.and.stars")
@@ -1085,7 +1133,19 @@ private struct SongTrackRowView: View {
         .sheet(isPresented: $showScalePicker, onDismiss: {
             if pendingKeyScale == nil { scaleSectionID = nil }
         }) {
-            ScalePickerView(selectedScale: scaleBinding)
+            KeyScalePickerView(
+                currentKey: part.key,
+                currentScale: part.scale,
+                droppedCount: { key, scale in
+                    guard let sectionID = scaleSectionID else { return 0 }
+                    return offendingNotes(in: pinnedPartBinding(sectionID: sectionID).wrappedValue,
+                                          key: key, scale: scale).count
+                },
+                onApply: { key, scale in
+                    guard let sectionID = scaleSectionID else { return }
+                    proposeKeyScale(sectionID: sectionID, key: key, scale: scale)
+                }
+            )
         }
         .alert("Notes outside new key", isPresented: $showKeyConflict) {
             Button("Remove \(conflictCount) note\(conflictCount == 1 ? "" : "s")", role: .destructive) {
@@ -1485,18 +1545,16 @@ private struct SongTrackRowView: View {
 
                     Divider().frame(height: 16)
 
-                    Text("Key").font(.caption2).foregroundStyle(.secondary)
-                    Picker("", selection: keyBinding) {
-                        ForEach(0..<12, id: \.self) { Text(noteNames[$0]).tag($0) }
-                    }
-                    .pickerStyle(.menu).fixedSize()
-
+                    // Key and scale are one control: choosing them separately asked
+                    // twice whether to drop notes, and answered the first question
+                    // without knowing the second.
                     Button {
                         guard let sectionID = selectedSectionID else { return }
                         scaleSectionID = sectionID
                         showScalePicker = true
                     } label: {
-                        Text(part.scale.rawValue).font(.caption2).lineLimit(1)
+                        Text("\(noteNames[part.key]) \(part.scale.rawValue)")
+                            .font(.caption2).lineLimit(1)
                     }
                     .buttonStyle(.bordered).controlSize(.small)
 

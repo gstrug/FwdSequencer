@@ -595,6 +595,42 @@ nonisolated enum TempoDivision: String, Codable, CaseIterable, Equatable {
 }
 
 nonisolated enum MusicalScale: String, Codable, CaseIterable, Equatable {
+    /// Grouping for the picker — the list is long enough now that a flat one is hard to
+    /// scan. Derived from the case rather than stored, so adding a scale means adding it
+    /// to one list here and nowhere else.
+    enum Family: String, CaseIterable, Identifiable {
+        case common = "Common"
+        case modes = "Modes"
+        case symmetric = "Symmetric"
+        case japanese = "Japanese"
+        case indian = "Indian"
+        case exotic = "Exotic"
+        var id: String { rawValue }
+    }
+
+    var family: Family {
+        switch self {
+        case .chromatic, .major, .minor, .harmonicMinor, .melodicMinor,
+             .pentatonic, .minorPentatonic, .blues:
+            return .common
+        case .dorian, .phrygian, .lydian, .mixolydian, .locrian:
+            return .modes
+        case .wholeTone, .diminished, .augmented:
+            return .symmetric
+        case .hirajoshi, .inSen, .iwato, .kumoi, .yo:
+            return .japanese
+        case .bhairav, .marva, .purvi, .todi:
+            return .indian
+        case .hungarianMinor, .doubleHarmonic, .phrygianDominant,
+             .neapolitanMinor, .enigmatic, .prometheus:
+            return .exotic
+        }
+    }
+
+    static func scales(in family: Family) -> [MusicalScale] {
+        allCases.filter { $0.family == family }
+    }
+
     // Diatonic / common
     case chromatic        = "Chromatic"
     case major            = "Major"
@@ -614,6 +650,24 @@ nonisolated enum MusicalScale: String, Codable, CaseIterable, Equatable {
     // Symmetric
     case wholeTone        = "Whole Tone"
     case diminished       = "Diminished"
+    // Eastern and exotic. Added later, so they sit at the end — the raw values of the
+    // ones above are in saved songs and must not move or change.
+    case hirajoshi        = "Hirajoshi"
+    case inSen            = "In Sen"
+    case iwato            = "Iwato"
+    case kumoi            = "Kumoi"
+    case yo               = "Yo"
+    case bhairav          = "Bhairav"
+    case marva            = "Marva"
+    case purvi            = "Purvi"
+    case todi             = "Todi"
+    case hungarianMinor   = "Hungarian Minor"
+    case doubleHarmonic   = "Double Harmonic"
+    case phrygianDominant = "Phrygian Dominant"
+    case neapolitanMinor  = "Neapolitan Minor"
+    case enigmatic        = "Enigmatic"
+    case prometheus       = "Prometheus"
+    case augmented        = "Augmented"
 
     var intervals: [Int] {
         switch self {
@@ -632,6 +686,25 @@ nonisolated enum MusicalScale: String, Codable, CaseIterable, Equatable {
         case .locrian:         return [0,1,3,5,6,8,10]
         case .wholeTone:       return [0,2,4,6,8,10]
         case .diminished:      return [0,1,3,4,6,7,9,10]
+        // Japanese pentatonics
+        case .hirajoshi:       return [0,2,3,7,8]
+        case .inSen:           return [0,1,5,7,10]
+        case .iwato:           return [0,1,5,6,10]
+        case .kumoi:           return [0,2,3,7,9]
+        case .yo:              return [0,2,5,7,9]
+        // North Indian thaats
+        case .bhairav:         return [0,1,4,5,7,8,11]
+        case .marva:           return [0,1,4,6,7,9,11]
+        case .purvi:           return [0,1,4,6,7,8,11]
+        case .todi:            return [0,1,3,6,7,8,11]
+        // Other exotics
+        case .hungarianMinor:  return [0,2,3,6,7,8,11]
+        case .doubleHarmonic:  return [0,1,4,5,7,8,11]
+        case .phrygianDominant: return [0,1,4,5,7,8,10]
+        case .neapolitanMinor: return [0,1,3,5,7,8,11]
+        case .enigmatic:       return [0,1,4,6,8,10,11]
+        case .prometheus:      return [0,2,4,6,9,10]
+        case .augmented:       return [0,3,4,7,8,11]
         }
     }
 }

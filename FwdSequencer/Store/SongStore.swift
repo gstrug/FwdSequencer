@@ -879,12 +879,10 @@ class SongStore: ObservableObject {
 
     func transformSelectedSection(_ transform: SectionTransform) {
         guard canAlterSelectedSection else { return }
-        // Transform reshapes the section in place and there is no undo, so it always
-        // leaves a way back before touching anything.
-        reportDroppedSnapshot(
-            song.sections[selectedSection].saveSnapshot(named: "Before \(transform.rawValue)")
-        )
-
+        // No automatic snapshot. Saving before every transform buried the ones the user
+        // meant to keep under ones they never asked for; snapshots are now taken on
+        // demand only. The protected Original, captured when the section is first held,
+        // is still always there as the way back.
         switch transform {
         case .rotateNotes:
             for index in song.sections[selectedSection].parts.indices
@@ -909,6 +907,40 @@ class SongStore: ObservableObject {
         holdsSection && song.sections.indices.contains(selectedSection)
     }
 
+    /// Shift every note in the section up or down.
+    ///
+    /// Chromatic rather than scale-aware: transposing within a scale changes the
+    /// intervals between notes, which turns a line into a different line. Moving
+    /// everything by the same amount keeps the shape and lands in a new key, which is
+    /// what transposing is usually for.
+    ///
+    /// Refused outright if any note would fall off the end of the MIDI range. Clamping
+    /// would silently collapse notes onto each other at the extremes and quietly wreck
+    /// the part — better to do nothing and say why.
+    func transposeSelectedSection(by semitones: Int) {
+        guard canAlterSelectedSection, semitones != 0 else { return }
+        let parts = song.sections[selectedSection].parts
+        let moved = parts.flatMap(\.notePool).map { $0.midiNote + semitones }
+        guard let lowest = moved.min(), let highest = moved.max() else { return }
+        guard lowest >= 0, highest <= 127 else {
+            notice = "Transposing \(semitones > 0 ? "up" : "down") "
+                + "\(abs(semitones)) semitone\(abs(semitones) == 1 ? "" : "s") "
+                + "would push notes past the end of the keyboard."
+            return
+        }
+        for index in song.sections[selectedSection].parts.indices {
+            for noteIndex in song.sections[selectedSection].parts[index].notePool.indices {
+                song.sections[selectedSection].parts[index].notePool[noteIndex].midiNote += semitones
+            }
+        }
+        // The key moves with the notes, so the keyboard keeps showing them as in-key.
+        // Without this every note would immediately read as outside the scale.
+        for index in song.sections[selectedSection].parts.indices {
+            let key = song.sections[selectedSection].parts[index].key
+            song.sections[selectedSection].parts[index].key = ((key + semitones) % 12 + 12) % 12
+        }
+    }
+
     // MARK: - Generating steps
 
     /// Replace the step sequences of the given tracks in the selected section.
@@ -923,9 +955,8 @@ class SongStore: ObservableObject {
     /// generating steps in one section must not disturb any other.
     func generateSteps(count: Int, character: StepCharacter, for trackIDs: Set<UUID>) {
         guard canAlterSelectedSection, !trackIDs.isEmpty else { return }
-        reportDroppedSnapshot(
-            song.sections[selectedSection].saveSnapshot(named: "Before \(character.rawValue)")
-        )
+        // Explicitly NOT snapshotted: generating is meant to be pressed over and over,
+        // and a snapshot per press is exactly how the list became unusable.
         var seed = UInt64.random(in: UInt64.min...UInt64.max)
         for index in song.sections[selectedSection].parts.indices
         where trackIDs.contains(song.sections[selectedSection].parts[index].trackID) {
@@ -936,6 +967,13 @@ class SongStore: ObservableObject {
             seed &+= 0x9E3779B97F4A7C15
         }
     }
+
+    /// Which tracks the step generator writes to. Held on the store rather than in the
+    /// sheet so a selection survives closing it — generating is iterative, and having to
+    /// re-tick the same tracks on every visit made it tedious.
+    @Published var generatorTrackSelection: Set<UUID> = []
+    @Published var generatorLength: Int = 8
+    @Published var generatorCharacter: StepCharacter = .flowing
 
     /// Snapshot semantics live on SongSection; these wrap them for the selected section
     /// and surface anything the snapshot cap forced out.

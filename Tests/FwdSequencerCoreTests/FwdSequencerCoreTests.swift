@@ -1614,6 +1614,57 @@ final class FwdSequencerCoreTests: XCTestCase {
         }
     }
 
+    /// Every scale must be a usable set of pitch classes: sorted, unique, starting on
+    /// the root and inside an octave. A typo in an interval table is otherwise invisible
+    /// until a scale quietly refuses to accept a note.
+    func testEveryScaleHasAWellFormedIntervalSet() {
+        for scale in MusicalScale.allCases {
+            let intervals = scale.intervals
+            XCTAssertFalse(intervals.isEmpty, "\(scale.rawValue) has no intervals")
+            XCTAssertEqual(intervals.first, 0, "\(scale.rawValue) must start on the root")
+            XCTAssertEqual(intervals, intervals.sorted(), "\(scale.rawValue) is unsorted")
+            XCTAssertEqual(Set(intervals).count, intervals.count,
+                           "\(scale.rawValue) repeats an interval")
+            XCTAssertTrue(intervals.allSatisfy { (0...11).contains($0) },
+                          "\(scale.rawValue) leaves the octave")
+        }
+    }
+
+    /// Every scale belongs to exactly one family, and the families between them cover
+    /// the lot — otherwise a scale would be missing from the picker entirely.
+    func testEveryScaleAppearsInExactlyOnePickerFamily() {
+        let grouped = MusicalScale.Family.allCases.flatMap { MusicalScale.scales(in: $0) }
+        XCTAssertEqual(Set(grouped), Set(MusicalScale.allCases), "a scale is missing from the picker")
+        XCTAssertEqual(grouped.count, MusicalScale.allCases.count, "a scale is listed twice")
+    }
+
+    /// The raw values are in saved songs, so renaming one would silently fail to decode
+    /// and reset that part to chromatic.
+    func testEstablishedScaleRawValuesHaveNotMoved() {
+        for name in ["Chromatic", "Major", "Minor", "Harmonic Minor", "Melodic Minor",
+                     "Pentatonic", "Minor Pentatonic", "Blues", "Dorian", "Phrygian",
+                     "Lydian", "Mixolydian", "Locrian", "Whole Tone", "Diminished"] {
+            XCTAssertNotNil(MusicalScale(rawValue: name), "\(name) no longer decodes")
+        }
+    }
+
+    /// A generated sequence must always sound: every step can carry a probability below
+    /// 1, and at short lengths a draw could otherwise leave nothing certain to play.
+    func testEveryGeneratedSequenceHasACertainOpeningStep() {
+        for character in StepCharacter.allCases {
+            for length in StepGenerator.lengthRange {
+                for seed in UInt64(1)...5 {
+                    let steps = StepGenerator.steps(count: length, character: character,
+                                                    poolSize: 4, seed: seed)
+                    XCTAssertEqual(steps.count, length)
+                    let first = try? XCTUnwrap(steps.first)
+                    XCTAssertEqual(first?.probability, 1.0,
+                                   "\(character) length \(length): nothing is certain to sound")
+                }
+            }
+        }
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)

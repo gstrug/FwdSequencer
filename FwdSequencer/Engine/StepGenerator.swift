@@ -92,7 +92,14 @@ nonisolated enum StepCharacter: String, CaseIterable, Identifiable, Equatable {
 /// of passing a different seed, which is what makes "press until something catches" work
 /// without the result being unrepeatable.
 nonisolated enum StepGenerator {
-    static let lengthOptions = [4, 8, 12, 16, 24, 32]
+    /// Any length from one step to a full bar of 32nds. A short sequence is a valid
+    /// musical choice — one step that repeats is an ostinato — so the range is not
+    /// restricted to a handful of presets.
+    static let lengthRange = 1...32
+    /// The same range as Doubles, for a slider.
+    static var lengthSliderRange: ClosedRange<Double> {
+        Double(lengthRange.lowerBound)...Double(lengthRange.upperBound)
+    }
 
     static func steps(count: Int, character: StepCharacter,
                       poolSize: Int, seed: UInt64) -> [Step] {
@@ -122,6 +129,14 @@ nonisolated enum StepGenerator {
             steps.append(step(of: type, character: character,
                               poolSize: poolSize, using: &generator))
         }
+
+        // Guarantee the sequence is audible.
+        //
+        // Every step can carry a probability below 1, and at short lengths a draw can
+        // leave a sequence whose only sounding steps are all uncertain — which plays as
+        // silence often enough to look broken. The first step is always certain, so
+        // something sounds on every pass whatever else was rolled.
+        if !steps.isEmpty { steps[0].probability = 1.0 }
         return steps
     }
 
