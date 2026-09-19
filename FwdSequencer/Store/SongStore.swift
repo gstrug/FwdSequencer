@@ -877,21 +877,21 @@ class SongStore: ObservableObject {
         selectedSection = min(selectedSection, song.sections.count - 1)
     }
 
-    func transformSelectedSection(_ transform: SectionTransform) {
-        guard canAlterSelectedSection else { return }
+    func transformSelectedSection(_ transform: SectionTransform, for trackIDs: Set<UUID>) {
+        guard canAlterSelectedSection, !trackIDs.isEmpty else { return }
         // No automatic snapshot. Saving before every transform buried the ones the user
         // meant to keep under ones they never asked for; snapshots are now taken on
         // demand only. The protected Original, captured when the section is first held,
         // is still always there as the way back.
         switch transform {
         case .rotateNotes:
-            for index in song.sections[selectedSection].parts.indices
+            for index in selectedPartIndices(trackIDs)
                 where song.sections[selectedSection].parts[index].notePool.count > 1 {
                 let first = song.sections[selectedSection].parts[index].notePool.removeFirst()
                 song.sections[selectedSection].parts[index].notePool.append(first)
             }
         case .reverseNotes:
-            for index in song.sections[selectedSection].parts.indices {
+            for index in selectedPartIndices(trackIDs) {
                 song.sections[selectedSection].parts[index].notePool.reverse()
             }
         }
@@ -907,7 +907,15 @@ class SongStore: ObservableObject {
         holdsSection && song.sections.indices.contains(selectedSection)
     }
 
-    /// Shift every note in the section up or down.
+    /// Indices of the selected section's parts belonging to the given tracks.
+    private func selectedPartIndices(_ trackIDs: Set<UUID>) -> [Int] {
+        guard song.sections.indices.contains(selectedSection) else { return [] }
+        return song.sections[selectedSection].parts.indices.filter {
+            trackIDs.contains(song.sections[selectedSection].parts[$0].trackID)
+        }
+    }
+
+    /// Shift the selected tracks' notes up or down.
     ///
     /// Chromatic rather than scale-aware: transposing within a scale changes the
     /// intervals between notes, which turns a line into a different line. Moving
@@ -917,10 +925,12 @@ class SongStore: ObservableObject {
     /// Refused outright if any note would fall off the end of the MIDI range. Clamping
     /// would silently collapse notes onto each other at the extremes and quietly wreck
     /// the part — better to do nothing and say why.
-    func transposeSelectedSection(by semitones: Int) {
-        guard canAlterSelectedSection, semitones != 0 else { return }
-        let parts = song.sections[selectedSection].parts
-        let moved = parts.flatMap(\.notePool).map { $0.midiNote + semitones }
+    func transposeSelectedSection(by semitones: Int, for trackIDs: Set<UUID>) {
+        guard canAlterSelectedSection, semitones != 0, !trackIDs.isEmpty else { return }
+        let indices = selectedPartIndices(trackIDs)
+        let moved = indices
+            .flatMap { song.sections[selectedSection].parts[$0].notePool }
+            .map { $0.midiNote + semitones }
         guard let lowest = moved.min(), let highest = moved.max() else { return }
         guard lowest >= 0, highest <= 127 else {
             notice = "Transposing \(semitones > 0 ? "up" : "down") "
@@ -935,7 +945,7 @@ class SongStore: ObservableObject {
         }
         // The key moves with the notes, so the keyboard keeps showing them as in-key.
         // Without this every note would immediately read as outside the scale.
-        for index in song.sections[selectedSection].parts.indices {
+        for index in indices {
             let key = song.sections[selectedSection].parts[index].key
             song.sections[selectedSection].parts[index].key = ((key + semitones) % 12 + 12) % 12
         }
@@ -968,10 +978,11 @@ class SongStore: ObservableObject {
         }
     }
 
-    /// Which tracks the step generator writes to. Held on the store rather than in the
-    /// sheet so a selection survives closing it — generating is iterative, and having to
-    /// re-tick the same tracks on every visit made it tedious.
-    @Published var generatorTrackSelection: Set<UUID> = []
+    /// Which tracks the Shape sheet acts on — transforms and generation alike, so the
+    /// two cannot disagree about what "selected" means. Held on the store rather than in
+    /// the sheet so a selection survives closing it: shaping is iterative, and re-ticking
+    /// the same tracks on every visit was tedious.
+    @Published var shapeTrackSelection: Set<UUID> = []
     @Published var generatorLength: Int = 8
     @Published var generatorCharacter: StepCharacter = .flowing
 

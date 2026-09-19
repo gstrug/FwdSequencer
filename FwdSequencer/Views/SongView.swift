@@ -587,17 +587,7 @@ private struct ArrangementStrip: View {
 private struct SectionSettingsBar: View {
     @EnvironmentObject var songStore: SongStore
     @State private var showSnapshots = false
-    @State private var showGenerate = false
-
-    /// Names the interval as well as the count — "7 semitones" is a fifth, and knowing
-    /// that is the difference between choosing one and guessing.
-    private func transposeLabel(_ semitones: Int) -> String {
-        let names = ["", "Semitone", "Whole tone", "Minor third", "Major third",
-                     "Fourth", "Tritone", "Fifth", "Minor sixth", "Major sixth",
-                     "Minor seventh", "Major seventh", "Octave"]
-        let interval = semitones < names.count ? names[semitones] : ""
-        return interval.isEmpty ? "\(semitones)" : "\(semitones) — \(interval)"
-    }
+    @State private var showShape = false
 
     /// Pulled out of the view body: inline, the string building pushed the SwiftUI
     /// type-checker past its limit for the whole bar.
@@ -624,53 +614,14 @@ private struct SectionSettingsBar: View {
 
                 Divider().frame(height: 20)
 
-                Menu {
-                    ForEach(SectionTransform.allCases) { transform in
-                        Button { songStore.transformSelectedSection(transform) } label: {
-                            Label(transform.rawValue, systemImage: transform.systemImage)
-                        }
-                    }
-
-                    Divider()
-
-                    // Up to an octave each way. Further than that is the same move
-                    // applied twice, which is easier to offer than a list of 24.
-                    Menu {
-                        ForEach((1...12).reversed(), id: \.self) { semitones in
-                            Button { songStore.transposeSelectedSection(by: semitones) } label: {
-                                Text(transposeLabel(semitones))
-                            }
-                        }
-                    } label: {
-                        Label("Transpose Up", systemImage: "arrow.up")
-                    }
-
-                    Menu {
-                        ForEach(1...12, id: \.self) { semitones in
-                            Button { songStore.transposeSelectedSection(by: -semitones) } label: {
-                                Text(transposeLabel(semitones))
-                            }
-                        }
-                    } label: {
-                        Label("Transpose Down", systemImage: "arrow.down")
-                    }
-                } label: {
-                    Label("Transform", systemImage: "wand.and.stars")
+                Button { showShape = true } label: {
+                    Label("Shape", systemImage: "wand.and.stars")
                 }
                 .buttonStyle(.bordered)
                 .disabled(!songStore.canAlterSelectedSection)
                 .help(songStore.canAlterSelectedSection
-                      ? "Reshape this section's notes and steps in place. A snapshot is saved first, so you can get back."
-                      : "Turn on Hold first — a transform is only worth judging by ear, and Hold repeats this section so you can hear it.")
-
-                Button { showGenerate = true } label: {
-                    Label("Generate", systemImage: "dice")
-                }
-                .buttonStyle(.bordered)
-                .disabled(!songStore.canAlterSelectedSection)
-                .help(songStore.canAlterSelectedSection
-                      ? "Build new step sequences for this section and re-roll until one catches"
-                      : "Turn on Hold first — generating is only worth doing while you can hear it.")
+                      ? "Reshape this section's notes and steps, on the tracks you choose"
+                      : "Turn on Hold first — reshaping is only worth doing while you can hear it.")
 
                 // A sheet rather than a Menu: snapshots are renameable now, and a menu
                 // cannot host an editable text field.
@@ -710,7 +661,7 @@ private struct SectionSettingsBar: View {
         .padding(.vertical, 6)
         .background(.regularMaterial)
         .sheet(isPresented: $showSnapshots) { SectionSnapshotsSheet() }
-        .sheet(isPresented: $showGenerate) { GenerateStepsView() }
+        .sheet(isPresented: $showShape) { ShapeSectionView() }
     }
 }
 
