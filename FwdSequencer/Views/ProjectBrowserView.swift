@@ -62,6 +62,14 @@ struct ProjectBrowserView: View {
                             Label("Import Song", systemImage: "square.and.arrow.down")
                         }
                     }
+                    // Reachable on demand, not only on a fresh install — the tutorial is
+                    // worth rereading once the app has grown past what you took in first
+                    // time, and reinstalling was the only way to see it again.
+                    ToolbarItem(placement: .secondaryAction) {
+                        Button { showingOnboarding = true } label: {
+                            Label("Show Tutorial", systemImage: "questionmark.circle")
+                        }
+                    }
                 }
         }
         .onAppear {
@@ -205,7 +213,9 @@ struct ProjectBrowserView: View {
             failedFileDocument = nil
         }
         .sheet(isPresented: $showingOnboarding) {
-            OnboardingView(completed: $didCompleteOnboarding)
+            // isFirstRun changes only the wording of the closing button: on first run it
+            // hands you on to a template, reopened it simply closes.
+            OnboardingView(completed: $didCompleteOnboarding, isFirstRun: !didCompleteOnboarding)
         }
     }
 
