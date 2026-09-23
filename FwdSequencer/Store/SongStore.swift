@@ -8,30 +8,47 @@ enum TrackPluginStatus: Equatable {
     case failed(String)
 }
 
-/// Reshapes a section's note pools in place.
+/// What the Shape sheet can do to a section's note pool.
 ///
-/// Two cases were dropped. **Flip Direction** swapped every Fwd for a Back, which for a
-/// typical sequence lands in nearly the same place as Reverse Notes — walking a reversed
-/// pool forwards differs from walking the original backwards only in where the pointer
-/// starts. Two controls for one idea, told apart by a detail nobody could predict from
-/// the names.
+/// A selection with parameters rather than a menu of one-shot actions: Rotate needs a
+/// direction and a distance, Transpose needs an interval, and firing on tap gave no
+/// chance to set either — or to see what was about to happen.
 ///
-/// **Evolve** changed a single step to a random type, which was too small to be worth a
+/// Two earlier operations are gone. **Flip Direction** swapped every Fwd for a Back,
+/// which for a typical sequence lands in nearly the same place as Reverse — walking a
+/// reversed pool forwards differs from walking the original backwards only in where the
+/// pointer starts. **Evolve** changed a single step at random, too small to be worth a
 /// press, and did it by advancing `song.randomSeed` — the seed behind every Random step
-/// in the WHOLE song and all of its derived feel. Using it on one section silently
-/// re-rolled the others. Generating steps replaces it and leaves the seed alone.
-enum SectionTransform: String, CaseIterable, Identifiable {
-    case rotateNotes = "Rotate Notes"
-    case reverseNotes = "Reverse Notes"
+/// in the WHOLE song and all of its derived feel — so using it on one section silently
+/// re-rolled the others.
+enum NoteOperation: String, CaseIterable, Identifiable {
+    case rotate = "Rotate"
+    case reverse = "Reverse"
+    case transpose = "Transpose"
 
     var id: String { rawValue }
 
     var systemImage: String {
         switch self {
-        case .rotateNotes: return "arrow.triangle.2.circlepath"
-        case .reverseNotes: return "arrow.left.arrow.right"
+        case .rotate: return "arrow.triangle.2.circlepath"
+        case .reverse: return "arrow.left.arrow.right"
+        case .transpose: return "arrow.up.arrow.down"
         }
     }
+
+    var detail: String {
+        switch self {
+        case .rotate:
+            return "Shift the pool round, so each step lands on a different note"
+        case .reverse:
+            return "Turn the pool back to front"
+        case .transpose:
+            return "Move every note up or down, keeping the shape"
+        }
+    }
+
+    /// Whether the operation needs a distance. Reverse does not.
+    var takesAmount: Bool { self != .reverse }
 }
 
 // MARK: - SongStore
@@ -877,34 +894,47 @@ class SongStore: ObservableObject {
         selectedSection = min(selectedSection, song.sections.count - 1)
     }
 
-    func transformSelectedSection(_ transform: SectionTransform, for trackIDs: Set<UUID>) {
-        guard canAlterSelectedSection, !trackIDs.isEmpty else { return }
-        // No automatic snapshot. Saving before every transform buried the ones the user
-        // meant to keep under ones they never asked for; snapshots are now taken on
-        // demand only. The protected Original, captured when the section is first held,
-        // is still always there as the way back.
-        switch transform {
-        case .rotateNotes:
-            for index in selectedPartIndices(trackIDs)
-                where song.sections[selectedSection].parts[index].notePool.count > 1 {
-                let first = song.sections[selectedSection].parts[index].notePool.removeFirst()
-                song.sections[selectedSection].parts[index].notePool.append(first)
-            }
-        case .reverseNotes:
-            for index in selectedPartIndices(trackIDs) {
-                song.sections[selectedSection].parts[index].notePool.reverse()
-            }
-        }
-    }
-
     /// Altering a section requires it to be held.
     ///
-    /// Transform and Restore are only worth judging by ear, and without Hold the
-    /// sequencer walks on to the next section mid-audition. Holding repeats the
-    /// selected section so each version can actually be heard. Enforced here as well as
-    /// in the UI so the rule lives with the operations rather than with the buttons.
+    /// Shaping a section is only worth judging by ear, and without Hold the sequencer
+    /// walks on to the next section mid-audition. Holding repeats the selected section
+    /// so each version can actually be heard. Enforced here as well as in the UI, so the
+    /// rule lives with the operations rather than with the buttons.
     var canAlterSelectedSection: Bool {
         holdsSection && song.sections.indices.contains(selectedSection)
+    }
+
+    /// Shift each selected track's pool round by `positions`, positive forward.
+    ///
+    /// Per track, so a two-note pool and an eight-note pool each rotate within
+    /// themselves rather than one of them running out — the distance is taken modulo the
+    /// pool it is applied to.
+    @discardableResult
+    func rotateNotes(by positions: Int, for trackIDs: Set<UUID>) -> Bool {
+        guard canAlterSelectedSection, positions != 0, !trackIDs.isEmpty else { return false }
+        var changed = false
+        for index in selectedPartIndices(trackIDs) {
+            let pool = song.sections[selectedSection].parts[index].notePool
+            guard pool.count > 1 else { continue }
+            let shift = ((positions % pool.count) + pool.count) % pool.count
+            guard shift != 0 else { continue }
+            song.sections[selectedSection].parts[index].notePool =
+                Array(pool[shift...] + pool[..<shift])
+            changed = true
+        }
+        return changed
+    }
+
+    @discardableResult
+    func reverseNotes(for trackIDs: Set<UUID>) -> Bool {
+        guard canAlterSelectedSection, !trackIDs.isEmpty else { return false }
+        var changed = false
+        for index in selectedPartIndices(trackIDs)
+        where song.sections[selectedSection].parts[index].notePool.count > 1 {
+            song.sections[selectedSection].parts[index].notePool.reverse()
+            changed = true
+        }
+        return changed
     }
 
     /// Indices of the selected section's parts belonging to the given tracks.
@@ -925,20 +955,21 @@ class SongStore: ObservableObject {
     /// Refused outright if any note would fall off the end of the MIDI range. Clamping
     /// would silently collapse notes onto each other at the extremes and quietly wreck
     /// the part — better to do nothing and say why.
-    func transposeSelectedSection(by semitones: Int, for trackIDs: Set<UUID>) {
-        guard canAlterSelectedSection, semitones != 0, !trackIDs.isEmpty else { return }
+    @discardableResult
+    func transposeSelectedSection(by semitones: Int, for trackIDs: Set<UUID>) -> Bool {
+        guard canAlterSelectedSection, semitones != 0, !trackIDs.isEmpty else { return false }
         let indices = selectedPartIndices(trackIDs)
         let moved = indices
             .flatMap { song.sections[selectedSection].parts[$0].notePool }
             .map { $0.midiNote + semitones }
-        guard let lowest = moved.min(), let highest = moved.max() else { return }
+        guard let lowest = moved.min(), let highest = moved.max() else { return false }
         guard lowest >= 0, highest <= 127 else {
             notice = "Transposing \(semitones > 0 ? "up" : "down") "
                 + "\(abs(semitones)) semitone\(abs(semitones) == 1 ? "" : "s") "
                 + "would push notes past the end of the keyboard."
-            return
+            return false
         }
-        for index in song.sections[selectedSection].parts.indices {
+        for index in indices {
             for noteIndex in song.sections[selectedSection].parts[index].notePool.indices {
                 song.sections[selectedSection].parts[index].notePool[noteIndex].midiNote += semitones
             }
@@ -949,6 +980,7 @@ class SongStore: ObservableObject {
             let key = song.sections[selectedSection].parts[index].key
             song.sections[selectedSection].parts[index].key = ((key + semitones) % 12 + 12) % 12
         }
+        return true
     }
 
     // MARK: - Generating steps

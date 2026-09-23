@@ -19,6 +19,18 @@ struct ShapeSectionView: View {
     @State private var generations = 0
     @State private var hasSeededSelection = false
 
+    // Notes operations are chosen and then applied, rather than firing on tap. Rotate
+    // and Transpose need a direction and a distance, and there was no moment to set
+    // either — nor any sign afterwards that anything had happened.
+    @State private var operation: NoteOperation = .rotate
+    @State private var amount = 1
+    @State private var movesUp = true
+
+    /// What was last applied, shown back so an operation whose effect is only audible
+    /// still confirms itself. Cleared on the next change so it cannot go stale.
+    @State private var lastApplied: String?
+    @State private var lastGenerated: String?
+
     private var tracks: [SongTrack] { songStore.song.tracks }
     private var selection: Set<UUID> { songStore.shapeTrackSelection }
     private var canShape: Bool { songStore.canAlterSelectedSection && !selection.isEmpty }
@@ -77,43 +89,98 @@ struct ShapeSectionView: View {
 
     private var notesSection: some View {
         Section {
-            ForEach(SectionTransform.allCases) { transform in
+            ForEach(NoteOperation.allCases) { option in
                 Button {
-                    songStore.transformSelectedSection(transform, for: selection)
+                    operation = option
+                    lastApplied = nil
                 } label: {
-                    Label(transform.rawValue, systemImage: transform.systemImage)
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Label(option.rawValue, systemImage: option.systemImage)
+                            Text(option.detail).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        if option == operation {
+                            Image(systemName: "checkmark").foregroundStyle(.tint)
+                        }
+                    }
                 }
-                .disabled(!canShape)
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(option == operation ? [.isSelected] : [])
             }
 
-            // Up to an octave each way. Further is the same move applied twice, which is
-            // easier to offer than a list of twenty-four.
-            Menu {
-                ForEach((1...12).reversed(), id: \.self) { semitones in
-                    Button {
-                        songStore.transposeSelectedSection(by: semitones, for: selection)
-                    } label: { Text(Self.intervalLabel(semitones)) }
+            if operation.takesAmount {
+                Picker("Direction", selection: $movesUp) {
+                    Text(operation == .rotate ? "Forward" : "Up").tag(true)
+                    Text(operation == .rotate ? "Back" : "Down").tag(false)
                 }
-            } label: {
-                Label("Transpose Up", systemImage: "arrow.up")
-            }
-            .disabled(!canShape)
+                .pickerStyle(.segmented)
+                .onChange(of: movesUp) { _ in lastApplied = nil }
 
-            Menu {
-                ForEach(1...12, id: \.self) { semitones in
-                    Button {
-                        songStore.transposeSelectedSection(by: -semitones, for: selection)
-                    } label: { Text(Self.intervalLabel(semitones)) }
+                Stepper(value: $amount, in: 1...12) {
+                    HStack {
+                        Text(operation == .rotate ? "Notes" : "Semitones")
+                        Spacer()
+                        Text(amountLabel).font(.body.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
                 }
-            } label: {
-                Label("Transpose Down", systemImage: "arrow.down")
+                .onChange(of: amount) { _ in lastApplied = nil }
             }
+
+            Button(action: applyNoteOperation) {
+                Label("Apply", systemImage: "checkmark.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
             .disabled(!canShape)
         } header: {
             Text("Notes")
         } footer: {
-            Text("Changes which notes are in the pool. The step sequence keeps running "
-                 + "as it is, so the same pattern plays different notes.")
+            if let lastApplied {
+                Label(lastApplied, systemImage: "checkmark.circle.fill")
+                    .font(.caption).foregroundStyle(.green)
+            } else {
+                Text("Changes which notes are in the pool. The step sequence keeps "
+                     + "running as it is, so the same pattern plays different notes.")
+            }
+        }
+    }
+
+    /// Rotate counts notes; Transpose counts semitones and is worth naming as an
+    /// interval — seven semitones is a fifth, and knowing that is the difference between
+    /// choosing one and guessing.
+    private var amountLabel: String {
+        operation == .transpose ? Self.intervalLabel(amount) : "\(amount)"
+    }
+
+    private func applyNoteOperation() {
+        let signed = movesUp ? amount : -amount
+        let applied: Bool
+        switch operation {
+        case .rotate:    applied = songStore.rotateNotes(by: signed, for: selection)
+        case .reverse:   applied = songStore.reverseNotes(for: selection)
+        case .transpose: applied = songStore.transposeSelectedSection(by: signed, for: selection)
+        }
+        // Silence would be ambiguous — nothing happening looks the same as a pool too
+        // small to rotate. Transpose refusing out of range already explains itself
+        // through a notice, so that case stays quiet here.
+        guard applied else {
+            if operation != .transpose {
+                lastApplied = "Nothing to change on the selected tracks"
+            }
+            return
+        }
+        let count = selection.count
+        let tracks = "\(count) track\(count == 1 ? "" : "s")"
+        switch operation {
+        case .rotate:
+            lastApplied = "Rotated \(movesUp ? "forward" : "back") by \(amount) on \(tracks)"
+        case .reverse:
+            lastApplied = "Reversed the pool on \(tracks)"
+        case .transpose:
+            lastApplied = "Transposed \(movesUp ? "up" : "down") \(amount) "
+                + "semitone\(amount == 1 ? "" : "s") on \(tracks)"
         }
     }
 
@@ -165,6 +232,10 @@ struct ShapeSectionView: View {
                                         character: songStore.generatorCharacter,
                                         for: selection)
                 generations += 1
+                let count = selection.count
+                lastGenerated = "Generated \(songStore.generatorLength) "
+                    + "\(songStore.generatorCharacter.rawValue.lowercased()) steps on "
+                    + "\(count) track\(count == 1 ? "" : "s")\(generations > 1 ? " (×\(generations))" : "")"
             } label: {
                 Label("Generate Steps", systemImage: "dice").frame(maxWidth: .infinity)
             }
@@ -173,9 +244,13 @@ struct ShapeSectionView: View {
         } header: {
             Text("Steps")
         } footer: {
-            if generations > 0 {
-                Text("Generated \(generations) time\(generations == 1 ? "" : "s"). Keep "
-                     + "pressing until something catches — save a snapshot when it does.")
+            if let lastGenerated {
+                VStack(alignment: .leading, spacing: 2) {
+                    Label(lastGenerated, systemImage: "checkmark.circle.fill")
+                        .font(.caption).foregroundStyle(.green)
+                    Text("Keep pressing until something catches — save a snapshot when it does.")
+                        .font(.caption)
+                }
             } else {
                 Text("Replaces the step sequence. The note pool is untouched. Something "
                      + "always sounds on the first step, so even a very short sequence "

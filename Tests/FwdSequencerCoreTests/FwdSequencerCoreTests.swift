@@ -1665,6 +1665,25 @@ final class FwdSequencerCoreTests: XCTestCase {
         }
     }
 
+    /// Rotating a pool is per track and taken modulo that track's own length, so a
+    /// two-note pool and an eight-note pool each turn within themselves.
+    func testRotatingAPoolWrapsWithinItsOwnLength() {
+        func rotate(_ notes: [Int], by positions: Int) -> [Int] {
+            guard notes.count > 1 else { return notes }
+            let shift = ((positions % notes.count) + notes.count) % notes.count
+            guard shift != 0 else { return notes }
+            return Array(notes[shift...] + notes[..<shift])
+        }
+
+        XCTAssertEqual(rotate([60, 62, 64, 65], by: 1), [62, 64, 65, 60], "forward by one")
+        XCTAssertEqual(rotate([60, 62, 64, 65], by: -1), [65, 60, 62, 64], "back by one")
+        XCTAssertEqual(rotate([60, 62, 64, 65], by: 4), [60, 62, 64, 65], "a full turn is identity")
+        XCTAssertEqual(rotate([60, 62, 64, 65], by: 6), rotate([60, 62, 64, 65], by: 2),
+                       "further than the pool wraps rather than running out")
+        XCTAssertEqual(rotate([60, 62], by: 5), [62, 60], "a short pool still turns")
+        XCTAssertEqual(rotate([60], by: 3), [60], "a single note has nowhere to go")
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)
