@@ -695,17 +695,43 @@ private struct SectionSnapshotsSheet: View {
         NavigationStack {
             List {
                 Section {
+                    ForEach(songStore.song.tracks) { track in
+                        Button {
+                            if songStore.shapeTrackSelection.contains(track.id) {
+                                songStore.shapeTrackSelection.remove(track.id)
+                            } else {
+                                songStore.shapeTrackSelection.insert(track.id)
+                            }
+                        } label: {
+                            HStack {
+                                Text(track.name)
+                                Spacer()
+                                Image(systemName: songStore.shapeTrackSelection.contains(track.id)
+                                      ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(songStore.shapeTrackSelection.contains(track.id)
+                                                     ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+
                     Button {
                         renaming = nil
                         nameDraft = songStore.suggestedSnapshotName()
                         showNamePrompt = true
                     } label: {
-                        Label("Save this section's notes…", systemImage: "camera")
+                        Label("Save snapshot…", systemImage: "camera")
                     }
+                    .disabled(songStore.shapeTrackSelection.isEmpty)
+                } header: {
+                    Text("Save")
                 } footer: {
-                    Text("Captures the note pool, steps, division, key and scale for "
-                         + "every track in \"\(section?.name ?? "this section")\". "
-                         + "Instruments and mixer settings are not included.")
+                    // The same selection the Shape sheet uses, so "the tracks I am
+                    // working on" means one thing wherever you are.
+                    Text("Captures the note pool, steps, division, key and scale for the "
+                         + "ticked tracks only — so you can keep one track while "
+                         + "reworking another. Instruments and mixer settings are not "
+                         + "included.")
                 }
 
                 if let section, !section.variations.isEmpty {
@@ -748,7 +774,10 @@ private struct SectionSnapshotsSheet: View {
                 Button("Cancel", role: .cancel) { }
                 Button("Save") {
                     if let renaming { songStore.renameVariation(renaming, to: nameDraft) }
-                    else { songStore.captureVariation(named: nameDraft) }
+                    else {
+                        songStore.captureVariation(named: nameDraft,
+                                                   tracks: songStore.shapeTrackSelection)
+                    }
                 }
             } message: {
                 Text("Describe what changed, so you know which version to come back to.")
@@ -768,6 +797,13 @@ private struct SectionSnapshotsSheet: View {
                         .accessibilityLabel("Protected")
                 }
                 Text(snapshot.name).font(.body).lineLimit(2)
+                Spacer(minLength: 6)
+                // Scope is the thing you need at a glance now that snapshots can cover
+                // one track: restoring the wrong one would quietly revert other work.
+                Text(songStore.scopeDescription(of: snapshot))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
 
             HStack(spacing: 10) {
@@ -1147,6 +1183,49 @@ private struct SongTrackRowView: View {
         return p.steps
     }
 
+    /// Move, duplicate and delete. Shared by the expanded row's menu and by a long press
+    /// on a collapsed row, so the two cannot drift apart.
+    @ViewBuilder
+    private var arrangeActions: some View {
+        Button { songStore.moveTrackUp(track.id) } label: {
+            Label("Move Up", systemImage: "chevron.up")
+        }
+        .disabled(index == 0)
+
+        Button { songStore.moveTrackDown(track.id) } label: {
+            Label("Move Down", systemImage: "chevron.down")
+        }
+        .disabled(index == trackCount - 1)
+
+        Button { songStore.duplicateTrack(track.id) } label: {
+            Label("Duplicate Track", systemImage: "plus.square.on.square")
+        }
+        .disabled(trackCount >= SongStore.maximumEditableTrackCount)
+    }
+
+    /// The same actions plus expand and delete, for a collapsed row — which has no menu
+    /// button of its own.
+    ///
+    /// A long press rather than the left swipe that was asked for. A collapsed row
+    /// contains a horizontally scrolling step strip, so a horizontal drag on the row
+    /// would fight it for the gesture; and these rows sit in a plain stack rather than a
+    /// List, so there is no `swipeActions` to lean on.
+    @ViewBuilder
+    private var collapsedRowActions: some View {
+        Button {
+            if reduceMotion { isCollapsed = false }
+            else { withAnimation(.easeInOut(duration: 0.2)) { isCollapsed = false } }
+        } label: {
+            Label("Expand", systemImage: "chevron.down")
+        }
+        Divider()
+        arrangeActions
+        Divider()
+        Button(role: .destructive) { showDeleteAlert = true } label: {
+            Label("Delete Track", systemImage: "trash")
+        }
+    }
+
     // Compact one-line row shown when the track is collapsed.
     /// Below this the wide one-line layout is too cramped and ViewThatFits falls back
     /// to the stacked compact bar. It replaces a `.fixedSize` on the wide variant: that
@@ -1162,6 +1241,7 @@ private struct SongTrackRowView: View {
             collapsedCompactBar
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu { collapsedRowActions }
     }
 
     private var collapsedWideBar: some View {
@@ -1299,21 +1379,7 @@ private struct SongTrackRowView: View {
                 .onLongPressGesture { selectAllName = true }
 
                 Menu {
-                    Button { songStore.moveTrackUp(track.id) } label: {
-                        Label("Move Up", systemImage: "chevron.up")
-                    }
-                    .disabled(index == 0)
-
-                    Button { songStore.moveTrackDown(track.id) } label: {
-                        Label("Move Down", systemImage: "chevron.down")
-                    }
-                    .disabled(index == trackCount - 1)
-
-                    Button { songStore.duplicateTrack(track.id) } label: {
-                        Label("Duplicate Track", systemImage: "plus.square.on.square")
-                    }
-                    .disabled(trackCount >= SongStore.maximumEditableTrackCount)
-
+                    arrangeActions
                     Divider()
 
                     // Feel lives in the track menu rather than on the row: it is set

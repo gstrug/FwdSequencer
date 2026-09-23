@@ -196,20 +196,32 @@ nonisolated struct SectionVariation: Codable, Identifiable, Equatable {
     /// Optional so songs saved before this existed still decode (missing key -> nil).
     var isOriginal: Bool? = nil
 
+    /// Which tracks this snapshot covers. nil means every part it holds — the Original,
+    /// and any snapshot saved before scope existed.
+    ///
+    /// Snapshots are per track because shaping is: keeping one track while reworking
+    /// another was impossible when restoring anything reverted the whole section.
+    var trackIDs: [UUID]? = nil
+
     var isProtected: Bool { isOriginal == true }
+    var coversWholeSection: Bool { trackIDs == nil }
 
     // Tolerant decoder: the synthesised one throws on a missing key even with a default.
-    private enum CodingKeys: String, CodingKey { case id, name, parts, isOriginal }
+    private enum CodingKeys: String, CodingKey { case id, name, parts, isOriginal, trackIDs }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
         name = try c.decodeIfPresent(String.self, forKey: .name) ?? "Snapshot"
         parts = try c.decodeIfPresent([Part].self, forKey: .parts) ?? []
         isOriginal = try c.decodeIfPresent(Bool.self, forKey: .isOriginal)
+        // Absent means the snapshot predates scope and covers whatever it holds.
+        trackIDs = try c.decodeIfPresent([UUID].self, forKey: .trackIDs)
     }
 
-    init(id: UUID = UUID(), name: String, parts: [Part], isOriginal: Bool? = nil) {
-        self.id = id; self.name = name; self.parts = parts; self.isOriginal = isOriginal
+    init(id: UUID = UUID(), name: String, parts: [Part],
+         isOriginal: Bool? = nil, trackIDs: [UUID]? = nil) {
+        self.id = id; self.name = name; self.parts = parts
+        self.isOriginal = isOriginal; self.trackIDs = trackIDs
     }
 }
 
@@ -315,14 +327,20 @@ extension SongSection {
     /// returned, rather than the save being refused. The Original is never the one that
     /// goes; if only protected snapshots remain there is nothing to evict and the save
     /// is refused, which cannot happen in practice with a cap of 32 and one Original.
+    /// Capture the current parts under `name`, for `tracks` — or the whole section when
+    /// nil.
     @discardableResult
-    mutating func saveSnapshot(named name: String) -> String? {
+    mutating func saveSnapshot(named name: String, tracks: Set<UUID>? = nil) -> String? {
+        let captured = tracks.map { ids in parts.filter { ids.contains($0.trackID) } } ?? parts
+        guard !captured.isEmpty else { return nil }
         var dropped: String?
         if variations.count >= Self.maximumSnapshots {
             guard let victim = variations.firstIndex(where: { !$0.isProtected }) else { return nil }
             dropped = variations.remove(at: victim).name
         }
-        variations.append(SectionVariation(name: snapshotName(from: name), parts: parts))
+        variations.append(SectionVariation(name: snapshotName(from: name),
+                                           parts: captured,
+                                           trackIDs: tracks.map { _ in captured.map(\.trackID) }))
         return dropped
     }
 
@@ -340,8 +358,21 @@ extension SongSection {
     @discardableResult
     mutating func restoreSnapshot(_ id: UUID, keeping: Bool = false) -> Bool {
         guard let index = variations.firstIndex(where: { $0.id == id }) else { return false }
-        parts = variations[index].parts
-        if !keeping && !variations[index].isProtected { variations.remove(at: index) }
+        let snapshot = variations[index]
+        if snapshot.coversWholeSection {
+            parts = snapshot.parts
+        } else {
+            // Put back only the tracks it covers, leaving work on the others alone —
+            // which is the whole point of a snapshot having a scope.
+            for part in snapshot.parts {
+                if let target = parts.firstIndex(where: { $0.trackID == part.trackID }) {
+                    parts[target] = part
+                } else {
+                    parts.append(part)
+                }
+            }
+        }
+        if !keeping && !snapshot.isProtected { variations.remove(at: index) }
         return true
     }
 

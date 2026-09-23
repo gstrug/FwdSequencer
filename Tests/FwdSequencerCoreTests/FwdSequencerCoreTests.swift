@@ -1684,6 +1684,75 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(rotate([60], by: 3), [60], "a single note has nowhere to go")
     }
 
+    /// A snapshot scoped to one track must restore only that track, leaving work on the
+    /// others alone — the reason scope exists at all.
+    func testRestoringATrackSnapshotLeavesOtherTracksAlone() throws {
+        let bass = UUID(), lead = UUID()
+        func part(_ id: UUID, _ note: Int) -> Part {
+            var p = Part(trackID: id)
+            p.notePool = [NoteEntry(midiNote: note)]
+            return p
+        }
+        var section = SongSection(name: "A", parts: [part(bass, 36), part(lead, 72)])
+
+        section.saveSnapshot(named: "Bass idea", tracks: [bass])
+        let snapshot = try XCTUnwrap(section.variations.first)
+        XCTAssertEqual(snapshot.trackIDs, [bass], "scoped to the one track")
+        XCTAssertEqual(snapshot.parts.count, 1, "and holds only its part")
+
+        // Change both tracks, then restore the bass snapshot.
+        section.parts[0].notePool = [NoteEntry(midiNote: 38)]
+        section.parts[1].notePool = [NoteEntry(midiNote: 74)]
+        XCTAssertTrue(section.restoreSnapshot(snapshot.id))
+
+        XCTAssertEqual(section.parts[0].notePool.map(\.midiNote), [36], "bass restored")
+        XCTAssertEqual(section.parts[1].notePool.map(\.midiNote), [74],
+                       "the lead must keep the work done on it")
+    }
+
+    /// A whole-section snapshot — the Original, and anything saved before scope existed —
+    /// still replaces everything.
+    func testWholeSectionSnapshotsStillRestoreEveryTrack() throws {
+        let a = UUID(), b = UUID()
+        func part(_ id: UUID, _ note: Int) -> Part {
+            var p = Part(trackID: id)
+            p.notePool = [NoteEntry(midiNote: note)]
+            return p
+        }
+        var section = SongSection(name: "A", parts: [part(a, 60), part(b, 64)])
+
+        XCTAssertTrue(section.saveOriginalSnapshot())
+        let original = try XCTUnwrap(section.variations.first)
+        XCTAssertNil(original.trackIDs, "the Original covers the section")
+        XCTAssertTrue(original.coversWholeSection)
+
+        section.parts[0].notePool = [NoteEntry(midiNote: 61)]
+        section.parts[1].notePool = [NoteEntry(midiNote: 65)]
+        XCTAssertTrue(section.restoreSnapshot(original.id))
+        XCTAssertEqual(section.parts.map { $0.notePool[0].midiNote }, [60, 64])
+    }
+
+    /// Scope must survive a round trip, and a snapshot saved before it existed must
+    /// still decode as covering everything it holds.
+    func testSnapshotScopeRoundTripsAndOlderSnapshotsStillDecode() throws {
+        let track = UUID()
+        var part = Part(trackID: track)
+        part.notePool = [NoteEntry(midiNote: 60)]
+        var section = SongSection(name: "A", parts: [part])
+        section.saveSnapshot(named: "Scoped", tracks: [track])
+
+        let decoded = try JSONDecoder().decode(
+            SongSection.self, from: JSONEncoder().encode(section))
+        XCTAssertEqual(decoded.variations.first?.trackIDs, [track])
+
+        let legacy = """
+        {"id":"\(UUID().uuidString)","name":"Old","parts":[]}
+        """
+        let old = try JSONDecoder().decode(SectionVariation.self, from: Data(legacy.utf8))
+        XCTAssertNil(old.trackIDs)
+        XCTAssertTrue(old.coversWholeSection, "absent scope means the whole section")
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)

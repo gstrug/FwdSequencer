@@ -133,8 +133,15 @@ nonisolated enum SongValidator {
                 }
                 let variationPartIDs = variation.parts.map(\.trackID)
                 try requireUnique(variationPartIDs, name: "variation part in section \(sectionIndex + 1)")
-                guard Set(variationPartIDs) == trackIDs else {
-                    throw SongValidationError.invalid("A variation in section \(sectionIndex + 1) does not match the song tracks.")
+                // A subset, not an exact match: a snapshot can now cover a single track
+                // rather than the whole section, so it holds only that track's part.
+                guard Set(variationPartIDs).isSubset(of: trackIDs) else {
+                    throw SongValidationError.invalid("A variation in section \(sectionIndex + 1) refers to an unknown track.")
+                }
+                if let scope = variation.trackIDs {
+                    guard Set(scope).isSubset(of: trackIDs) else {
+                        throw SongValidationError.invalid("A variation in section \(sectionIndex + 1) is scoped to an unknown track.")
+                    }
                 }
                 for part in variation.parts { try validate(part, section: sectionIndex + 1) }
             }

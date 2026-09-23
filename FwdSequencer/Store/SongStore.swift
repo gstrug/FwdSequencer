@@ -1040,9 +1040,24 @@ class SongStore: ObservableObject {
         song.sections[selectedSection].saveOriginalSnapshot()
     }
 
-    func captureVariation(named name: String) {
+    /// Save a snapshot of the given tracks — nil for the whole section.
+    ///
+    /// Scoped because shaping is: keeping one track while reworking another was
+    /// impossible when restoring anything reverted everything.
+    func captureVariation(named name: String, tracks: Set<UUID>? = nil) {
         guard canAlterSelectedSection else { return }
-        reportDroppedSnapshot(song.sections[selectedSection].saveSnapshot(named: name))
+        reportDroppedSnapshot(
+            song.sections[selectedSection].saveSnapshot(named: name, tracks: tracks)
+        )
+    }
+
+    /// Names a snapshot's scope for display — a track name, a count, or the section.
+    func scopeDescription(of snapshot: SectionVariation) -> String {
+        guard let ids = snapshot.trackIDs else { return "Whole section" }
+        if ids.count == 1, let track = song.tracks.first(where: { $0.id == ids[0] }) {
+            return track.name
+        }
+        return "\(ids.count) tracks"
     }
 
     /// Restore CONSUMES the snapshot unless `keeping` — see SongSection.restoreSnapshot.
