@@ -464,6 +464,10 @@ private struct ArrangementStrip: View {
     @EnvironmentObject var songStore: SongStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editingSection: Int? = nil
+    /// Drives the queued chip's pulse. A single flag for the strip rather than one per
+    /// chip, so every queued pad would flash in step — there is only ever one, but it
+    /// keeps the animation owned in one place.
+    @State private var queuePulse = false
 
     var body: some View {
         HStack(spacing: 8) {
@@ -498,6 +502,9 @@ private struct ArrangementStrip: View {
             .padding(.trailing, 8)
         }
         .background(.regularMaterial)
+        // Started once and left running: the pulse is only visible where a chip opts in,
+        // so there is nothing to start and stop as the queue changes.
+        .onAppear { queuePulse = true }
         .sheet(item: Binding(
             get: { editingSection.map { SectionTarget(index: $0) } },
             set: { editingSection = $0?.index }
@@ -557,6 +564,7 @@ private struct ArrangementStrip: View {
     @ViewBuilder
     private func chip(_ idx: Int, _ section: SongSection) -> some View {
         let isPlaying  = songStore.isPlaying && songStore.currentSection == idx
+        let isQueued   = songStore.queuedSection == idx
         // In Trigger mode the chips are pads, and a pad lit before anything has been
         // pressed is just confusing — so the highlight follows what is SOUNDING rather
         // than what happens to be selected, and nothing is lit until something plays.
@@ -577,6 +585,16 @@ private struct ArrangementStrip: View {
         .overlay(
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isPlaying ? Color.green : .clear, lineWidth: 2)
+        )
+        // Queued: pulsing, and in a different colour from the solid green of the section
+        // actually sounding — "next" and "now" have to be distinguishable at a glance.
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(Color.orange, lineWidth: 2)
+                .opacity(isQueued ? (queuePulse ? 1 : 0.15) : 0)
+                .animation(reduceMotion ? nil
+                           : .easeInOut(duration: 0.45).repeatForever(autoreverses: true),
+                           value: queuePulse)
         )
         .overlay(alignment: .topTrailing) {
             // Says the chip is pressable without taking room from the name.

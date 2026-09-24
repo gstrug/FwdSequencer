@@ -46,7 +46,9 @@ struct OnboardingView: View {
          "Try a section on its own",
          "Turn on Pattern Trigger Mode in Song Settings and the section chips become "
          + "pads — press one to hear just that section. It plays through once, or round "
-         + "and round if Loop is on, and you can set it to sound only while held."),
+         + "and round if Loop is on, and you can set it to sound only while held. Press "
+         + "another while one is playing and it is queued: the pad pulses, then takes "
+         + "over cleanly at the end of the bar rather than cutting in."),
 
         ("wand.and.stars",
          "Shape a section",

@@ -164,13 +164,29 @@ class SongStore: ObservableObject {
     /// Loop follows the song's Loop setting: on it repeats, off the sequencer's existing
     /// end-of-arrangement path stops it after a single pass — so a one-shot needs no
     /// special handling.
-    /// Which section a trigger is playing, for translating the sequencer's index back.
-    /// nil whenever the whole arrangement is playing.
-    private(set) var triggeredSectionIndex: Int?
+    /// A section queued to follow the one playing, by index. One deep: pressing another
+    /// pad replaces it rather than extending a list.
+    @Published private(set) var queuedSection: Int?
 
+    /// Press a pad: start that section, or queue it behind the one already playing.
+    ///
+    /// Plays the WHOLE arrangement with the pressed section held, rather than a
+    /// one-section arrangement. That matters for two reasons: the sequencer's section
+    /// indices then refer to the real song, so nothing has to be translated back; and
+    /// the queued section has to exist in what the sequencer is playing for it to switch
+    /// to at the boundary.
     func triggerSection(at index: Int) {
         guard song.sections.indices.contains(index) else { return }
-        triggeredSectionIndex = index
+
+        // Already sounding? Then this is a queue, not a restart. Switching immediately
+        // would cut the current section off mid-phrase, which is the thing queueing
+        // exists to avoid. Holding to play is momentary and has no "after this".
+        if isPlaying, !triggerHoldToPlay {
+            queuedSection = index
+            sequencer.queueSection(song.sections[index].id)
+            return
+        }
+
         // Selecting it too: you almost always want to see what you are hearing, and it
         // matches the editor following the playhead everywhere else.
         selectedSection = index
@@ -186,13 +202,18 @@ class SongStore: ObservableObject {
         isPaused = false
         playback.currentBar = 0
         currentSection = index
+        queuedSection = nil
         sequencer.startSong(
-            sections: [flattenedSections()[index]],
+            sections: flattenedSections(),
             tempo: song.tempo,
             timeSignature: song.timeSignature,
             trackIDs: song.tracks.map(\.id),
             loop: loopEnabled,
-            randomSeed: song.randomSeed ?? Self.seed(from: song.id)
+            randomSeed: song.randomSeed ?? Self.seed(from: song.id),
+            heldSection: song.sections[index].id,
+            // Loop off means one shot: play it through and stop, unless something is
+            // queued behind it by the time it gets there.
+            stopAtSectionEnd: !loopEnabled
         )
     }
 
@@ -284,12 +305,10 @@ class SongStore: ObservableObject {
         sequencer.onSectionChange = { [weak self] index in
             DispatchQueue.main.async {
                 guard let self else { return }
-                // A trigger plays a ONE-section arrangement, so the sequencer always
-                // reports index 0 — which is the song's FIRST section, not the one being
-                // played. Mapping it back is what stops the highlight and the editor
-                // snapping to section one the instant you press any other pad.
-                let index = self.triggeredSectionIndex ?? index
                 self.currentSection = index
+                // Arriving at a section clears it from the queue — the pad stops
+                // flashing because it is the one playing now.
+                if self.queuedSection == index { self.queuedSection = nil }
                 // The editor follows the playhead, so the note pool, keyboard and step
                 // list always describe the section being heard. Without this the
                 // keyboard showed one section's pool while another played, and notes
@@ -556,7 +575,7 @@ class SongStore: ObservableObject {
     // MARK: - Playback
 
     func play() {
-        triggeredSectionIndex = nil
+        queuedSection = nil
         activate()
         for track in song.tracks where !audioEngine.hasInstrument(for: track.id) {
             audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
@@ -603,7 +622,7 @@ class SongStore: ObservableObject {
     }
 
     func stop() {
-        triggeredSectionIndex = nil
+        queuedSection = nil
         sequencer.stop()
         isPlaying = false
         isPaused = false

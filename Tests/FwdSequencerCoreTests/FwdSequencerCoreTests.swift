@@ -1803,6 +1803,110 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertGreaterThan(out.playedNotes, 2, "and keep playing round")
     }
 
+    // MARK: - Pattern queue
+
+    private func queueTestSections(_ ids: [UUID], trackID: UUID) -> [SequencerSection] {
+        ids.enumerated().map { index, id in
+            SequencerSection(id: id, numberOfBars: 1, tracks: [
+                PlayTrack(id: trackID, tempoDivision: .quarter,
+                          notePool: [NoteEntry(midiNote: 60 + index)],
+                          steps: [Step(type: .play)], isMuted: false, isSoloed: false)
+            ])
+        }
+    }
+
+    /// A queued section takes over at the BOUNDARY, not immediately — cutting the
+    /// current one off mid-phrase is exactly what queueing exists to avoid.
+    func testAQueuedSectionTakesOverAtTheNextBoundary() {
+        let a = UUID(), b = UUID(), c = UUID()
+        let track = UUID()
+        let engine = SequencerEngine()
+        engine.audioEngine = RecordingAudioOutput()
+
+        let lock = NSLock()
+        var seen: [Int] = []
+        engine.onSectionChange = { lock.lock(); seen.append($0); lock.unlock() }
+
+        // Start on the FIRST section, held and looping, then queue the third.
+        engine.startSong(sections: queueTestSections([a, b, c], trackID: track),
+                         tempo: 400, timeSignature: TimeSignature(),
+                         trackIDs: [track], loop: true, heldSection: a)
+        Thread.sleep(forTimeInterval: 0.2)          // partway through a 0.6 s bar
+        lock.lock(); let beforeQueue = seen; lock.unlock()
+        XCTAssertEqual(beforeQueue, [0], "still on the section that was pressed")
+
+        engine.queueSection(c)
+        Thread.sleep(forTimeInterval: 0.15)
+        lock.lock(); let immediately = seen; lock.unlock()
+        XCTAssertEqual(immediately, [0], "queueing must not switch mid-section")
+
+        Thread.sleep(forTimeInterval: 0.8)          // past the boundary
+        engine.stop()
+        lock.lock(); let after = seen; lock.unlock()
+        XCTAssertEqual(after, [0, 2], "the queued section follows the one that was playing")
+    }
+
+    /// A one-shot stops at the end of its section — unless something was queued behind
+    /// it, in which case it runs on instead.
+    func testAOneShotStopsUnlessSomethingIsQueuedBehindIt() {
+        let a = UUID(), b = UUID()
+        let track = UUID()
+
+        // Nothing queued: it finishes.
+        let alone = SequencerEngine()
+        alone.audioEngine = RecordingAudioOutput()
+        let finished = expectation(description: "one shot ended")
+        alone.onSongFinished = { finished.fulfill() }
+        alone.startSong(sections: queueTestSections([a, b], trackID: track),
+                        tempo: 400, timeSignature: TimeSignature(), trackIDs: [track],
+                        loop: false, heldSection: a, stopAtSectionEnd: true)
+        wait(for: [finished], timeout: 3)
+        alone.stop()
+
+        // Queued: it carries on instead of stopping.
+        let followed = SequencerEngine()
+        followed.audioEngine = RecordingAudioOutput()
+        let lock = NSLock()
+        var ended = false
+        var seen: [Int] = []
+        followed.onSongFinished = { lock.lock(); ended = true; lock.unlock() }
+        followed.onSectionChange = { lock.lock(); seen.append($0); lock.unlock() }
+        followed.startSong(sections: queueTestSections([a, b], trackID: track),
+                           tempo: 400, timeSignature: TimeSignature(), trackIDs: [track],
+                           loop: false, heldSection: a, stopAtSectionEnd: true)
+        followed.queueSection(b)
+        Thread.sleep(forTimeInterval: 0.9)
+        lock.lock(); let ranOn = seen; let didEnd = ended; lock.unlock()
+        followed.stop()
+
+        XCTAssertFalse(didEnd, "a queued section must keep it going")
+        XCTAssertEqual(ranOn, [0, 1], "and it moves to what was queued")
+    }
+
+    /// Queueing is one deep: pressing another pad replaces the queue rather than
+    /// building a list nobody can see.
+    func testQueueingAgainReplacesRatherThanAppends() {
+        let a = UUID(), b = UUID(), c = UUID()
+        let track = UUID()
+        let engine = SequencerEngine()
+        engine.audioEngine = RecordingAudioOutput()
+
+        let lock = NSLock()
+        var seen: [Int] = []
+        engine.onSectionChange = { lock.lock(); seen.append($0); lock.unlock() }
+
+        engine.startSong(sections: queueTestSections([a, b, c], trackID: track),
+                         tempo: 400, timeSignature: TimeSignature(),
+                         trackIDs: [track], loop: true, heldSection: a)
+        engine.queueSection(b)
+        engine.queueSection(c)     // changed my mind
+        Thread.sleep(forTimeInterval: 0.9)
+        engine.stop()
+
+        lock.lock(); let after = seen; lock.unlock()
+        XCTAssertEqual(after, [0, 2], "only the last queued section plays; b is skipped")
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)

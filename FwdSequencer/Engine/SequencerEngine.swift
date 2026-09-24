@@ -165,6 +165,16 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// arrangement — the editing "Hold". Keyed by section ID rather than index so that
     /// reordering or deleting sections cannot silently hold the wrong one.
     private var heldSectionID: UUID?
+    /// A section waiting to take over at the next boundary — the pattern queue.
+    ///
+    /// One deep on purpose: "what plays after this" is a decision worth making while
+    /// listening, and a longer queue turns it into an arrangement you have to remember.
+    /// Queueing again simply replaces it.
+    private var queuedSectionID: UUID?
+    /// Stop when the current section ends rather than repeating it. What makes a
+    /// triggered one-shot a one-shot while it is still HELD — the queue overrides it, so
+    /// a shot with something queued runs on instead of stopping.
+    private var stopAtSectionEnd = false
     private var sectionIndex = 0
     private var _songSections: [SequencerSection] = []
     private var _songTempo: Double = 120
@@ -221,12 +231,15 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// carries across sections.
     func startSong(sections: [SequencerSection], tempo: Double,
                    timeSignature: TimeSignature, trackIDs: [UUID], loop: Bool,
-                   randomSeed: UInt64 = 0x465744, heldSection: UUID? = nil) {
+                   randomSeed: UInt64 = 0x465744, heldSection: UUID? = nil,
+                   stopAtSectionEnd: Bool = false) {
         sequencerQueue.async { [weak self] in
             guard let self else { return }
             stopTimer()
             globalStep = 0
             heldSectionID = heldSection
+            queuedSectionID = nil
+            self.stopAtSectionEnd = stopAtSectionEnd
             // Start ON the held section: pressing play with a section held should sound
             // that section, not restart the arrangement from the top.
             sectionIndex = heldSection.flatMap { id in sections.firstIndex { $0.id == id } } ?? 0
@@ -250,6 +263,11 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// section boundary, so engaging it never chops the bar that is playing.
     func holdSection(_ sectionID: UUID?) {
         sequencerQueue.async { [weak self] in self?.heldSectionID = sectionID }
+    }
+
+    /// Queue a section to take over at the next boundary, or nil to cancel.
+    func queueSection(_ sectionID: UUID?) {
+        sequencerQueue.async { [weak self] in self?.queuedSectionID = sectionID }
     }
 
     /// Atomically push the complete live song configuration. Current section identity
@@ -621,8 +639,26 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                 // held one at the boundary. The end-of-arrangement check is skipped
                 // deliberately — hold outranks "don't loop", or turning it on near the
                 // end of a non-looping song would stop playback instead of repeating.
-                let held = heldSectionID.flatMap { id in _songSections.firstIndex { $0.id == id } }
-                if let held {
+                // A queued section takes over here and becomes the held one, so it
+                // repeats or stops on the same terms the section it replaced did. This
+                // is the only place the queue is read: switching anywhere else would
+                // cut a section off mid-phrase, which is exactly what queueing is meant
+                // to avoid.
+                if let queued = queuedSectionID.flatMap({ id in _songSections.firstIndex { $0.id == id } }) {
+                    heldSectionID = _songSections[queued].id
+                    queuedSectionID = nil
+                    if queued != sectionIndex {
+                        sectionIndex = queued
+                        onSectionChange?(sectionIndex)
+                        frame = currentFrame()
+                        stepsPerBar = max(1, frame.timeSignature.numerator * ticksPerWholeNote / frame.timeSignature.denominator)
+                        totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
+                    }
+                } else if stopAtSectionEnd, heldSectionID != nil {
+                    // A one-shot that nothing followed.
+                    finishSong()
+                    return
+                } else if let held = heldSectionID.flatMap({ id in _songSections.firstIndex { $0.id == id } }) {
                     if held != sectionIndex {
                         sectionIndex = held
                         onSectionChange?(sectionIndex)
