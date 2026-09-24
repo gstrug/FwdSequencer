@@ -311,9 +311,25 @@ private struct SongTransportBar: View {
                 }
                 .buttonStyle(.bordered)
 
+                // A direct toggle rather than a menu item: this is switched between
+                // working on a song and auditioning its parts, which happens constantly.
+                Toggle(isOn: $songStore.triggerMode) {
+                    Label(songStore.triggerMode ? "Trigger" : "Song",
+                          systemImage: songStore.triggerMode ? "hand.tap" : "music.note.list")
+                }
+                .toggleStyle(.button)
+                .tint(.accentColor)
+                .help(songStore.triggerMode
+                      ? "Section chips are pads — press one to hear it"
+                      : "Section chips select for editing; switch to Trigger to audition them")
+
                 Menu {
                     Toggle(isOn: $songStore.midiClockEnabled) {
                         Label("MIDI Clock Output", systemImage: "cable.connector")
+                    }
+                    Divider()
+                    Toggle(isOn: $songStore.triggerHoldToPlay) {
+                        Label("Trigger Holds to Play", systemImage: "hand.point.up.left")
                     }
                 } label: {
                     Label("Song Settings", systemImage: "gearshape")
@@ -564,11 +580,27 @@ private struct ArrangementStrip: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isPlaying ? Color.green : .clear, lineWidth: 2)
         )
+        .overlay(alignment: .topTrailing) {
+            // Says the chip is pressable without taking room from the name.
+            if songStore.triggerMode {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.secondary)
+                    .padding(4)
+            }
+        }
         .contentShape(Rectangle())
-        .onTapGesture { songStore.selectedSection = idx }
-        // Long press gives the whole menu for THIS section, not just rename — the same
-        // actions the Section button offers, without having to select it first.
-        .contextMenu { sectionActions(for: idx) }
+        // In Trigger mode a press IS the action, so the tap and the long-press menu
+        // stand aside rather than competing with it.
+        .onTapGesture { if !songStore.triggerMode { songStore.selectedSection = idx } }
+        .contextMenu { if !songStore.triggerMode { sectionActions(for: idx) } }
+        // minimumDuration .infinity so `perform` never fires: only the press and release
+        // edges matter, and the sound has to start on touch-down or it feels broken.
+        .onLongPressGesture(minimumDuration: .infinity, pressing: { isPressing in
+            guard songStore.triggerMode else { return }
+            if isPressing { songStore.triggerSection(at: idx) }
+            else { songStore.releaseTrigger() }
+        }, perform: {})
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityLabel("Section \(idx + 1), \(section.name)")

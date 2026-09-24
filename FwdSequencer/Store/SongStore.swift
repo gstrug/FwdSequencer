@@ -132,6 +132,71 @@ class SongStore: ObservableObject {
         }
         sequencer.holdSection(song.sections[selectedSection].id)
     }
+    // MARK: Pattern trigger
+    //
+    // A working mode, not song data: in Trigger mode a section chip is a pad you press
+    // to hear that section, rather than a thing you tap to select. Having it be a mode
+    // rather than "whatever the chip does when stopped" keeps the gestures from
+    // competing — a long press can still open a section's menu in Song mode, because in
+    // Trigger mode the press means something else entirely.
+    //
+    // Persisted like the MIDI clock setting rather than reset per song, since someone
+    // working this way will want to stay in it.
+    @Published var triggerMode: Bool = UserDefaults.standard.bool(forKey: "PatternTriggerMode") {
+        didSet {
+            UserDefaults.standard.set(triggerMode, forKey: "PatternTriggerMode")
+            if !triggerMode, isPlaying { stop() }
+        }
+    }
+
+    /// Whether a trigger plays only while held.
+    ///
+    /// Off, a press plays the section through — once, or round and round if Loop is on —
+    /// and releasing does nothing. On, it is a gate: sound while your finger is down.
+    /// A very short section is easy to cut off before it has said anything, which is why
+    /// this is a choice rather than the only behaviour.
+    @Published var triggerHoldToPlay: Bool = UserDefaults.standard.bool(forKey: "PatternTriggerHold") {
+        didSet { UserDefaults.standard.set(triggerHoldToPlay, forKey: "PatternTriggerHold") }
+    }
+
+    /// Start one section, on its own.
+    ///
+    /// Loop follows the song's Loop setting: on it repeats, off the sequencer's existing
+    /// end-of-arrangement path stops it after a single pass — so a one-shot needs no
+    /// special handling.
+    func triggerSection(at index: Int) {
+        guard song.sections.indices.contains(index) else { return }
+        // Selecting it too: you almost always want to see what you are hearing, and it
+        // matches the editor following the playhead everywhere else.
+        selectedSection = index
+        activate()
+        for track in song.tracks where !audioEngine.hasInstrument(for: track.id) {
+            audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
+            if let plugin = track.pluginInfo {
+                loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
+            }
+            loadEffects(for: track)
+        }
+        isPlaying = true
+        isPaused = false
+        playback.currentBar = 0
+        currentSection = index
+        sequencer.startSong(
+            sections: [flattenedSections()[index]],
+            tempo: song.tempo,
+            timeSignature: song.timeSignature,
+            trackIDs: song.tracks.map(\.id),
+            loop: loopEnabled,
+            randomSeed: song.randomSeed ?? Self.seed(from: song.id)
+        )
+    }
+
+    /// Finger lifted off a trigger. Only stops when the mode says to.
+    func releaseTrigger() {
+        guard triggerHoldToPlay, isPlaying else { return }
+        stop()
+    }
+
     @Published var midiClockEnabled: Bool = UserDefaults.standard.bool(forKey: "MIDIClockOutputEnabled") {
         didSet {
             UserDefaults.standard.set(midiClockEnabled, forKey: "MIDIClockOutputEnabled")

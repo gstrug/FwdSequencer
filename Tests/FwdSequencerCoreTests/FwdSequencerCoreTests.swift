@@ -1753,6 +1753,56 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertTrue(old.coversWholeSection, "absent scope means the whole section")
     }
 
+    /// Triggering one section is startSong given a single-section arrangement. With
+    /// Loop off the sequencer's existing end-of-arrangement path stops it after one
+    /// pass, so a one-shot needs no special handling — this pins that, since the
+    /// behaviour is inherited rather than written.
+    func testASingleSectionPlaysOnceWhenNotLooping() {
+        let out = RecordingAudioOutput()
+        let finished = expectation(description: "played through once")
+        let id = UUID()
+        let engine = SequencerEngine()
+        engine.audioEngine = out
+        engine.onSongFinished = { finished.fulfill() }
+
+        let track = PlayTrack(id: id, tempoDivision: .quarter,
+                              notePool: [NoteEntry(midiNote: 60)],
+                              steps: [Step(type: .play)], isMuted: false, isSoloed: false)
+        engine.startSong(sections: [SequencerSection(id: UUID(), numberOfBars: 1, tracks: [track])],
+                         tempo: 400, timeSignature: TimeSignature(),
+                         trackIDs: [id], loop: false)
+
+        wait(for: [finished], timeout: 3)
+        engine.stop()
+        XCTAssertGreaterThan(out.playedNotes, 0, "it should have sounded before finishing")
+    }
+
+    /// The looping case must NOT finish on its own — releasing, or pressing stop, is
+    /// what ends it.
+    func testASingleSectionKeepsGoingWhenLooping() {
+        let out = RecordingAudioOutput()
+        let id = UUID()
+        let engine = SequencerEngine()
+        engine.audioEngine = out
+        let lock = NSLock()
+        var finished = false
+        engine.onSongFinished = { lock.lock(); finished = true; lock.unlock() }
+
+        let track = PlayTrack(id: id, tempoDivision: .quarter,
+                              notePool: [NoteEntry(midiNote: 60)],
+                              steps: [Step(type: .play)], isMuted: false, isSoloed: false)
+        engine.startSong(sections: [SequencerSection(id: UUID(), numberOfBars: 1, tracks: [track])],
+                         tempo: 400, timeSignature: TimeSignature(),
+                         trackIDs: [id], loop: true)
+
+        Thread.sleep(forTimeInterval: 1.5)   // several passes of a 0.6 s bar
+        engine.stop()
+
+        lock.lock(); let didFinish = finished; lock.unlock()
+        XCTAssertFalse(didFinish, "a looping trigger must keep going until it is stopped")
+        XCTAssertGreaterThan(out.playedNotes, 2, "and keep playing round")
+    }
+
     func testStorageSurfacesCorruptionAndRestoresLastKnownGoodBackup() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("FWD-StorageTests-\(UUID().uuidString)", isDirectory: true)
