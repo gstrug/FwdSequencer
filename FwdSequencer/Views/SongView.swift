@@ -311,30 +311,25 @@ private struct SongTransportBar: View {
                 }
                 .buttonStyle(.bordered)
 
-                // A direct toggle rather than a menu item: this is switched between
-                // working on a song and auditioning its parts, which happens constantly.
-                Toggle(isOn: $songStore.triggerMode) {
-                    Label(songStore.triggerMode ? "Trigger" : "Song",
-                          systemImage: songStore.triggerMode ? "hand.tap" : "music.note.list")
-                }
-                .toggleStyle(.button)
-                .tint(.accentColor)
-                .help(songStore.triggerMode
-                      ? "Section chips are pads — press one to hear it"
-                      : "Section chips select for editing; switch to Trigger to audition them")
-
                 Menu {
-                    Toggle(isOn: $songStore.midiClockEnabled) {
-                        Label("MIDI Clock Output", systemImage: "cable.connector")
+                    Toggle(isOn: $songStore.triggerMode) {
+                        Label("Pattern Trigger Mode", systemImage: "hand.tap")
                     }
-                    Divider()
                     Toggle(isOn: $songStore.triggerHoldToPlay) {
                         Label("Trigger Holds to Play", systemImage: "hand.point.up.left")
                     }
+                    .disabled(!songStore.triggerMode)
+                    Divider()
+                    Toggle(isOn: $songStore.midiClockEnabled) {
+                        Label("MIDI Clock Output", systemImage: "cable.connector")
+                    }
                 } label: {
+                    // Tinted while armed: the chips behave differently, and that needs to
+                    // be visible from the transport without opening the menu.
                     Label("Song Settings", systemImage: "gearshape")
                 }
                 .buttonStyle(.bordered)
+                .tint(songStore.triggerMode ? .accentColor : nil)
                 }
                 .fixedSize(horizontal: true, vertical: false)
             }
@@ -561,8 +556,11 @@ private struct ArrangementStrip: View {
     // an explicit return, and the chain is long enough that inference gives up.
     @ViewBuilder
     private func chip(_ idx: Int, _ section: SongSection) -> some View {
-        let isSelected = songStore.selectedSection == idx
         let isPlaying  = songStore.isPlaying && songStore.currentSection == idx
+        // In Trigger mode the chips are pads, and a pad lit before anything has been
+        // pressed is just confusing — so the highlight follows what is SOUNDING rather
+        // than what happens to be selected, and nothing is lit until something plays.
+        let isSelected = songStore.triggerMode ? isPlaying : songStore.selectedSection == idx
 
         VStack(spacing: 2) {
             Text(section.name).font(.caption.bold()).lineLimit(1)

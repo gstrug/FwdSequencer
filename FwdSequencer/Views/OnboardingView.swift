@@ -42,6 +42,12 @@ struct OnboardingView: View {
          + "required before shaping a section or saving snapshots — there is no point "
          + "judging either without listening."),
 
+        ("hand.tap",
+         "Try a section on its own",
+         "Turn on Pattern Trigger Mode in Song Settings and the section chips become "
+         + "pads — press one to hear just that section. It plays through once, or round "
+         + "and round if Loop is on, and you can set it to sound only while held."),
+
         ("wand.and.stars",
          "Shape a section",
          "Shape rotates, reverses or transposes the note pool, and generates whole step "
