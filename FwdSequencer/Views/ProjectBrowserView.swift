@@ -62,14 +62,9 @@ struct ProjectBrowserView: View {
                             Label("Import Song", systemImage: "square.and.arrow.down")
                         }
                     }
-                    // Reachable on demand, not only on a fresh install — the tutorial is
-                    // worth rereading once the app has grown past what you took in first
-                    // time, and reinstalling was the only way to see it again.
-                    ToolbarItem(placement: .secondaryAction) {
-                        Button { showingOnboarding = true } label: {
-                            Label("Show Tutorial", systemImage: "questionmark.circle")
-                        }
-                    }
+                    // "Show Tutorial" is not here any more: it lives in Song Settings, on
+                    // the transport, where it is beside the song it describes. This screen
+                    // still opens the tutorial on a first run.
                 }
         }
         .onAppear {
