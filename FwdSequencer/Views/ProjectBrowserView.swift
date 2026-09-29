@@ -5,6 +5,9 @@ struct ProjectBrowserView: View {
     @EnvironmentObject var songStore: SongStore
     @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding = false
     @AppStorage("didInstallMidnightCurrentDemoV1") private var didInstallMidnightCurrentDemo = false
+    /// Its own flag, so the example reaches people who already have the app rather than
+    /// only a fresh install.
+    @AppStorage("didInstallHappyBirthdayDemoV1") private var didInstallHappyBirthdayDemo = false
     @State private var songs: [Song] = []
     @State private var showingSong = false
     @State private var songDeleteTarget: Song? = nil
@@ -422,13 +425,27 @@ struct ProjectBrowserView: View {
     /// from every existing document; after installation it is an ordinary song
     /// that can be edited, duplicated, exported, or deleted without returning.
     private func installBundledDemoIfNeeded() {
-        guard !didInstallMidnightCurrentDemo else { return }
-        switch SongStorage.saveResult(SongTemplate.midnightCurrent.makeSong()) {
+        var installedAny = false
+        if !didInstallMidnightCurrentDemo {
+            installedAny = install(SongTemplate.midnightCurrent, marking: &didInstallMidnightCurrentDemo)
+        }
+        if !didInstallHappyBirthdayDemo {
+            installedAny = install(SongTemplate.happyBirthday, marking: &didInstallHappyBirthdayDemo)
+                || installedAny
+        }
+        if installedAny { reload() }
+    }
+
+    /// One example. Its flag is set only on a successful save, so a failure here is
+    /// retried next launch rather than silently skipping the song for good.
+    private func install(_ template: SongTemplate, marking installed: inout Bool) -> Bool {
+        switch SongStorage.saveResult(template.makeSong()) {
         case .success:
-            didInstallMidnightCurrentDemo = true
-            reload()
+            installed = true
+            return true
         case .failure(let error):
-            notice = "The example song could not be installed. \(error.localizedDescription)"
+            notice = "\(template.name) could not be installed. \(error.localizedDescription)"
+            return false
         }
     }
 

@@ -3,6 +3,7 @@ import Foundation
 enum SongTemplate: String, CaseIterable, Identifiable {
     case starter
     case midnightCurrent
+    case happyBirthday
     case ambientCanon
     case bassPulse
     case chordDrift
@@ -13,6 +14,7 @@ enum SongTemplate: String, CaseIterable, Identifiable {
         switch self {
         case .starter: return "Blank Starter"
         case .midnightCurrent: return "Midnight Current"
+        case .happyBirthday: return "Happy Birthday in C (Jazz)"
         case .ambientCanon: return "Ambient Canon"
         case .bassPulse: return "Bass Pulse"
         case .chordDrift: return "Chord Drift"
@@ -23,6 +25,7 @@ enum SongTemplate: String, CaseIterable, Identifiable {
         switch self {
         case .starter: return "One ready-to-edit GM track"
         case .midnightCurrent: return "A complete four-section performance showcasing FWD"
+        case .happyBirthday: return "A jazz arrangement transcribed bar by bar, in 3/4"
         case .ambientCanon: return "Two evolving lines moving at different rates"
         case .bassPulse: return "A direct rhythmic example of Fwd, Repeat, and Rest"
         case .chordDrift: return "Moving triads with Hold and Back steps"
@@ -33,6 +36,7 @@ enum SongTemplate: String, CaseIterable, Identifiable {
         switch self {
         case .starter: return "plus.square"
         case .midnightCurrent: return "sparkles"
+        case .happyBirthday: return "birthday.cake"
         case .ambientCanon: return "waveform.path"
         case .bassPulse: return "metronome"
         case .chordDrift: return "music.quarternote.3"
@@ -45,6 +49,8 @@ enum SongTemplate: String, CaseIterable, Identifiable {
             return Self.starterSong()
         case .midnightCurrent:
             return Self.midnightCurrentSong()
+        case .happyBirthday:
+            return Self.happyBirthdaySong()
         case .ambientCanon:
             return Self.ambientCanonSong()
         case .bassPulse:
@@ -61,6 +67,24 @@ enum SongTemplate: String, CaseIterable, Identifiable {
         return Song(name: "New FWD Song", tracks: [track],
                     sections: [SongSection(name: "Section 1", numberOfBars: 4, parts: [part])],
                     randomSeed: 0x46574401)
+    }
+
+    /// Unlike the others this one is transcribed music, not a demonstration of the
+    /// step vocabulary, so it is carried as data rather than written out in Swift —
+    /// every note and rest of the arrangement, which is nothing a reader of this file
+    /// would want to scroll past or hand-edit.
+    ///
+    /// If the resource is ever missing the app must still start, so this falls back to
+    /// the blank starter rather than trapping.
+    private static func happyBirthdaySong() -> Song {
+        guard let url = Bundle.main.url(forResource: "HappyBirthdayJazz", withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              var song = try? SongStorage.decodeDocument(data)
+        else { return starterSong() }
+        // The stored id is a placeholder: a fresh one keeps this separate from any copy
+        // already installed, so the example can be reinstalled without overwriting edits.
+        song.id = UUID()
+        return song
     }
 
     /// A complete, deterministic piece that sounds coherent through the built-in
