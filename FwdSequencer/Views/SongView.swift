@@ -1470,9 +1470,9 @@ private struct SongTrackRowView: View {
                             set: { track.variation = $0 }
                         )) {
                             Text("Off (identical)").tag(0)
-                            Text("Light").tag(8)
-                            Text("Medium").tag(18)
-                            Text("Strong").tag(32)
+                            Text("Light").tag(10)
+                            Text("Medium").tag(22)
+                            Text("Strong").tag(40)
                         }
                     } label: {
                         Label("Variation", systemImage: "dice")
@@ -1499,9 +1499,9 @@ private struct SongTrackRowView: View {
                             set: { track.timingJitter = Double($0) }
                         )) {
                             Text("Off (exact)").tag(0)
-                            Text("Tight — 4 ms").tag(4)
-                            Text("Human — 9 ms").tag(9)
-                            Text("Loose — 15 ms").tag(15)
+                            Text("Tight — 10 ms").tag(10)
+                            Text("Human — 22 ms").tag(22)
+                            Text("Loose — 40 ms").tag(40)
                         }
                     } label: {
                         Label("Timing", systemImage: "waveform.path")

@@ -804,8 +804,16 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                 // exact position — both directions, which only became possible once the
                 // scheduler started running ahead of the beat.
                 var timingOffset = 0.0
-                if track.swing > 0, globalStep % stepsPerBeat == stepsPerBeat / 2 {
-                    timingOffset += (track.swing / 100) * (60.0 / frame.tempo) / 6
+                // Swing delays every OTHER trigger of this track, whatever its
+                // division. It used to fire only at the exact mid-beat, which a track
+                // never lands on unless its grid divides the beat in two — a
+                // triplet-eighth track triggers at 0, 8 and 16 ticks of 24 and so could
+                // never be swung at all. Silently doing nothing, with no way to tell.
+                //
+                // A pair of triggers spans 2T. Straight they fall at 0 and T; fully
+                // swung, at 0 and 4T/3 — so the second moves late by T/3.
+                if track.swing > 0, triggerIndex % 2 == 1 {
+                    timingOffset += (track.swing / 100) * (stepDuration / 3)
                 }
                 if track.timingJitter > 0 {
                     let t = FeelNoise.signedValue(seed: initialRandomSeed, section: sectionIndex,
@@ -851,7 +859,12 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                         let v = FeelNoise.signedValue(seed: initialRandomSeed, section: sectionIndex,
                                                       trigger: triggerIndex, midiNote: entry.midiNote,
                                                       salt: FeelNoise.velocitySalt)
-                        velocityOffset += Int((v * Double(track.variation)).rounded())
+                        // Halved against the setting: Accent decides WHERE the emphasis
+                        // falls and Variation is how much a player misses that mark. At
+                        // full strength they were comparable absolute offsets, so
+                        // Variation swamped the metric shape and the two read as fighting
+                        // each other.
+                        velocityOffset += Int((v * Double(track.variation) / 2).rounded())
                         let g = FeelNoise.signedValue(seed: initialRandomSeed, section: sectionIndex,
                                                       trigger: triggerIndex, midiNote: entry.midiNote,
                                                       salt: FeelNoise.gateSalt)

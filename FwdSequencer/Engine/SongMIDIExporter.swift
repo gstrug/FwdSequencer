@@ -181,8 +181,11 @@ nonisolated enum SongMIDIExporter {
                     // no lead to run out of — but the values must still agree, or the
                     // export stops matching what was heard.
                     var timingTicks = 0.0
-                    if track.effectiveSwing > 0, localTick % beatTicks == beatTicks / 2 {
-                        timingTicks += (track.effectiveSwing / 100) * Double(beatTicks) / 6
+                    // Every other trigger of THIS track, matching the live scheduler —
+                    // a fixed mid-beat test never fires for a track whose grid does not
+                    // divide the beat in two, such as triplet-eighths.
+                    if track.effectiveSwing > 0, triggerIndex % 2 == 1 {
+                        timingTicks += (track.effectiveSwing / 100) * Double(trigger) / 3
                     }
                     if track.effectiveTimingJitter > 0 {
                         let ticksPerSecond = Double(ticksPerQuarter) * song.tempo / 60.0

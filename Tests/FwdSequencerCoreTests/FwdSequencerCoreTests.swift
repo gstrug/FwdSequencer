@@ -1262,6 +1262,47 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(half[1] - straight[1], 40)
     }
 
+    /// Swing follows the TRACK'S grid, not a fixed mid-beat position.
+    ///
+    /// It used to fire only when the tick was exactly halfway through the beat, which a
+    /// track never lands on unless its division splits the beat in two. A triplet-eighth
+    /// track triggers at 0, 8 and 16 ticks of 24 and so could never be swung — the
+    /// setting did nothing at all, with nothing to say so.
+    func testSwingAppliesToDivisionsThatDoNotHalveTheBeat() throws {
+        func onTicks(_ division: TempoDivision, swing: Double) throws -> [Int] {
+            var song = Song()
+            var track = SongTrack(name: "T")
+            track.swing = swing
+            song.tracks = [track]
+            var part = Part(trackID: track.id)
+            part.notePool = [NoteEntry(midiNote: 60)]
+            part.steps = [Step(type: .play, n: 1)]
+            part.tempoDivision = division
+            song.sections = [SongSection(name: "A", numberOfBars: 1, parts: [part])]
+            return try channelEvents(in: SongMIDIExporter.data(for: song), track: 1)
+                .filter { $0.status & 0xF0 == 0x90 }.map(\.tick)
+        }
+
+        // Triplet-eighths: three to the quarter, so nothing lands mid-beat.
+        let straight = try onTicks(.eighthTriplet, swing: 0)
+        let swung = try onTicks(.eighthTriplet, swing: 100)
+        XCTAssertGreaterThanOrEqual(straight.count, 4)
+        XCTAssertNotEqual(swung, straight, "a triplet grid must still be swingable")
+
+        // A trigger pair spans 2T; fully swung the second moves late by T/3. A
+        // triplet-eighth is 160 ticks at 480 PPQ, so that is about 53.
+        XCTAssertEqual(swung[0], straight[0], "the first of each pair does not move")
+        XCTAssertEqual(swung[1] - straight[1], 53, "the second is a third of a step late")
+        XCTAssertEqual(swung[2], straight[2])
+        XCTAssertEqual(swung[3] - straight[3], 53)
+
+        // And the same rule still gives the classic eighth-note swing.
+        let straightEighths = try onTicks(.eighth, swing: 100)
+        let flatEighths = try onTicks(.eighth, swing: 0)
+        XCTAssertEqual(straightEighths[1] - flatEighths[1], 80,
+                       "full swing on eighths is still a sixth of a beat")
+    }
+
     /// Timing jitter pushes AND pulls. Being able to pull is the whole reason the
     /// look-ahead scheduler exists — notes used to be sent the instant their tick fired,
     /// so they could only ever be late.

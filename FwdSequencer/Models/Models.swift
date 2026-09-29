@@ -175,10 +175,14 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     var effectiveAccent: Int { min(max(accent ?? 0, 0), 60) }
     var effectiveVariation: Int { min(max(variation ?? 0, 0), 40) }
     var effectiveSwing: Double { min(max(swing ?? 0, 0), 100) }
-    /// Capped at 15 ms so the early half stays inside the scheduler's 20 ms lead —
+    /// Capped at 40 ms so the early half stays inside the scheduler's 50 ms lead —
     /// beyond that a note would be asked to play in the past and would simply clamp,
     /// biasing the feel late instead of loosening it.
-    var effectiveTimingJitter: Double { min(max(timingJitter ?? 0, 0), 15) }
+    ///
+    /// It was 15 ms, which is at the edge of audibility on a part that is otherwise
+    /// exactly quantised: the setting worked and could not be heard. Loose human playing
+    /// sits nearer 30-50 ms.
+    var effectiveTimingJitter: Double { min(max(timingJitter ?? 0, 0), 40) }
 }
 
 /// A named snapshot of a section's note data. Snapshots do not create arrangement
