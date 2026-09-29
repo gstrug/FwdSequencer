@@ -286,6 +286,7 @@ private struct SongTransportBar: View {
                             Image(systemName: "speaker.wave.2.fill")
                                 .font(.caption2).foregroundStyle(.secondary)
                             Slider(value: $songStore.song.masterVolume, in: 0...1)
+                            .resetsOnDoubleTap { songStore.song.masterVolume = 1.0 }
                                 .frame(width: 130)
                                 .accessibilityLabel("Master volume")
                         }
@@ -1314,7 +1315,7 @@ private struct SongTrackRowView: View {
             // and solo line up down the whole track list regardless of naming.
             Image(systemName: "speaker.wave.1").font(.system(size: 9)).foregroundStyle(.secondary)
             Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB).frame(width: 70)
-                .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.volume = 1.0 })   // reset to 0 dB
+                .resetsOnDoubleTap { track.mixer.volume = 1.0 }   // 0 dB
                 .accessibilityLabel("\(track.name) volume")
             // Explicit width: the meter is maxWidth-greedy, which has no intrinsic size
             // to resolve inside a fixed-size row.
@@ -1395,7 +1396,7 @@ private struct SongTrackRowView: View {
                 Spacer(minLength: 4)
                 Image(systemName: "speaker.wave.1").font(.caption2).foregroundStyle(.secondary)
                 Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB)
-                    .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.volume = 1.0 })   // reset to 0 dB
+                    .resetsOnDoubleTap { track.mixer.volume = 1.0 }   // 0 dB
                     .frame(minWidth: 70, maxWidth: 150)
                     .accessibilityLabel("\(track.name) volume")
                 SongTrackMeter(trackID: track.id)
@@ -1576,14 +1577,14 @@ private struct SongTrackRowView: View {
                     .font(.caption2).foregroundStyle(.secondary)
                     .frame(width: 28, alignment: .leading)
                 Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB)
-                    .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.volume = 1.0 })   // reset to 0 dB
+                    .resetsOnDoubleTap { track.mixer.volume = 1.0 }   // 0 dB
             }
 
             HStack(spacing: 6) {
                 Text("Pan").font(.caption2).foregroundStyle(.secondary)
                     .frame(width: 28, alignment: .leading)
                 Slider(value: $track.mixer.pan, in: -1...1)
-                    .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.pan = 0 })
+                    .resetsOnDoubleTap { track.mixer.pan = 0 }   // centre
                 Toggle("M", isOn: $track.mixer.isMuted)
                     .toggleStyle(.button).tint(.orange).font(.caption2.bold())
                     .accessibilityLabel("Mute \(track.name)")

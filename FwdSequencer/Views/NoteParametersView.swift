@@ -67,6 +67,8 @@ struct NoteStrip: View {
                     get: { Double(entry.velocity) },
                     set: { entry.velocity = Int($0) }
                 ), in: 1...127, step: 1)
+                    // NoteEntry's own default velocity.
+                    .resetsOnDoubleTap { entry.velocity = 100 }
                     .frame(width: 130)
                     .rotationEffect(.degrees(-90))
                     .frame(width: 36, height: 130)
@@ -80,6 +82,7 @@ struct NoteStrip: View {
                 Text(String(format: "%.0f%%", entry.gateLength * 100))
                     .font(.caption2).monospacedDigit()
                 Slider(value: $entry.gateLength, in: 0.05...1.0)
+                    .resetsOnDoubleTap { entry.gateLength = 0.5 }
                     .frame(width: 130)
                     .rotationEffect(.degrees(-90))
                     .frame(width: 36, height: 130)

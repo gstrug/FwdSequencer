@@ -242,12 +242,14 @@ struct StepRow: View {
                     HStack(spacing: 8) {
                         Text("Gate").font(.caption2).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
                         Slider(value: $step.gate, in: 0.05...1.0)
+                    .resetsOnDoubleTap { step.gate = 1.0 }
                         Text("\(Int(step.gate * 100))%")
                             .font(.caption2).monospacedDigit().frame(width: 38)
                     }
                     HStack(spacing: 8) {
                         Text("Probability").font(.caption2).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
                         Slider(value: $step.probability, in: 0...1, step: 0.05)
+                    .resetsOnDoubleTap { step.probability = 1.0 }
                         Text("\(Int((step.probability * 100).rounded()))%")
                             .font(.caption2).monospacedDigit().frame(width: 38)
                     }

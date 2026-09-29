@@ -249,6 +249,7 @@ struct ShapeSectionView: View {
                 ),
                 in: StepGenerator.lengthSliderRange, step: 1
             )
+            .resetsOnDoubleTap { songStore.generatorLength = 8 }
 
             ForEach(StepCharacter.allCases) { option in
                 Button {

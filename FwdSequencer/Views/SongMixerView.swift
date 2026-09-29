@@ -77,7 +77,7 @@ struct SongChannelStrip: View {
             VStack(spacing: 2) {
                 Text(panLabel).font(.caption2).monospacedDigit()
                 Slider(value: $track.mixer.pan, in: -1...1).frame(width: 80)
-                    .simultaneousGesture(TapGesture(count: 2).onEnded { track.mixer.pan = 0 })   // reset to centre
+                    .resetsOnDoubleTap { track.mixer.pan = 0 }   // centre
                 Text("Pan").font(.caption2).foregroundStyle(.secondary)
             }
 
