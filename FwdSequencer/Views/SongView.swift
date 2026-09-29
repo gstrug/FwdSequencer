@@ -232,108 +232,44 @@ private struct SongTransportBar: View {
             }
 
             // ── Row 2: song settings + panels ────────────────────────────
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                        HStack(spacing: 6) {
-                            Text("BPM").font(.caption).foregroundStyle(.secondary)
-                            Text("\(Int(songStore.song.tempo))")
-                                .font(.caption.monospacedDigit())
-                                .frame(width: 36, alignment: .trailing)
-                            Stepper("", value: $songStore.song.tempo, in: 20...400, step: 1)
-                                .labelsHidden()
-                            Button { handleTap() } label: {
-                                Label("Tap", systemImage: "hand.tap.fill").font(.caption)
-                            }
-                            .buttonStyle(.borderedProminent).controlSize(.small)
-                        }
-
-                        Divider().frame(height: 26)
-
-                        HStack(spacing: 4) {
-                            ForEach(0..<beatCount, id: \.self) { beat in
-                                let isActive = songStore.isPlaying && beat == currentBeat
-                                Circle()
-                                    .fill(isActive ? (beat == 0 ? Color.red : Color.green) : Color.gray.opacity(0.25))
-                                    .frame(width: 10, height: 10)
-                                    .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: isActive)
-                            }
-                        }
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityLabel("Beat \(currentBeat + 1) of \(beatCount)")
-
-                        Divider().frame(height: 26)
-                        SongBarCounter(totalBars: currentSectionBars)
-
-                        Divider().frame(height: 26)
-
-                        CPUReadout()
-                        Divider().frame(height: 26)
-
-                        HStack(spacing: 4) {
-                            Text("Time").font(.caption).foregroundStyle(.secondary)
-                            Picker("", selection: $songStore.song.timeSignature.numerator) {
-                                ForEach(1...32, id: \.self) { Text("\($0)").tag($0) }
-                            }.pickerStyle(.menu).fixedSize()
-                            Text("/").font(.body.bold()).foregroundStyle(.secondary)
-                            Picker("", selection: $songStore.song.timeSignature.denominator) {
-                                ForEach([1,2,4,8,16,32], id: \.self) { Text("\($0)").tag($0) }
-                            }.pickerStyle(.menu).fixedSize()
-                        }
-
-                        Divider().frame(height: 26)
-
-                        HStack(spacing: 6) {
-                            Image(systemName: "speaker.wave.2.fill")
-                                .font(.caption2).foregroundStyle(.secondary)
-                            Slider(value: $songStore.song.masterVolume, in: 0...1)
-                            .resetsOnDoubleTap { songStore.song.masterVolume = 1.0 }
-                                .frame(width: 130)
-                                .accessibilityLabel("Master volume")
-                        }
-
-                        Divider().frame(height: 26)
-
-                        SelectAllTextField(
-                            text: $songStore.song.name,
-                            placeholder: "Song Name",
-                            font: .preferredBold(.subheadline),
-                            selectAllTrigger: $selectAllSongName
-                        )
-                        .frame(minWidth: 120, maxWidth: 240)
-                        .onLongPressGesture { selectAllSongName = true }
-                Button { showPlayDock.toggle() } label: {
-                    Label("Play", systemImage: "pianokeys")
+            // Wrapped rather than scrolled sideways. This row is wider than an iPad in
+            // portrait, and the horizontal ScrollView it used to live in gave no sign of
+            // that: the song name was cut mid-word and Mixer and Song Settings sat off
+            // the right-hand edge with nothing on screen to say they were there.
+            //
+            // Grouped in threes only because a Layout's ViewBuilder takes ten children
+            // at most. Groups are flattened into subviews, so they do not affect where
+            // the row breaks.
+            // No dividers between the clusters any more: one landing at a row break
+            // dangles with nothing after it, and one starting a row is worse. Wider
+            // spacing separates them instead, and each cluster stays whole when the row
+            // breaks because it is a single subview.
+            FlowLayout(horizontalSpacing: 20, verticalSpacing: 8) {
+                Group {
+                    tempoControls
+                    beatIndicator
+                    SongBarCounter(totalBars: currentSectionBars)
+                    CPUReadout()
+                    timeSignaturePicker
+                    masterVolumeControl
+                    songNameField
                 }
-                .buttonStyle(.bordered)
-                .tint(showPlayDock ? .accentColor : nil)
-
-                Button { showMixer = true } label: {
-                    Label("Mixer", systemImage: "slider.vertical.3")
-                }
-                .buttonStyle(.bordered)
-
-                Menu {
-                    Toggle(isOn: $songStore.triggerMode) {
-                        Label("Pattern Trigger Mode", systemImage: "hand.tap")
+                Group {
+                    Button { showPlayDock.toggle() } label: {
+                        Label("Play", systemImage: "pianokeys")
                     }
-                    Toggle(isOn: $songStore.triggerHoldToPlay) {
-                        Label("Trigger Holds to Play", systemImage: "hand.point.up.left")
+                    .buttonStyle(.bordered)
+                    .tint(showPlayDock ? .accentColor : nil)
+
+                    Button { showMixer = true } label: {
+                        Label("Mixer", systemImage: "slider.vertical.3")
                     }
-                    .disabled(!songStore.triggerMode)
-                    Divider()
-                    Toggle(isOn: $songStore.midiClockEnabled) {
-                        Label("MIDI Clock Output", systemImage: "cable.connector")
-                    }
-                } label: {
-                    // Tinted while armed: the chips behave differently, and that needs to
-                    // be visible from the transport without opening the menu.
-                    Label("Song Settings", systemImage: "gearshape")
+                    .buttonStyle(.bordered)
+
+                    songSettingsMenu
                 }
-                .buttonStyle(.bordered)
-                .tint(songStore.triggerMode ? .accentColor : nil)
-                }
-                .fixedSize(horizontal: true, vertical: false)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -374,6 +310,99 @@ private struct SongTransportBar: View {
         .onChange(of: songStore.isPlaying) { playing in
             if !playing { currentBeat = 0 }
         }
+    }
+
+    // The pieces of row 2, each its own property. They were inline until the row had to
+    // wrap: a Layout needs them as separate subviews, and the whole row in one expression
+    // was already close to what the SwiftUI type-checker will accept.
+
+    private var tempoControls: some View {
+        HStack(spacing: 6) {
+            Text("BPM").font(.caption).foregroundStyle(.secondary)
+            Text("\(Int(songStore.song.tempo))")
+                .font(.caption.monospacedDigit())
+                .frame(width: 36, alignment: .trailing)
+            Stepper("", value: $songStore.song.tempo, in: 20...400, step: 1)
+                .labelsHidden()
+            Button { handleTap() } label: {
+                Label("Tap", systemImage: "hand.tap.fill").font(.caption)
+            }
+            .buttonStyle(.borderedProminent).controlSize(.small)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var beatIndicator: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<beatCount, id: \.self) { beat in
+                let isActive = songStore.isPlaying && beat == currentBeat
+                Circle()
+                    .fill(isActive ? (beat == 0 ? Color.red : Color.green) : Color.gray.opacity(0.25))
+                    .frame(width: 10, height: 10)
+                    .animation(reduceMotion ? nil : .easeOut(duration: 0.08), value: isActive)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Beat \(currentBeat + 1) of \(beatCount)")
+    }
+
+    private var timeSignaturePicker: some View {
+        HStack(spacing: 4) {
+            Text("Time").font(.caption).foregroundStyle(.secondary)
+            Picker("", selection: $songStore.song.timeSignature.numerator) {
+                ForEach(1...32, id: \.self) { Text("\($0)").tag($0) }
+            }.pickerStyle(.menu).fixedSize()
+            Text("/").font(.body.bold()).foregroundStyle(.secondary)
+            Picker("", selection: $songStore.song.timeSignature.denominator) {
+                ForEach([1,2,4,8,16,32], id: \.self) { Text("\($0)").tag($0) }
+            }.pickerStyle(.menu).fixedSize()
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var masterVolumeControl: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "speaker.wave.2.fill")
+                .font(.caption2).foregroundStyle(.secondary)
+            Slider(value: $songStore.song.masterVolume, in: 0...1)
+                .resetsOnDoubleTap { songStore.song.masterVolume = 1.0 }
+                .frame(width: 130)
+                .accessibilityLabel("Master volume")
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var songNameField: some View {
+        SelectAllTextField(
+            text: $songStore.song.name,
+            placeholder: "Song Name",
+            font: .preferredBold(.subheadline),
+            selectAllTrigger: $selectAllSongName
+        )
+        .frame(width: 200)
+        .onLongPressGesture { selectAllSongName = true }
+    }
+
+    private var songSettingsMenu: some View {
+        Menu {
+            Toggle(isOn: $songStore.triggerMode) {
+                Label("Pattern Trigger Mode", systemImage: "hand.tap")
+            }
+            Toggle(isOn: $songStore.triggerHoldToPlay) {
+                Label("Trigger Holds to Play", systemImage: "hand.point.up.left")
+            }
+            .disabled(!songStore.triggerMode)
+            Divider()
+            Toggle(isOn: $songStore.midiClockEnabled) {
+                Label("MIDI Clock Output", systemImage: "cable.connector")
+            }
+        } label: {
+            // Tinted while armed: the chips behave differently, and that needs to be
+            // visible from the transport without opening the menu.
+            Label("Song Settings", systemImage: "gearshape")
+        }
+        .buttonStyle(.bordered)
+        .tint(songStore.triggerMode ? .accentColor : nil)
     }
 
     private func handleTap() {
