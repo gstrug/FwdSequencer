@@ -994,6 +994,37 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(varied, try velocities(song), "and still be reproducible")
     }
 
+    /// Feel lives two menus deep, so the track row needs to know whether any of it is
+    /// on. Each setting must count, or a track could be swung with nothing to show it.
+    func testATrackKnowsWhenAnyFeelSettingIsActive() {
+        var track = SongTrack(name: "T")
+        XCTAssertFalse(track.hasFeel, "nothing set")
+        XCTAssertEqual(track.activeFeelCount, 0)
+
+        let settings: [(String, (inout SongTrack) -> Void)] = [
+            ("chord roll", { $0.chordSpread = 30 }),
+            ("accent",     { $0.accent = 24 }),
+            ("variation",  { $0.variation = 22 }),
+            ("swing",      { $0.swing = 50 }),
+            ("timing",     { $0.timingJitter = 22 }),
+        ]
+        for (name, apply) in settings {
+            var one = SongTrack(name: "T")
+            apply(&one)
+            XCTAssertTrue(one.hasFeel, "\(name) alone must register")
+            XCTAssertEqual(one.activeFeelCount, 1)
+        }
+
+        for (_, apply) in settings { apply(&track) }
+        XCTAssertEqual(track.activeFeelCount, settings.count, "all of them counted")
+
+        // Zero is off, not "set to zero" — the menus offer an explicit Off.
+        var zeroed = SongTrack(name: "T")
+        zeroed.swing = 0
+        zeroed.accent = 0
+        XCTAssertFalse(zeroed.hasFeel, "explicitly zero is still off")
+    }
+
     /// Songs saved before feel existed must still decode — SongTrack has the synthesised
     /// decoder, which throws on a missing key even where a default exists.
     func testSongsWithoutFeelStillDecodeAndAreUnaffected() throws {

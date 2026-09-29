@@ -149,45 +149,59 @@ struct ShapeSectionView: View {
         }
     }
 
+    /// Direction and distance on ONE line, sharing the row with the operation they
+    /// belong to. Stacked, with a full-width segmented control and a labelled stepper,
+    /// they took three lines for what is really one small setting — and the words
+    /// "Notes" and "Interval" only repeated what the operation above already said.
     @ViewBuilder
     private func parameters(for option: NoteOperation) -> some View {
         switch option {
         case .rotate:
-            Picker("Direction", selection: $rotateForward) {
-                Text("Forward").tag(true)
-                Text("Back").tag(false)
-            }
-            .pickerStyle(.segmented)
-            .onChange(of: rotateForward) { _ in lastApplied = nil }
-
-            Stepper(value: $rotateBy, in: 1...12) {
-                HStack {
-                    Text("Notes")
-                    Spacer()
-                    Text("\(rotateBy)").font(.body.monospacedDigit())
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                Picker("", selection: $rotateForward) {
+                    Text("Fwd").tag(true)
+                    Text("Back").tag(false)
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 128)
+                .onChange(of: rotateForward) { _ in lastApplied = nil }
+
+                Spacer(minLength: 0)
+
+                Text("\(rotateBy)")
+                    .font(.body.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                Stepper("", value: $rotateBy, in: 1...12)
+                    .labelsHidden()
+                    .fixedSize()
+                    .onChange(of: rotateBy) { _ in lastApplied = nil }
             }
-            .onChange(of: rotateBy) { _ in lastApplied = nil }
 
         case .transpose:
-            Picker("Direction", selection: $transposeUp) {
-                Text("Up").tag(true)
-                Text("Down").tag(false)
-            }
-            .pickerStyle(.segmented)
-            .onChange(of: transposeUp) { _ in lastApplied = nil }
-
-            Stepper(value: $transposeBy, in: 1...12) {
-                HStack {
-                    Text("Interval")
-                    Spacer()
-                    Text(Self.intervalLabel(transposeBy))
-                        .font(.body.monospacedDigit())
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 12) {
+                Picker("", selection: $transposeUp) {
+                    Text("Up").tag(true)
+                    Text("Down").tag(false)
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(width: 128)
+                .onChange(of: transposeUp) { _ in lastApplied = nil }
+
+                Spacer(minLength: 0)
+
+                // The interval is worth naming — seven semitones is a fifth, and knowing
+                // that is the difference between choosing one and guessing.
+                Text(Self.intervalLabel(transposeBy))
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Stepper("", value: $transposeBy, in: 1...12)
+                    .labelsHidden()
+                    .fixedSize()
+                    .onChange(of: transposeBy) { _ in lastApplied = nil }
             }
-            .onChange(of: transposeBy) { _ in lastApplied = nil }
 
         case .reverse:
             EmptyView()
@@ -314,7 +328,7 @@ struct ShapeSectionView: View {
                      "Fourth", "Tritone", "Fifth", "Minor sixth", "Major sixth",
                      "Minor seventh", "Major seventh", "Octave"]
         let interval = semitones < names.count ? names[semitones] : ""
-        return interval.isEmpty ? "\(semitones)" : "\(semitones) — \(interval)"
+        return interval.isEmpty ? "\(semitones)" : "\(semitones) · \(interval)"
     }
 
     /// Nothing is selected until you say so.

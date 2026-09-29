@@ -183,6 +183,20 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     /// exactly quantised: the setting worked and could not be heard. Loose human playing
     /// sits nearer 30-50 ms.
     var effectiveTimingJitter: Double { min(max(timingJitter ?? 0, 0), 40) }
+
+    /// Whether anything in Feel is doing something. Drives the indication on the track
+    /// row: these live behind a menu, so without it a track can be swung, accented and
+    /// loosened with nothing on screen to say so.
+    var hasFeel: Bool {
+        effectiveChordSpread > 0 || effectiveAccent > 0 || effectiveVariation > 0
+            || effectiveSwing > 0 || effectiveTimingJitter > 0
+    }
+
+    /// How many are on, for the menu's own summary.
+    var activeFeelCount: Int {
+        [effectiveChordSpread > 0, effectiveAccent > 0, effectiveVariation > 0,
+         effectiveSwing > 0, effectiveTimingJitter > 0].filter { $0 }.count
+    }
 }
 
 /// A named snapshot of a section's note data. Snapshots do not create arrangement

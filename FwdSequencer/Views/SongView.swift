@@ -1217,6 +1217,12 @@ private struct SongTrackRowView: View {
         )
     }
 
+    /// A menu entry that says whether it is doing anything, so the state is visible at
+    /// the level above rather than only inside the submenu.
+    private func feelLabel(_ name: String, on: Bool) -> String {
+        on ? "\(name) ✓" : name
+    }
+
     /// Steps for the step INDICATOR, which is a playback readout rather than an editor.
     ///
     /// The selection now follows the playhead, so in normal use this agrees with
@@ -1448,7 +1454,7 @@ private struct SongTrackRowView: View {
                             Text("Harp — 90 ms").tag(90)
                         }
                     } label: {
-                        Label("Chord Roll", systemImage: "hand.draw")
+                        Label(feelLabel("Chord Roll", on: track.effectiveChordSpread > 0), systemImage: "hand.draw")
                     }
 
                     Menu {
@@ -1462,7 +1468,7 @@ private struct SongTrackRowView: View {
                             Text("Strong").tag(40)
                         }
                     } label: {
-                        Label("Accent", systemImage: "waveform.path.ecg")
+                        Label(feelLabel("Accent", on: track.effectiveAccent > 0), systemImage: "waveform.path.ecg")
                     }
 
                     Menu {
@@ -1476,7 +1482,7 @@ private struct SongTrackRowView: View {
                             Text("Strong").tag(40)
                         }
                     } label: {
-                        Label("Variation", systemImage: "dice")
+                        Label(feelLabel("Variation", on: track.effectiveVariation > 0), systemImage: "dice")
                     }
 
                     Menu {
@@ -1491,7 +1497,7 @@ private struct SongTrackRowView: View {
                             Text("Full triplet — 100%").tag(100)
                         }
                     } label: {
-                        Label("Swing", systemImage: "metronome")
+                        Label(feelLabel("Swing", on: track.effectiveSwing > 0), systemImage: "metronome")
                     }
 
                     Menu {
@@ -1505,7 +1511,7 @@ private struct SongTrackRowView: View {
                             Text("Loose — 40 ms").tag(40)
                         }
                     } label: {
-                        Label("Timing", systemImage: "waveform.path")
+                        Label(feelLabel("Timing", on: track.effectiveTimingJitter > 0), systemImage: "waveform.path")
                     }
 
                     Divider()
@@ -1523,6 +1529,11 @@ private struct SongTrackRowView: View {
                     }
                 } label: {
                     Image(systemName: "ellipsis.circle").iconHitTarget(34)
+                        // Tinted when any Feel setting is on. They live two menus deep,
+                        // so a track could be swung, accented and loosened with nothing
+                        // on screen to say why it sounded different from its neighbour.
+                        .foregroundStyle(track.hasFeel ? AnyShapeStyle(.tint)
+                                                       : AnyShapeStyle(.secondary))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Actions for \(track.name)")
