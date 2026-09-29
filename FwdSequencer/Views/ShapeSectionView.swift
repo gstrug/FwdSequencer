@@ -17,14 +17,18 @@ struct ShapeSectionView: View {
     /// Counts presses so the footer can confirm something happened — the change is
     /// audible rather than visible from in here.
     @State private var generations = 0
-    @State private var hasSeededSelection = false
 
     // Notes operations are chosen and then applied, rather than firing on tap. Rotate
     // and Transpose need a direction and a distance, and there was no moment to set
     // either — nor any sign afterwards that anything had happened.
     @State private var operation: NoteOperation = .rotate
-    @State private var amount = 1
-    @State private var movesUp = true
+    // Each operation keeps its OWN direction and distance. They shared one pair, so
+    // setting a transpose interval silently changed how far Rotate would turn, and the
+    // controls sat below the list belonging to nothing in particular.
+    @State private var rotateBy = 1
+    @State private var rotateForward = true
+    @State private var transposeBy = 1
+    @State private var transposeUp = true
 
     /// What was last applied, shown back so an operation whose effect is only audible
     /// still confirms itself. Cleared on the next change so it cannot go stale.
@@ -68,6 +72,9 @@ struct ShapeSectionView: View {
                             .foregroundStyle(selection.contains(track.id)
                                              ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                     }
+                    // The row is the target, not just its text — the tick is the obvious
+                    // place to aim for and hitting it did nothing without this.
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -77,7 +84,8 @@ struct ShapeSectionView: View {
             if !songStore.canAlterSelectedSection {
                 Text("Hold this section first, so you can hear what you are changing.")
             } else if selection.isEmpty {
-                Text("Select at least one track.")
+                Text("Pick the tracks to change. Nothing is selected to begin with, so "
+                     + "a section cannot be rewritten wholesale by accident.")
             } else {
                 Text("Everything below applies to these tracks only. The selection is "
                      + "remembered.")
@@ -90,42 +98,36 @@ struct ShapeSectionView: View {
     private var notesSection: some View {
         Section {
             ForEach(NoteOperation.allCases) { option in
-                Button {
-                    operation = option
-                    lastApplied = nil
-                } label: {
-                    HStack(alignment: .firstTextBaseline) {
-                        VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Button {
+                        operation = option
+                        lastApplied = nil
+                    } label: {
+                        HStack {
                             Label(option.rawValue, systemImage: option.systemImage)
-                            Text(option.detail).font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            if option == operation {
+                                Image(systemName: "checkmark").foregroundStyle(.tint)
+                            }
                         }
-                        Spacer()
-                        if option == operation {
-                            Image(systemName: "checkmark").foregroundStyle(.tint)
-                        }
+                        // Without this only the text and icon are hit-testable, so
+                        // tapping the obvious place — the end of the row, where the tick
+                        // is — did nothing at all.
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Text(option.detail).font(.caption).foregroundStyle(.secondary)
+
+                    // On the row it belongs to, and only while it is the one selected,
+                    // so the list stays readable and there is no doubt which operation a
+                    // control is setting.
+                    if option == operation, option.takesAmount {
+                        parameters(for: option)
                     }
                 }
-                .buttonStyle(.plain)
+                .accessibilityElement(children: .contain)
                 .accessibilityAddTraits(option == operation ? [.isSelected] : [])
-            }
-
-            if operation.takesAmount {
-                Picker("Direction", selection: $movesUp) {
-                    Text(operation == .rotate ? "Forward" : "Up").tag(true)
-                    Text(operation == .rotate ? "Back" : "Down").tag(false)
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: movesUp) { _ in lastApplied = nil }
-
-                Stepper(value: $amount, in: 1...12) {
-                    HStack {
-                        Text(operation == .rotate ? "Notes" : "Semitones")
-                        Spacer()
-                        Text(amountLabel).font(.body.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .onChange(of: amount) { _ in lastApplied = nil }
             }
 
             Button(action: applyNoteOperation) {
@@ -147,20 +149,62 @@ struct ShapeSectionView: View {
         }
     }
 
-    /// Rotate counts notes; Transpose counts semitones and is worth naming as an
-    /// interval — seven semitones is a fifth, and knowing that is the difference between
-    /// choosing one and guessing.
-    private var amountLabel: String {
-        operation == .transpose ? Self.intervalLabel(amount) : "\(amount)"
+    @ViewBuilder
+    private func parameters(for option: NoteOperation) -> some View {
+        switch option {
+        case .rotate:
+            Picker("Direction", selection: $rotateForward) {
+                Text("Forward").tag(true)
+                Text("Back").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: rotateForward) { _ in lastApplied = nil }
+
+            Stepper(value: $rotateBy, in: 1...12) {
+                HStack {
+                    Text("Notes")
+                    Spacer()
+                    Text("\(rotateBy)").font(.body.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .onChange(of: rotateBy) { _ in lastApplied = nil }
+
+        case .transpose:
+            Picker("Direction", selection: $transposeUp) {
+                Text("Up").tag(true)
+                Text("Down").tag(false)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: transposeUp) { _ in lastApplied = nil }
+
+            Stepper(value: $transposeBy, in: 1...12) {
+                HStack {
+                    Text("Interval")
+                    Spacer()
+                    Text(Self.intervalLabel(transposeBy))
+                        .font(.body.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .onChange(of: transposeBy) { _ in lastApplied = nil }
+
+        case .reverse:
+            EmptyView()
+        }
     }
 
     private func applyNoteOperation() {
-        let signed = movesUp ? amount : -amount
         let applied: Bool
         switch operation {
-        case .rotate:    applied = songStore.rotateNotes(by: signed, for: selection)
-        case .reverse:   applied = songStore.reverseNotes(for: selection)
-        case .transpose: applied = songStore.transposeSelectedSection(by: signed, for: selection)
+        case .rotate:
+            applied = songStore.rotateNotes(by: rotateForward ? rotateBy : -rotateBy,
+                                            for: selection)
+        case .reverse:
+            applied = songStore.reverseNotes(for: selection)
+        case .transpose:
+            applied = songStore.transposeSelectedSection(
+                by: transposeUp ? transposeBy : -transposeBy, for: selection)
         }
         // Silence would be ambiguous — nothing happening looks the same as a pool too
         // small to rotate. Transpose refusing out of range already explains itself
@@ -175,12 +219,12 @@ struct ShapeSectionView: View {
         let tracks = "\(count) track\(count == 1 ? "" : "s")"
         switch operation {
         case .rotate:
-            lastApplied = "Rotated \(movesUp ? "forward" : "back") by \(amount) on \(tracks)"
+            lastApplied = "Rotated \(rotateForward ? "forward" : "back") by \(rotateBy) on \(tracks)"
         case .reverse:
             lastApplied = "Reversed the pool on \(tracks)"
         case .transpose:
-            lastApplied = "Transposed \(movesUp ? "up" : "down") \(amount) "
-                + "semitone\(amount == 1 ? "" : "s") on \(tracks)"
+            lastApplied = "Transposed \(transposeUp ? "up" : "down") \(transposeBy) "
+                + "semitone\(transposeBy == 1 ? "" : "s") on \(tracks)"
         }
     }
 
@@ -190,7 +234,7 @@ struct ShapeSectionView: View {
         Section {
             Stepper(value: $songStore.generatorLength, in: StepGenerator.lengthRange) {
                 HStack {
-                    Text("Length")
+                    Text("Number of Steps")
                     Spacer()
                     Text("\(songStore.generatorLength)")
                         .font(.body.monospacedDigit()).foregroundStyle(.secondary)
@@ -222,6 +266,7 @@ struct ShapeSectionView: View {
                             Image(systemName: "checkmark").foregroundStyle(.tint)
                         }
                     }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(option == songStore.generatorCharacter ? [.isSelected] : [])
@@ -271,16 +316,13 @@ struct ShapeSectionView: View {
         return interval.isEmpty ? "\(semitones)" : "\(semitones) — \(interval)"
     }
 
-    /// Default to everything on first use: the common case is reshaping the whole
-    /// section, and unticking is easier than ticking. After that the stored selection
-    /// stands, including an empty one — hence the flag rather than testing for empty.
+    /// Nothing is selected until you say so.
+    ///
+    /// It used to default to every track, which made it far too easy to rewrite every
+    /// pattern in a section at once while meaning to change one. Shaping is destructive
+    /// and the Apply and Generate buttons stay disabled until something is ticked, so an
+    /// empty default fails safe rather than silently doing the most damage.
     private func seedSelection() {
-        if !hasSeededSelection {
-            hasSeededSelection = true
-            if songStore.shapeTrackSelection.isEmpty {
-                songStore.shapeTrackSelection = Set(tracks.map(\.id))
-            }
-        }
         songStore.shapeTrackSelection.formIntersection(Set(tracks.map(\.id)))
     }
 }

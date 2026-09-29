@@ -548,7 +548,6 @@ private struct ArrangementStrip: View {
         .disabled(songStore.song.sections.count <= 1)
     }
 
-    @ViewBuilder
     /// Built outside the view body: inline, this concatenation pushed the SwiftUI
     /// type-checker past its limit once the chip gained a context menu.
     private func chipAccessibilityValue(_ section: SongSection,
@@ -759,6 +758,9 @@ private struct SectionSnapshotsSheet: View {
                                     .foregroundStyle(songStore.shapeTrackSelection.contains(track.id)
                                                      ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
                             }
+                            // The whole row, not just its text: the tick is where the
+                            // eye goes and tapping it did nothing without this.
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
@@ -785,7 +787,7 @@ private struct SectionSnapshotsSheet: View {
                 if let section, !section.variations.isEmpty {
                     Section {
                         ForEach(section.variations) { snapshot in
-                            snapshotRow(snapshot)
+                            snapshotRow(snapshot).contentShape(Rectangle())
                         }
                         // Swiping the Original away is refused by the store; filter it
                         // here too so the gesture does not look like it silently failed.
