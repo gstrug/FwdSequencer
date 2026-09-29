@@ -3,10 +3,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension UTType {
-    static let fwdSong = UTType(exportedAs: "com.grahamstruwig.FwdSequencer.song",
-                                conformingTo: .json)
-    static let standardMIDI = UTType(filenameExtension: "mid") ?? .data
-    static let coreAudioRecording = UTType(filenameExtension: "caf") ?? .audio
+    // `nonisolated` because the target defaults to MainActor isolation, and these are
+    // read from background work that writes files.
+    nonisolated static let fwdSong = UTType(exportedAs: "com.grahamstruwig.FwdSequencer.song",
+                                                    conformingTo: .json)
+    nonisolated static let standardMIDI = UTType(filenameExtension: "mid") ?? .data
+    nonisolated static let coreAudioRecording = UTType(filenameExtension: "caf") ?? .audio
 }
 
 struct MIDIFileDocument: FileDocument {

@@ -1,59 +1,112 @@
 import SwiftUI
+import UIKit
 
 /// Double tap a control to return it to its default — the convention in every DAW and
 /// most plugins, and the only quick way back to a known value once a slider has been
 /// dragged somewhere arbitrary.
 ///
-/// The tap is detected from a zero-distance drag rather than with `TapGesture`, which
-/// does not work on a `Slider`. A slider runs its own drag recogniser, and attaching a
-/// tap alongside it — whether by `gesture`, `simultaneousGesture` or `onTapGesture` —
-/// leaves the two competing: the slider claims the touch and the tap never completes.
-/// A `DragGesture(minimumDistance: 0)` runs happily beside it and reports every
-/// touch-up, taps included, so the pair is counted here instead.
+/// This is UIKit rather than a SwiftUI gesture because SwiftUI has no way to express it
+/// on a `Slider`. `onTapGesture`, `gesture` and `simultaneousGesture` all lose the touch
+/// to the slider's own tracking, and a `DragGesture(minimumDistance: 0)` — the usual way
+/// around that — never reports its end on a slider either. Both were tried and neither
+/// fired once.
 ///
-/// Movement is checked because that same gesture also ends after a real drag. Without
-/// it, nudging a fader twice in quick succession would reset it — the opposite of what
-/// was wanted, and worse than not having the feature.
-private struct ResetOnDoubleTap: ViewModifier {
-    let reset: () -> Void
-
-    /// When the first tap of a possible pair landed.
-    @State private var firstTap: Date?
+/// UIKit can watch a touch without competing for it, which is the whole trick. The
+/// recognizer goes on the *window* rather than on the probe or its superview: a
+/// recognizer only sees touches that hit-test into its own view or a descendant, and
+/// SwiftUI puts a `background` in a container that is not an ancestor of the slider, so
+/// anything closer than the window would simply never be told. The probe itself is only
+/// there to measure where this particular slider is.
+private final class DoubleTapProbe: UIView, UIGestureRecognizerDelegate {
+    var reset: () -> Void = {}
 
     /// Slower than the system double-tap interval on purpose: this is a deliberate
-    /// gesture on a small control, often with a fingertip already resting on it.
+    /// gesture on a small control, often with a fingertip already resting on it. The
+    /// pair is counted here rather than by `numberOfTapsRequired = 2` so that the
+    /// interval is ours to choose.
     private static let interval: TimeInterval = 0.45
-    /// A touch that moves further than this was a drag, however short.
-    private static let movementTolerance: CGFloat = 8
 
-    func body(content: Content) -> some View {
-        content.simultaneousGesture(
-            DragGesture(minimumDistance: 0)
-                .onEnded { value in
-                    guard abs(value.translation.width) < Self.movementTolerance,
-                          abs(value.translation.height) < Self.movementTolerance else {
-                        firstTap = nil        // that was a drag, not a tap
-                        return
-                    }
-                    let now = Date()
-                    if let first = firstTap, now.timeIntervalSince(first) < Self.interval {
-                        firstTap = nil
-                        reset()
-                    } else {
-                        firstTap = now
-                    }
-                }
-        )
+    private var recognizer: UITapGestureRecognizer?
+    private var lastTap: Date?
+
+    /// The probe exists to be measured, never to be touched: returning nil means it is
+    /// invisible to hit-testing and so cannot come between a finger and the slider.
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? { nil }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+
+        if let recognizer {
+            recognizer.view?.removeGestureRecognizer(recognizer)
+            self.recognizer = nil
+        }
+        guard let window else { return }
+
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleTap))
+        tap.delegate = self
+        // The slider must keep receiving its touches untouched; this only observes.
+        tap.cancelsTouchesInView = false
+        tap.delaysTouchesBegan = false
+        tap.delaysTouchesEnded = false
+        window.addGestureRecognizer(tap)
+        recognizer = tap
+    }
+
+    @objc private func handleTap(_ sender: UITapGestureRecognizer) {
+        guard let window else { return }
+        // The recognizer sees every tap in the window, so most of them are not ours.
+        // A tap elsewhere also breaks a pair in progress — two taps either side of a
+        // detour are not a double tap.
+        guard convert(bounds, to: window).contains(sender.location(in: window)) else {
+            lastTap = nil
+            return
+        }
+        let now = Date()
+        if let last = lastTap, now.timeIntervalSince(last) < Self.interval {
+            lastTap = nil
+            // After the slider, not before it: the slider commits its own value on
+            // touch-up too, and whichever runs last wins. Resetting inline lost every
+            // time — the fader snapped back to where the finger had left it.
+            DispatchQueue.main.async { [reset] in reset() }
+        } else {
+            lastTap = now
+        }
+    }
+
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool { true }
+}
+
+private struct DoubleTapProbeView: UIViewRepresentable {
+    let reset: () -> Void
+
+    func makeUIView(context: Context) -> DoubleTapProbe {
+        let probe = DoubleTapProbe()
+        probe.reset = reset
+        probe.backgroundColor = .clear
+        probe.isUserInteractionEnabled = false
+        return probe
+    }
+
+    func updateUIView(_ probe: DoubleTapProbe, context: Context) {
+        // Refreshed every update: the closure captures the value being reset.
+        probe.reset = reset
+    }
+
+    static func dismantleUIView(_ probe: DoubleTapProbe, coordinator: Coordinator) {
+        probe.removeFromSuperview()   // takes the window recognizer with it
     }
 }
 
 extension View {
-    /// See `ResetOnDoubleTap` for why this is not a `TapGesture`.
+    /// See `DoubleTapProbe` for why this is not a `TapGesture`.
     ///
     /// A modifier rather than the gesture written out at each call site, so a slider
     /// added later cannot quietly omit it — which is how eight of the thirteen ended up
     /// without one.
     func resetsOnDoubleTap(_ reset: @escaping () -> Void) -> some View {
-        modifier(ResetOnDoubleTap(reset: reset))
+        background(DoubleTapProbeView(reset: reset))
     }
 }

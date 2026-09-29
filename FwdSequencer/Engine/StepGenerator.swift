@@ -201,7 +201,9 @@ nonisolated enum StepGenerator {
 
 /// `randomElement(using:)` needs a RandomNumberGenerator; SeededRandomGenerator is
 /// deliberately not one, so that nothing can draw from it by accident.
-private extension Array {
+/// `nonisolated` because the target defaults to MainActor isolation, and generation runs
+/// off the main actor.
+private nonisolated extension Array {
     func randomElement(using generator: inout SeededRandomGenerator) -> Element? {
         isEmpty ? nil : self[generator.nextIndex(upperBound: count)]
     }

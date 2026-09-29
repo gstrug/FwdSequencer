@@ -27,8 +27,12 @@ final class CPUMonitor: ObservableObject {
     func start() {
         guard timer == nil else { return }
         let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            // Bound before the Task: capturing the optional `self` and unwrapping it
+            // inside means capturing a var across concurrency domains, which is an error
+            // under Swift 6.
+            guard let self else { return }
             let sample = Self.currentProcessLoad()
-            Task { @MainActor in self?.load = sample }
+            Task { @MainActor in self.load = sample }
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
