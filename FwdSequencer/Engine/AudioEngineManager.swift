@@ -1,4 +1,5 @@
 import Foundation
+import os
 @preconcurrency import AVFoundation
 import AudioToolbox
 import CoreMIDI
@@ -86,7 +87,11 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     private var latencyObservers: [UUID: [NSKeyValueObservation]] = [:]
     private var trackMixers: [UUID: AVAudioMixerNode] = [:]
 
-    private let callbackLock = NSLock()
+    /// Taken on the AUDIO RENDER THREAD by the metering taps, so it is an unfair lock
+    /// rather than an NSLock: a pthread mutex can park a waiting thread in the kernel,
+    /// and a render thread that parks is a dropout. The critical sections here are all
+    /// a single field read or write.
+    private let callbackLock = OSAllocatedUnfairLock()
     private var _onLevelUpdate: ((UUID, AudioLevel) -> Void)?
     private var _onMasterLevelUpdate: ((AudioLevel) -> Void)?
     private var _onStatusChange: ((AudioEngineStatus) -> Void)?
@@ -96,6 +101,17 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     private var status: AudioEngineStatus = .recovering
     private func withCallbackLock<T>(_ body: () -> T) -> T {
         callbackLock.lock(); defer { callbackLock.unlock() }; return body()
+    }
+
+    // One acquisition per buffer instead of two. The taps used to read `telemetryPaused`
+    // and then the callback as separate properties, so each buffer took the lock twice on
+    // the render thread to answer one question: is there anywhere to send this level?
+    private func levelSink() -> ((UUID, AudioLevel) -> Void)? {
+        withCallbackLock { _telemetryPaused ? nil : _onLevelUpdate }
+    }
+
+    private func masterLevelSink() -> ((AudioLevel) -> Void)? {
+        withCallbackLock { _telemetryPaused ? nil : _onMasterLevelUpdate }
     }
     var onLevelUpdate: ((UUID, AudioLevel) -> Void)? {
         get { withCallbackLock { _onLevelUpdate } }
@@ -569,8 +585,8 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             let now = CACurrentMediaTime()
             guard now - lastLevelTimestamp > 0.05 else { return }
             lastLevelTimestamp = now
-            guard !self.telemetryPaused else { return }
-            self.onMasterLevelUpdate?(self.levels(buffer))
+            guard let sink = self.masterLevelSink() else { return }
+            sink(self.levels(buffer))
         }
         masterTapInstalled = true
     }
@@ -1164,8 +1180,8 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             let now = CACurrentMediaTime()
             guard now - lastLevelTimestamp > 0.05 else { return }
             lastLevelTimestamp = now
-            guard !self.telemetryPaused else { return }
-            self.onLevelUpdate?(id, self.levels(buffer))
+            guard let sink = self.levelSink() else { return }
+            sink(id, self.levels(buffer))
         }
     }
 
