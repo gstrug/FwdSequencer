@@ -22,6 +22,10 @@ let package = Package(
                 "Store/SongStore.swift",
                 "Store/CPUMonitor.swift",
                 "Views",
+                // An app bundle resource, loaded through Bundle.main — the core library
+                // has no use for it and SwiftPM warns if it is neither declared nor
+                // excluded.
+                "Resources",
                 "Engine/AudioEngineManager.swift",
                 "Engine/PluginManager.swift"
             ],

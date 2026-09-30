@@ -882,13 +882,15 @@ class SongStore: ObservableObject {
     /// the chain is rebuilt with the sound rather than needing the song reopened.
     private func loadEffects(for track: SongTrack) {
         for (index, slot) in track.effectSlots.enumerated() {
+            // Bypass goes in with the load. Setting it here, after the call, set it on a
+            // chain the effect had not joined yet — loading is asynchronous — so a saved
+            // bypass was dropped every time a song was opened: the button read "bypassed"
+            // while the effect was fully in circuit.
             audioEngine.loadEffect(slot.pluginInfo, at: index, for: track.id,
-                                   stateData: slot.stateData) { [weak self] result in
+                                   stateData: slot.stateData,
+                                   bypassed: slot.bypassed) { [weak self] result in
                 guard case .failure(let error) = result else { return }
                 self?.notice = error.localizedDescription
-            }
-            if slot.bypassed {
-                audioEngine.setEffectBypassed(true, at: index, for: track.id)
             }
         }
     }

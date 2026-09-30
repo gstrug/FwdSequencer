@@ -588,8 +588,11 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// The track's MIDI is suspended for the duration: instantiating is asynchronous and
     /// rebuilding the graph disconnects the instrument mid-flight, which is exactly the
     /// window that has crashed fragile plugins before (see PLUGIN_HOSTING.md §2).
+    /// `bypassed` is applied here rather than by a separate call afterwards, because
+    /// instantiating is asynchronous: a caller that sets it on the next line is setting it
+    /// on a chain that is still empty, and the flag is silently dropped.
     func loadEffect(_ pluginInfo: PluginInfo, at index: Int, for trackID: UUID,
-                    stateData: Data? = nil,
+                    stateData: Data? = nil, bypassed: Bool = false,
                     completion: @escaping (Result<Void, PluginLoadError>) -> Void = { _ in }) {
         let desc = AudioComponentDescription(
             componentType: pluginInfo.componentType,
@@ -612,6 +615,9 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                     var chain = self.effectUnits[trackID] ?? []
                     chain.insert(unit, at: min(max(0, index), chain.count))
                     self.effectUnits[trackID] = chain
+                    // Before the graph runs, so a saved bypass never has an audible gap
+                    // where the effect is briefly in circuit.
+                    unit.auAudioUnit.shouldBypassEffect = bypassed
                     self.rebuildChainLocked(for: trackID)
                     _ = self.startEngineIfNeeded()
                 }
