@@ -397,8 +397,15 @@ class SongStore: ObservableObject {
 
         return song.sections.map { section in
             let sourceParts = section.id == auditionedSectionID ? (auditioned ?? section.parts) : section.parts
+            // Indexed once per section rather than scanned per track. This runs on every
+            // mutation of `song` while playing — including each touch-move of a fader —
+            // and the scan made it sections × tracks × parts, so a long arrangement with
+            // a full track count paid for a fader drag in tens of thousands of
+            // comparisons a second.
+            let partsByTrack = Dictionary(sourceParts.map { ($0.trackID, $0) },
+                                          uniquingKeysWith: { first, _ in first })
             let tracks: [PlayTrack] = song.tracks.map { st in
-                let part = sourceParts.first { $0.trackID == st.id }
+                let part = partsByTrack[st.id]
                 return PlayTrack(
                     id: st.id,
                     tempoDivision: part?.tempoDivision ?? .quarter,
