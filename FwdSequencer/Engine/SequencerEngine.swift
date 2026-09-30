@@ -270,6 +270,15 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         sequencerQueue.async { [weak self] in self?.queuedSectionID = sectionID }
     }
 
+    /// Change whether the section now playing is a one-shot, while it plays.
+    ///
+    /// Trigger mode reads the Loop switch when a pad is pressed, and this is how a
+    /// change to it afterwards reaches the section already sounding. Read at the
+    /// boundary like every other section decision, so it never cuts a bar short.
+    func setStopAtSectionEnd(_ stop: Bool) {
+        sequencerQueue.async { [weak self] in self?.stopAtSectionEnd = stop }
+    }
+
     /// Atomically push the complete live song configuration. Current section identity
     /// survives reordering, new tracks gain state immediately, and removed tracks are
     /// silenced before their state is discarded.

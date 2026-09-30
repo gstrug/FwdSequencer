@@ -104,6 +104,17 @@ class SongStore: ObservableObject {
             // Persist with the song so the loop setting survives reopening.
             if song.loops != loopEnabled { song.loops = loopEnabled }
             if isPlaying || isPaused { updateLiveSong() }
+            // In Trigger mode the Loop switch is what decides whether the pad that is
+            // SOUNDING keeps repeating, and it was only ever read at the moment the pad
+            // was pressed. Turning Loop off therefore did nothing to a pattern already
+            // playing: it looped until it was stopped by hand. updateLiveSong does not
+            // carry this — it pushes the song, not the transport's intent for the
+            // section in progress.
+            //
+            // Scoped to Trigger mode deliberately. In Song mode a held section outranks
+            // "don't loop" on purpose, so that turning Hold on near the end of a
+            // non-looping song repeats the section instead of stopping playback.
+            if triggerMode { sequencer.setStopAtSectionEnd(!loopEnabled) }
         }
     }
     /// Repeat the SELECTED section instead of playing through the arrangement, so it
