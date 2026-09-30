@@ -6,8 +6,10 @@ struct ProjectBrowserView: View {
     @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding = false
     @AppStorage("didInstallMidnightCurrentDemoV1") private var didInstallMidnightCurrentDemo = false
     /// Its own flag, so the example reaches people who already have the app rather than
-    /// only a fresh install.
-    @AppStorage("didInstallHappyBirthdayDemoV1") private var didInstallHappyBirthdayDemo = false
+    /// only a fresh install. V2 because the arrangement was replaced with a corrected
+    /// one — anybody who installed V1 gets the new version alongside it, rather than
+    /// keeping a copy nobody meant to ship.
+    @AppStorage("didInstallHappyBirthdayDemoV2") private var didInstallHappyBirthdayDemo = false
     @State private var songs: [Song] = []
     @State private var showingSong = false
     @State private var songDeleteTarget: Song? = nil

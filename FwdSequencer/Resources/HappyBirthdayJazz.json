@@ -1,7 +1,8 @@
 {
   "formatVersion": 2,
+  "id": "8B5D6397-AA68-49E2-9690-E3941D27401A",
   "name": "Happy Birthday in C (Jazz)",
-  "tempo": 80.0,
+  "tempo": 76.0,
   "timeSignature": {
     "numerator": 3,
     "denominator": 4
@@ -11,7 +12,7 @@
   "randomSeed": 4610372,
   "tracks": [
     {
-      "id": "0D820E6B-FB36-4154-84B3-834F52216E08",
+      "id": "98FCEEA5-B77D-45F3-8DFC-94BA3C7BB208",
       "name": "Right Hand",
       "mixer": {
         "volume": 0.85,
@@ -21,7 +22,7 @@
       }
     },
     {
-      "id": "442EC3B8-981A-41E0-8B7C-8C1DF7D9C7AC",
+      "id": "0787D37C-F5B5-4F81-B78C-E765CEDA6B3C",
       "name": "Left Hand",
       "mixer": {
         "volume": 0.75,
@@ -33,84 +34,30 @@
   ],
   "sections": [
     {
-      "id": "D06320C0-E2A2-4040-97ED-327BB3287C66",
-      "name": "Pickup + Bars 1-2",
-      "numberOfBars": 3,
+      "id": "7CAE2D52-5AC8-4AAA-8444-5B8B79DAEFC9",
+      "name": "Pickup",
+      "numberOfBars": 1,
       "variations": [],
       "parts": [
         {
-          "trackID": "0D820E6B-FB36-4154-84B3-834F52216E08",
+          "trackID": "98FCEEA5-B77D-45F3-8DFC-94BA3C7BB208",
           "notePool": [
             {
-              "id": "6E20A6D6-2D88-4A20-9539-33F4BBE04EB8",
+              "id": "40037830-9266-4F59-B420-9E128DA45BB5",
               "midiNote": 55,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "268A4E3C-F7CF-44A9-827C-4B9A7950910D",
-              "midiNote": 60,
-              "velocity": 100,
-              "gateLength": 0.95
-            },
-            {
-              "id": "5DCB1A1C-1648-4D3D-A9CD-6BE51511F22D",
-              "midiNote": 62,
-              "velocity": 100,
-              "gateLength": 0.95
-            },
-            {
-              "id": "956BED19-8A63-48D3-9F51-FAAFCBCFDC50",
-              "midiNote": 63,
-              "velocity": 100,
-              "gateLength": 0.95
-            },
-            {
-              "id": "D90250EA-086D-4E5E-9EC9-C64B548EB713",
-              "midiNote": 64,
-              "velocity": 100,
-              "gateLength": 0.95
-            },
-            {
-              "id": "B3B91D86-EB4E-4A21-A8E5-06BE89EBFCFF",
-              "midiNote": 65,
-              "velocity": 100,
-              "gateLength": 0.95
-            },
-            {
-              "id": "30F24971-8CEB-4559-AEE0-A1DB87BD84DB",
-              "midiNote": 66,
-              "velocity": 100,
-              "gateLength": 0.95
-            },
-            {
-              "id": "DDC56BF2-137D-4C6C-AA93-C60F12383236",
+              "id": "95F1113D-8B5B-44E5-85D6-DAD67D3A89CD",
               "midiNote": 67,
-              "velocity": 100,
-              "gateLength": 0.95
-            },
-            {
-              "id": "A0A6C60E-0656-4D1E-8C27-12D010F3BF17",
-              "midiNote": 69,
-              "velocity": 100,
-              "gateLength": 0.95
-            },
-            {
-              "id": "B8C21458-4195-4D09-8285-5E50AD3CAE0B",
-              "midiNote": 71,
-              "velocity": 100,
-              "gateLength": 0.95
-            },
-            {
-              "id": "56213133-C0FD-484C-BB49-BD7CBADE6F29",
-              "midiNote": 72,
               "velocity": 100,
               "gateLength": 0.95
             }
           ],
           "steps": [
             {
-              "id": "04DEA522-EEDA-4212-AED5-B99B65F7A5B6",
+              "id": "8BDA35D8-C534-4E76-AE49-D7BF5526666C",
               "type": "Pause",
               "n": 6,
               "chordPositions": [],
@@ -119,19 +66,19 @@
               "ratchets": 1
             },
             {
-              "id": "6104A347-D016-453A-B2A6-97408F961F48",
+              "id": "310B837A-B9F2-4D47-A474-C07D91200EAE",
               "type": "Play",
-              "n": 8,
+              "n": 2,
               "chordPositions": [
                 1,
-                8
+                2
               ],
               "gate": 1.0,
               "probability": 1.0,
               "ratchets": 1
             },
             {
-              "id": "FF77BB14-C662-4878-906F-A06B2CEF3742",
+              "id": "E13013A1-0B63-4A01-B23B-467B78A48E77",
               "type": "Hold",
               "n": 1,
               "chordPositions": [],
@@ -140,19 +87,121 @@
               "ratchets": 1
             },
             {
-              "id": "F9C2B6BA-E06B-4548-AA71-8FB2C648BE73",
+              "id": "95C4ACE4-3E21-4FE7-95E1-36A92C815E52",
               "type": "Play",
-              "n": 8,
+              "n": 2,
               "chordPositions": [
                 1,
-                8
+                2
               ],
               "gate": 1.0,
               "probability": 1.0,
               "ratchets": 1
+            }
+          ],
+          "tempoDivision": "Eighth Triplet",
+          "key": 0,
+          "scale": "Chromatic"
+        },
+        {
+          "trackID": "0787D37C-F5B5-4F81-B78C-E765CEDA6B3C",
+          "notePool": [],
+          "steps": [
+            {
+              "id": "C2BB2173-B1C6-4DAE-AB1E-D775E7AFF696",
+              "type": "Pause",
+              "n": 9,
+              "chordPositions": [],
+              "gate": 1.0,
+              "probability": 1.0,
+              "ratchets": 1
+            }
+          ],
+          "tempoDivision": "Eighth Triplet",
+          "key": 0,
+          "scale": "Chromatic"
+        }
+      ]
+    },
+    {
+      "id": "F29FFE48-EC3C-4342-AEC3-1912861A9E09",
+      "name": "Bars 1-2",
+      "numberOfBars": 2,
+      "variations": [],
+      "parts": [
+        {
+          "trackID": "98FCEEA5-B77D-45F3-8DFC-94BA3C7BB208",
+          "notePool": [
+            {
+              "id": "EEC39290-4BB8-427F-B378-25256014EFD3",
+              "midiNote": 55,
+              "velocity": 100,
+              "gateLength": 0.95
             },
             {
-              "id": "D08C029E-3072-40D3-93A5-FD30976F681E",
+              "id": "4E8CB88A-7679-4EDA-A59F-27D07284B110",
+              "midiNote": 60,
+              "velocity": 100,
+              "gateLength": 0.95
+            },
+            {
+              "id": "B322ED5B-209F-4E14-9FFC-1F203EF39AE0",
+              "midiNote": 62,
+              "velocity": 100,
+              "gateLength": 0.95
+            },
+            {
+              "id": "929648C7-E98D-4309-8612-45899E91DB14",
+              "midiNote": 63,
+              "velocity": 100,
+              "gateLength": 0.95
+            },
+            {
+              "id": "A7DE8E76-EB06-46FD-9C19-3D8BA026CCA9",
+              "midiNote": 64,
+              "velocity": 100,
+              "gateLength": 0.95
+            },
+            {
+              "id": "E2052EBD-0D96-48DE-A7D9-1066AB84188D",
+              "midiNote": 65,
+              "velocity": 100,
+              "gateLength": 0.95
+            },
+            {
+              "id": "9CAE5452-776A-467E-B343-83196360A2DB",
+              "midiNote": 66,
+              "velocity": 100,
+              "gateLength": 0.95
+            },
+            {
+              "id": "9B13D70A-95E6-402C-9F1E-62A2ED3B65F4",
+              "midiNote": 67,
+              "velocity": 100,
+              "gateLength": 0.95
+            },
+            {
+              "id": "C8219EC7-BE79-422B-9F8F-AD150C292535",
+              "midiNote": 69,
+              "velocity": 100,
+              "gateLength": 0.95
+            },
+            {
+              "id": "28E1464F-923B-4E1E-B9AC-0CA8019CDE1A",
+              "midiNote": 71,
+              "velocity": 100,
+              "gateLength": 0.95
+            },
+            {
+              "id": "E8A5303C-EB68-40F7-9A89-A91628EEA423",
+              "midiNote": 72,
+              "velocity": 100,
+              "gateLength": 0.95
+            }
+          ],
+          "steps": [
+            {
+              "id": "81527A5E-EA5B-4B77-97CB-B0D6CAB0BFFD",
               "type": "Play",
               "n": 9,
               "chordPositions": [
@@ -165,7 +214,7 @@
               "ratchets": 1
             },
             {
-              "id": "1A8E693D-260F-45D3-8E4C-12F8CA4C49AB",
+              "id": "32F6CDB0-7230-4817-B93D-1D08E1C402E7",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -174,7 +223,7 @@
               "ratchets": 1
             },
             {
-              "id": "C3DA2A8B-169F-4EC4-A425-DA607CB9C125",
+              "id": "EC983716-E9C6-4282-AABC-7B3A9D19FE20",
               "type": "Play",
               "n": 8,
               "chordPositions": [
@@ -186,7 +235,7 @@
               "ratchets": 1
             },
             {
-              "id": "4BDFA62C-7F22-463D-9EDA-1FDA03275141",
+              "id": "1F482304-23F8-4EC1-97D8-B4216DDCEA6C",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -195,7 +244,7 @@
               "ratchets": 1
             },
             {
-              "id": "976E65D5-4525-424C-8657-400CCFAA30DB",
+              "id": "A682DED3-9BF5-4128-8DBD-3EBD5BAD11E9",
               "type": "Play",
               "n": 11,
               "chordPositions": [
@@ -209,7 +258,7 @@
               "ratchets": 1
             },
             {
-              "id": "4B181535-D4B8-4635-9F13-231BD55C0404",
+              "id": "B9B132AA-ED88-4561-A146-7763AE8C3A3E",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -218,7 +267,7 @@
               "ratchets": 1
             },
             {
-              "id": "65524442-D1F9-44D6-BC01-EC51E6A70554",
+              "id": "1E754E17-237C-4108-8B9F-2384012D48CB",
               "type": "Play",
               "n": 10,
               "chordPositions": [
@@ -232,7 +281,7 @@
               "ratchets": 1
             },
             {
-              "id": "1FBD51FE-5E88-492B-8DA7-FA077BC66406",
+              "id": "56D1850D-04F6-425B-8FF0-2C36CE54C1C0",
               "type": "Hold",
               "n": 5,
               "chordPositions": [],
@@ -241,7 +290,7 @@
               "ratchets": 1
             },
             {
-              "id": "74AD5C05-8BFB-4D27-8657-F6495BCCF529",
+              "id": "1268EBCA-AEC8-460E-8072-34FA22856731",
               "type": "Play",
               "n": 8,
               "chordPositions": [
@@ -253,7 +302,7 @@
               "ratchets": 1
             },
             {
-              "id": "5E9C7FC3-81E5-47C3-9C60-5757AFB1F303",
+              "id": "FB8C85A0-4D0F-4AEE-9671-64E4942FA569",
               "type": "Hold",
               "n": 1,
               "chordPositions": [],
@@ -262,7 +311,7 @@
               "ratchets": 1
             },
             {
-              "id": "ABDCA98E-C14F-4381-AD6C-07BCEF5CAE26",
+              "id": "7B6EB4BF-E685-4678-9BA4-534AA887A4D5",
               "type": "Play",
               "n": 8,
               "chordPositions": [
@@ -279,46 +328,46 @@
           "scale": "Chromatic"
         },
         {
-          "trackID": "442EC3B8-981A-41E0-8B7C-8C1DF7D9C7AC",
+          "trackID": "0787D37C-F5B5-4F81-B78C-E765CEDA6B3C",
           "notePool": [
             {
-              "id": "51812878-0A44-4DA6-95EF-230CE10EDE21",
+              "id": "5D688E41-5567-46FD-B749-62A022763175",
               "midiNote": 41,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "DE5B2068-F266-43E5-A5AE-06EDF47FDCD9",
+              "id": "FB84EB07-57FB-4A62-9C1F-8C821004FB21",
               "midiNote": 42,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "ED308E04-881E-40A5-AD73-76C15E6B3213",
+              "id": "26DB8885-E690-4B76-8373-F1ED42C20FB3",
               "midiNote": 43,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "8301A640-F56B-433D-9B1D-E1264E90F9DE",
+              "id": "678F3855-1C39-451A-9ABB-352313B4DB3B",
               "midiNote": 48,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "77932464-0E80-4BEF-BDD0-05AA03D6638E",
+              "id": "9732BB87-1241-48BF-8258-EFE62654DC2B",
               "midiNote": 50,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "02DED774-3BFF-4E21-BDC0-8E7A2FF73E45",
+              "id": "0433D931-7784-44E0-BB8A-BC13F1EE812B",
               "midiNote": 51,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "FA44A898-83AE-4A49-81EB-997BC122CA4C",
+              "id": "DC11A5AF-06E8-444F-B146-1DB9748311B6",
               "midiNote": 52,
               "velocity": 78,
               "gateLength": 0.95
@@ -326,16 +375,7 @@
           ],
           "steps": [
             {
-              "id": "47EAFCA4-DBBF-4A99-A890-FBB8C93E6C92",
-              "type": "Pause",
-              "n": 9,
-              "chordPositions": [],
-              "gate": 1.0,
-              "probability": 1.0,
-              "ratchets": 1
-            },
-            {
-              "id": "B3583867-C6D2-4317-8AFD-50A9CBA4814A",
+              "id": "9E639F13-F5C4-4ACE-8DFC-7F4C1CA91E53",
               "type": "Play",
               "n": 7,
               "chordPositions": [
@@ -348,7 +388,7 @@
               "ratchets": 1
             },
             {
-              "id": "4A063B88-804D-4228-A593-CD99EE81A27D",
+              "id": "291F57D6-37B2-40FC-90D1-040D5BF89A69",
               "type": "Hold",
               "n": 5,
               "chordPositions": [],
@@ -357,7 +397,7 @@
               "ratchets": 1
             },
             {
-              "id": "2B815CA1-443D-442D-A9F3-CEDF8128EE84",
+              "id": "141D12FD-77AF-4061-BBB0-1BC0A217B2FA",
               "type": "Play",
               "n": 6,
               "chordPositions": [
@@ -370,7 +410,7 @@
               "ratchets": 1
             },
             {
-              "id": "DC467466-EBB5-4A51-AAD7-3DCAAEC2089C",
+              "id": "FCD1235C-BD96-4FD3-8457-4FB609FA0BDB",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -379,7 +419,7 @@
               "ratchets": 1
             },
             {
-              "id": "7BFA666D-BB13-405E-91F6-C1384641D9A3",
+              "id": "8200610C-51D5-4F8C-B179-C7A4311FAD5A",
               "type": "Play",
               "n": 5,
               "chordPositions": [
@@ -392,7 +432,7 @@
               "ratchets": 1
             },
             {
-              "id": "00D57719-AE21-46EA-B97A-0C0FD9AB5639",
+              "id": "BDEC22B8-17B0-4337-9B3D-80A7B0238A8B",
               "type": "Hold",
               "n": 8,
               "chordPositions": [],
@@ -408,70 +448,70 @@
       ]
     },
     {
-      "id": "68BB0B11-E395-4F64-9ECE-0C12BB9E19DC",
+      "id": "2A65EBCA-AB39-4867-90C4-5B6F08013045",
       "name": "Bars 3-4",
       "numberOfBars": 2,
       "variations": [],
       "parts": [
         {
-          "trackID": "0D820E6B-FB36-4154-84B3-834F52216E08",
+          "trackID": "98FCEEA5-B77D-45F3-8DFC-94BA3C7BB208",
           "notePool": [
             {
-              "id": "FE6A08D5-8BF7-45BB-A187-E61E886F7695",
+              "id": "6C500691-15E1-453E-B936-9F7612FDF59A",
               "midiNote": 55,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "72FEBD7C-BB50-402B-9D40-A83B796332F7",
+              "id": "3048C039-1872-4A20-9AE7-D0CEE3000E9C",
               "midiNote": 59,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "AA15B064-3D92-485A-AA11-0172EE9390F5",
+              "id": "16C11FC2-4B80-4034-A7BA-4A05BC5667CA",
               "midiNote": 60,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "95310602-292E-423F-9F6D-EFAA4EB1C1AF",
+              "id": "657830D0-2E49-4103-AE4B-6B78F4E916F1",
               "midiNote": 62,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "DDF6B0C2-E1DC-4B0C-80E4-A213DD937213",
+              "id": "ABFF561D-B62D-4FAB-AF56-4F9CB04BBE1B",
               "midiNote": 64,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "88FC29D5-B7C1-4A41-B42F-536E9F0383EA",
+              "id": "AB98EACB-00BF-4DEB-AC19-04519024D1AE",
               "midiNote": 65,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "39199040-8360-492E-8796-ADCC45BAF464",
+              "id": "3B044083-E424-4572-9A4D-901E45F2E3D9",
               "midiNote": 67,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "A89BF555-D0A0-4740-B547-1F09E798C5E3",
+              "id": "3A0D3AD4-285A-4FCF-9E4B-CBF2F4D3AC51",
               "midiNote": 69,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "2DBA52D2-661F-4DBA-B792-BD73B5FCEE11",
+              "id": "DDA53C46-3CD6-40E9-81A6-265F7BADFDC0",
               "midiNote": 72,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "5AB8579E-6516-4623-A948-247EEE6D17B3",
+              "id": "074DC711-F60C-47BF-8EAB-0C6A5DD0BDBA",
               "midiNote": 74,
               "velocity": 100,
               "gateLength": 0.95
@@ -479,7 +519,7 @@
           ],
           "steps": [
             {
-              "id": "A1B8544F-3E4E-48E5-B47D-059994B4292B",
+              "id": "B17EF19F-5254-4821-B358-02D33B56EFB3",
               "type": "Play",
               "n": 8,
               "chordPositions": [
@@ -492,7 +532,7 @@
               "ratchets": 1
             },
             {
-              "id": "CEFF679F-B4FA-4DBB-81F4-408EDA132107",
+              "id": "80E085E5-9FD5-4CBC-BB2B-C058CEEE8929",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -501,7 +541,7 @@
               "ratchets": 1
             },
             {
-              "id": "CFBA897C-E7B6-4E7E-8D21-B3CBB088FD83",
+              "id": "440AF9F8-6966-47A8-B0CA-258649B47EAD",
               "type": "Play",
               "n": 7,
               "chordPositions": [
@@ -515,7 +555,7 @@
               "ratchets": 1
             },
             {
-              "id": "20F4CAF0-CE40-4288-A7F7-7F8B6CA05609",
+              "id": "177172F6-CEA7-4E35-8356-7EC475BF498D",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -524,7 +564,7 @@
               "ratchets": 1
             },
             {
-              "id": "7EC8D2F7-D254-48ED-A224-567CD5D74BFE",
+              "id": "DA479623-6D81-430D-9D74-E6206BB36CCC",
               "type": "Play",
               "n": 10,
               "chordPositions": [
@@ -537,7 +577,7 @@
               "ratchets": 1
             },
             {
-              "id": "99441389-3CF4-40EB-9FAB-A5DE81190C75",
+              "id": "5A47634F-9CED-4B39-BC2C-B0D9B1DCCD69",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -546,7 +586,7 @@
               "ratchets": 1
             },
             {
-              "id": "8020FA52-F003-4F57-9416-381E5C46C66B",
+              "id": "D96BC227-E115-43D5-9064-E38BB5F7E634",
               "type": "Play",
               "n": 9,
               "chordPositions": [
@@ -559,7 +599,7 @@
               "ratchets": 1
             },
             {
-              "id": "70972F6F-76A2-46AC-9EAC-CA6A0869BD40",
+              "id": "B331331E-90A2-415E-A1B9-D8EDC82D34B9",
               "type": "Hold",
               "n": 5,
               "chordPositions": [],
@@ -568,7 +608,7 @@
               "ratchets": 1
             },
             {
-              "id": "DC04AAF6-3185-4F24-A283-2BA0DC638F33",
+              "id": "50E057E4-86F4-4BAC-B6D9-C863689B095E",
               "type": "Play",
               "n": 7,
               "chordPositions": [
@@ -580,7 +620,7 @@
               "ratchets": 1
             },
             {
-              "id": "87AE1EE4-9A13-4B67-A057-967B05AC4EA2",
+              "id": "DFD5FE92-9AC7-4452-9C87-18E5D38BA54C",
               "type": "Hold",
               "n": 1,
               "chordPositions": [],
@@ -589,7 +629,7 @@
               "ratchets": 1
             },
             {
-              "id": "9140F570-9C9E-4131-8779-38736731D7AB",
+              "id": "1C0ED010-01F9-475C-B99B-B65BCA07F4CC",
               "type": "Play",
               "n": 7,
               "chordPositions": [
@@ -606,46 +646,46 @@
           "scale": "Chromatic"
         },
         {
-          "trackID": "442EC3B8-981A-41E0-8B7C-8C1DF7D9C7AC",
+          "trackID": "0787D37C-F5B5-4F81-B78C-E765CEDA6B3C",
           "notePool": [
             {
-              "id": "F6D90AD6-0921-49F2-B69D-0E131A997C7A",
+              "id": "F8F90A6B-2764-433D-B5D2-06B03BC5C640",
               "midiNote": 41,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "CA605738-7BFA-43E2-8860-3EDC7F1A885F",
+              "id": "16709D6F-867F-4CF0-A4ED-1E7DB50A8CEB",
               "midiNote": 43,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "3507DDA3-A159-43AF-A58B-D4E47E5544BA",
+              "id": "4C8185F4-AE56-41F3-96C8-65A307E70589",
               "midiNote": 47,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "64E6469C-B542-46AC-AF2A-0CCDB0831F89",
+              "id": "1370D4A1-B22F-48BA-890B-E68FD2CDC3AF",
               "midiNote": 48,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "5FB3C09A-2261-4949-8616-8CB82250EEC3",
+              "id": "E99C27E6-C006-4BB8-911E-F3BA9E7862E4",
               "midiNote": 50,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "DC160CAC-57E7-4248-8112-A2E9AC999B6D",
+              "id": "138425B1-9AC5-4083-9E69-3F55B8061A51",
               "midiNote": 52,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "F201C416-1892-4228-A717-D310BEB3AA3F",
+              "id": "2F54C3BE-04CF-4643-BA9B-E4F26ED43DDE",
               "midiNote": 55,
               "velocity": 78,
               "gateLength": 0.95
@@ -653,7 +693,7 @@
           ],
           "steps": [
             {
-              "id": "CCB3D6A0-ECB9-4EAB-AC15-50A3672ABA64",
+              "id": "4EA15016-DC47-4AB4-80D5-C45C4234FFDE",
               "type": "Play",
               "n": 5,
               "chordPositions": [
@@ -666,7 +706,7 @@
               "ratchets": 1
             },
             {
-              "id": "288AF145-1AAF-4E9A-A75A-B852791014BF",
+              "id": "DDFF88FF-D085-4460-9048-FB469459467C",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -675,7 +715,7 @@
               "ratchets": 1
             },
             {
-              "id": "15412C9D-2993-4A2F-8092-D16551FAB5A2",
+              "id": "AF298D64-EE97-4805-BEC7-D198D8E4C0B4",
               "type": "Play",
               "n": 7,
               "chordPositions": [
@@ -687,7 +727,7 @@
               "ratchets": 1
             },
             {
-              "id": "4C1C939F-C366-48EC-AC03-B22F125DED50",
+              "id": "5024FBEE-F9DE-47E8-9770-D942D5F26DEF",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -696,7 +736,7 @@
               "ratchets": 1
             },
             {
-              "id": "79D13C55-527C-4818-8CC1-9CF139B5BC59",
+              "id": "BACB768C-EA22-4940-B0B1-D1239567CE9E",
               "type": "Play",
               "n": 5,
               "chordPositions": [
@@ -709,7 +749,7 @@
               "ratchets": 1
             },
             {
-              "id": "4D767A8B-C1F2-4A8F-81C4-227525147394",
+              "id": "C84F854A-8025-43D7-AC37-068A59085B4D",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -718,7 +758,7 @@
               "ratchets": 1
             },
             {
-              "id": "A5C95E12-A4AC-4DD6-95B8-E14A90AEE2F0",
+              "id": "64B74317-B907-43A4-8D5F-F683EAD1DB66",
               "type": "Play",
               "n": 6,
               "chordPositions": [
@@ -731,7 +771,7 @@
               "ratchets": 1
             },
             {
-              "id": "018D2F97-0E8F-438D-B906-AB3FDD63A2CD",
+              "id": "6926BBEA-364E-4B89-82CB-6ADBA92BF3FB",
               "type": "Hold",
               "n": 8,
               "chordPositions": [],
@@ -747,70 +787,70 @@
       ]
     },
     {
-      "id": "FAC16683-FBCA-480B-A7D6-7B24E22A79C8",
+      "id": "BCB26BFB-415C-4A45-8F01-0921B85671CF",
       "name": "Bars 5-6",
       "numberOfBars": 2,
       "variations": [],
       "parts": [
         {
-          "trackID": "0D820E6B-FB36-4154-84B3-834F52216E08",
+          "trackID": "98FCEEA5-B77D-45F3-8DFC-94BA3C7BB208",
           "notePool": [
             {
-              "id": "B0D764BF-98BC-4A89-9A04-51C300CD1BBA",
+              "id": "DCA781DD-6414-48FD-BA8F-0299AF5A0903",
               "midiNote": 53,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "ED9F684C-B760-4F9E-9862-CCC98DF1EC9D",
+              "id": "97C0E79B-2B3D-476D-8CE1-5B65E3142E10",
               "midiNote": 56,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "ABA9D7B9-88D3-4C23-9675-4CBB7C82545B",
+              "id": "5CF026AD-1632-4B64-814B-44645BA410F8",
               "midiNote": 57,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "B6D5C23E-E38D-4876-B8D1-D7E81A0F2A4A",
+              "id": "F2AC1714-A86D-4AB7-B6E5-6747D89DD655",
               "midiNote": 60,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "D6AFF862-8CE6-4FB1-976C-8C0EB36EF464",
+              "id": "B5ECB3BA-6DF3-440F-8730-3AD506E12490",
               "midiNote": 65,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "B7A91EA1-6B45-4563-8E8F-DF7884CD42CB",
+              "id": "5EDA4774-1E56-4AE6-A2F9-2B54C2DF515E",
               "midiNote": 69,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "47DAF02C-8607-469D-8367-C4B7E78BFC05",
+              "id": "2BB06B21-E705-4BF5-9CD1-7D3861A17348",
               "midiNote": 71,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "BBDD1B89-F156-4455-90FD-25EB7F97E1FD",
+              "id": "BB05FF1E-1AA8-4F0F-AD56-61AFA535A108",
               "midiNote": 72,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "D08284E6-28AD-464F-BF51-FF1ED5521DF5",
+              "id": "362A6B6C-9700-4EA5-82BC-9DFC181562DC",
               "midiNote": 76,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "88192444-5971-4E1A-8852-20345F555A41",
+              "id": "5F13EE5B-D7EE-4A58-877A-D571D974FF0A",
               "midiNote": 79,
               "velocity": 100,
               "gateLength": 0.95
@@ -818,7 +858,7 @@
           ],
           "steps": [
             {
-              "id": "E8E57E08-A82C-42A0-9E4E-3B1D95AE92BD",
+              "id": "9FC6BD62-E112-4128-9510-3C67AE6B606A",
               "type": "Play",
               "n": 10,
               "chordPositions": [
@@ -831,7 +871,7 @@
               "ratchets": 1
             },
             {
-              "id": "64BD32C1-BBB4-43E8-A49E-8D7FF0CAE94C",
+              "id": "C29F1E3A-A967-4B6B-B24C-CB00E2438535",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -840,7 +880,7 @@
               "ratchets": 1
             },
             {
-              "id": "89B9119F-5F0F-4263-A9A0-A835F4329DF5",
+              "id": "DA67619D-9A82-4E20-AEB2-21C47710E09B",
               "type": "Play",
               "n": 9,
               "chordPositions": [
@@ -853,7 +893,7 @@
               "ratchets": 1
             },
             {
-              "id": "55EF388A-64DC-49C9-9069-DE116F0BF795",
+              "id": "2D4E93EE-653C-41D0-8D36-643E8A2CE4CE",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -862,7 +902,7 @@
               "ratchets": 1
             },
             {
-              "id": "004F72BA-B4AD-4AD6-827A-99D759A1EBA6",
+              "id": "C07904F9-8736-42CA-B91F-AB5B27235BE5",
               "type": "Play",
               "n": 8,
               "chordPositions": [
@@ -874,7 +914,7 @@
               "ratchets": 1
             },
             {
-              "id": "FDD15E19-A85F-48AF-8AFE-D16AE9D911A1",
+              "id": "2676BA6F-2869-4A2C-BB4C-1696BFA13850",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -883,7 +923,7 @@
               "ratchets": 1
             },
             {
-              "id": "0C957465-E31F-45C2-9BB3-89801520943B",
+              "id": "710589C0-CE82-4CB9-A00F-CA3F72F3325E",
               "type": "Play",
               "n": 7,
               "chordPositions": [
@@ -896,7 +936,7 @@
               "ratchets": 1
             },
             {
-              "id": "913636E9-A95A-49EE-8E06-29241BB9FF37",
+              "id": "AEC7AFD6-A4E8-4D45-ACD8-1E4221ECEC4D",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -905,7 +945,7 @@
               "ratchets": 1
             },
             {
-              "id": "560A2D19-5344-46FE-BDC8-1E14BFC62DE2",
+              "id": "6E1E9D4D-2757-4BB6-A5ED-FD2B123C927E",
               "type": "Play",
               "n": 6,
               "chordPositions": [
@@ -917,7 +957,7 @@
               "ratchets": 1
             },
             {
-              "id": "765E4564-7BCD-4900-AFBE-7B015713D1F6",
+              "id": "1F7A4F27-D6DD-41A9-8FCF-72CCBC1106BC",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -926,7 +966,7 @@
               "ratchets": 1
             },
             {
-              "id": "AB70DE50-B5AD-4C94-8B3D-7F764238E55F",
+              "id": "7B61EE04-464F-4F54-8118-CAE29F97D320",
               "type": "Play",
               "n": 5,
               "chordPositions": [
@@ -939,7 +979,7 @@
               "ratchets": 1
             },
             {
-              "id": "B595B782-BECA-4771-857F-6DF82ED0712B",
+              "id": "A3046D86-C021-40F2-AA62-E88E8E067454",
               "type": "Hold",
               "n": 1,
               "chordPositions": [],
@@ -948,7 +988,7 @@
               "ratchets": 1
             },
             {
-              "id": "C89FBE7C-070C-4991-8A7D-58875C5F15FD",
+              "id": "2C13868A-75C0-4F67-9420-859C38A8AD68",
               "type": "Play",
               "n": 5,
               "chordPositions": [
@@ -965,58 +1005,58 @@
           "scale": "Chromatic"
         },
         {
-          "trackID": "442EC3B8-981A-41E0-8B7C-8C1DF7D9C7AC",
+          "trackID": "0787D37C-F5B5-4F81-B78C-E765CEDA6B3C",
           "notePool": [
             {
-              "id": "6FD5BB2A-EC6A-44DE-811B-DB29678D7CA1",
+              "id": "9F394A65-B056-448E-9B12-67D92DC40D02",
               "midiNote": 38,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "4DE0B892-5C8F-4183-940C-A2CEAA1F4B1F",
+              "id": "D50750E1-07A0-4531-89E9-8EE656CF7895",
               "midiNote": 41,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "9109583F-730E-4669-9091-67C7EB266614",
+              "id": "08E07568-FF37-44BD-B235-D6815347ECAD",
               "midiNote": 43,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "79EF5DC2-21C0-4E56-B400-333C58356315",
+              "id": "EFCA158C-3AB9-4795-8145-8D585808EED4",
               "midiNote": 44,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "168EEDB9-0002-4F7D-89A4-C9EC89EEC576",
+              "id": "166D0776-AB66-4DDB-BD3F-846291D80417",
               "midiNote": 45,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "E9F9AEBD-E3CD-47DC-B23F-5983E0F2EF69",
+              "id": "F1AEDC18-C5BB-49AA-A9CB-6E98BEC36763",
               "midiNote": 47,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "4FD7486D-A507-499C-845F-FA1188B9E10D",
+              "id": "DC4DC8A4-B95D-405C-A254-39AF857D5069",
               "midiNote": 48,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "A747B3E4-EBF1-42A3-825A-A0B77F65ECE6",
+              "id": "51C06FAE-2059-45FE-95D9-AC3FEA0C648D",
               "midiNote": 52,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "6391A081-D20C-422D-ADE9-6D3F1F104DDC",
+              "id": "0E0A2503-D099-4BFF-BE48-2B47A9BC9AA0",
               "midiNote": 53,
               "velocity": 78,
               "gateLength": 0.95
@@ -1024,7 +1064,7 @@
           ],
           "steps": [
             {
-              "id": "4DBD3A92-ED5C-42DB-A76C-C3F10255B45B",
+              "id": "E4CDB71A-36EB-48B9-A12A-6DD9E2302A51",
               "type": "Play",
               "n": 8,
               "chordPositions": [
@@ -1037,7 +1077,7 @@
               "ratchets": 1
             },
             {
-              "id": "EB8401DD-C99F-4A83-B348-D0E0CC0D9351",
+              "id": "112AF44C-C0EF-42D0-A585-A234D9F60C27",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -1046,7 +1086,7 @@
               "ratchets": 1
             },
             {
-              "id": "63F4E19F-3F1A-45FE-A97E-0AFD82C9D9EB",
+              "id": "6F567511-8BE3-4369-998A-FB640F048384",
               "type": "Play",
               "n": 8,
               "chordPositions": [
@@ -1059,7 +1099,7 @@
               "ratchets": 1
             },
             {
-              "id": "F6FDE7D6-7A64-483E-A9B8-1FFCE1F2C749",
+              "id": "F65702DF-A99A-41DC-8E68-235249BCC1A7",
               "type": "Hold",
               "n": 5,
               "chordPositions": [],
@@ -1068,7 +1108,7 @@
               "ratchets": 1
             },
             {
-              "id": "74274EF6-417B-4B07-8D3E-DA49794B3835",
+              "id": "5FB72EBD-96F7-4B84-B914-14FB79F38261",
               "type": "Play",
               "n": 9,
               "chordPositions": [
@@ -1081,7 +1121,7 @@
               "ratchets": 1
             },
             {
-              "id": "A66740F4-3C76-4B90-B34B-DDFE458FE3EE",
+              "id": "A63D96D9-77B8-4CAF-9635-0CF5668640C2",
               "type": "Hold",
               "n": 5,
               "chordPositions": [],
@@ -1090,7 +1130,7 @@
               "ratchets": 1
             },
             {
-              "id": "D761EF43-A70F-40BA-B3A2-622A11DF25CB",
+              "id": "6913AF19-F995-4794-9F7E-8386D0E8786C",
               "type": "Play",
               "n": 7,
               "chordPositions": [
@@ -1103,7 +1143,7 @@
               "ratchets": 1
             },
             {
-              "id": "A6B2736A-C59F-499B-931E-D2DCC9B96C5F",
+              "id": "093BA816-3BCA-48A4-9514-DE45C730D1F7",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -1119,70 +1159,70 @@
       ]
     },
     {
-      "id": "8B85A31A-C7F4-4FA8-9855-A25074855D04",
+      "id": "98A008B7-2911-459A-8655-56FA4BA3CDBC",
       "name": "Bars 7-8",
       "numberOfBars": 2,
       "variations": [],
       "parts": [
         {
-          "trackID": "0D820E6B-FB36-4154-84B3-834F52216E08",
+          "trackID": "98FCEEA5-B77D-45F3-8DFC-94BA3C7BB208",
           "notePool": [
             {
-              "id": "0AA8EA91-8BFF-4CE7-A3DD-E7713BF03150",
+              "id": "1BFBC907-297A-47B0-82D7-C0960AC5E825",
               "midiNote": 48,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "F8019C04-DFD6-4011-9017-4CF2957D4E5F",
+              "id": "956DD1CB-219E-41B1-B4FB-983DB93CD97B",
               "midiNote": 52,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "D8F0FC0B-55F7-48A2-B533-C8BFDCFA4546",
+              "id": "C895A583-A502-41F1-B2C4-227756BA754C",
               "midiNote": 53,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "BAB73F53-C664-44B1-92EC-B5557FBAC06F",
+              "id": "23E971E4-D329-4089-B576-FBF60FCC3B2E",
               "midiNote": 54,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "9EEC8B93-71DB-41AF-8AC8-BC808B920C4E",
+              "id": "62BC4FBD-A58E-45AC-9BD7-F3462D6CA62B",
               "midiNote": 55,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "2521791B-1E5F-4FF9-9BE3-85FE69486E21",
+              "id": "AF56BEEB-5B0F-4357-A1E9-364029516FA8",
               "midiNote": 57,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "7071173A-BF4B-41C0-9F5F-12C7F0BDD2CF",
+              "id": "9B32B10F-3591-4F8A-968B-965A3F1ED783",
               "midiNote": 59,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "9B4185E9-627E-4E3A-B9AB-48DACAAEE10B",
+              "id": "438A8618-70B3-467A-8EAC-916B109CAFA2",
               "midiNote": 60,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "4EF847BF-F953-4104-A622-4A6490613162",
+              "id": "F3B134A8-CBDB-40DB-BF22-F8D8ADBA4B06",
               "midiNote": 62,
               "velocity": 100,
               "gateLength": 0.95
             },
             {
-              "id": "4554E025-1C70-4ECD-BFB8-4C203EE3A514",
+              "id": "420D47FD-7523-4C57-A72B-29A7152F471D",
               "midiNote": 64,
               "velocity": 100,
               "gateLength": 0.95
@@ -1190,7 +1230,7 @@
           ],
           "steps": [
             {
-              "id": "C4B6F1E0-250E-45F9-9151-50DCFDFE63F9",
+              "id": "FA0B5B5B-57F2-4BED-BBB2-78198AEE9877",
               "type": "Play",
               "n": 10,
               "chordPositions": [
@@ -1203,7 +1243,7 @@
               "ratchets": 1
             },
             {
-              "id": "EBA42040-01E7-43CA-9228-1DB692970B2A",
+              "id": "216C0F19-33BA-43B3-89D6-8E4819DAD836",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -1212,7 +1252,7 @@
               "ratchets": 1
             },
             {
-              "id": "062A5A18-C6BF-47AA-9CB3-E026CA5A60EF",
+              "id": "4F4A5D46-F55A-42FE-845D-BEE2D8EBCDA4",
               "type": "Play",
               "n": 8,
               "chordPositions": [
@@ -1226,7 +1266,7 @@
               "ratchets": 1
             },
             {
-              "id": "B4E96461-A0DB-4617-A04F-504CDCD359B4",
+              "id": "C436A377-B084-4196-BDBD-5BE3FD1566D8",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -1235,7 +1275,7 @@
               "ratchets": 1
             },
             {
-              "id": "5A256F9D-5CEA-47D2-B65A-6ED2EF89D682",
+              "id": "F5D2169A-D248-48C2-A70A-0BC1E9380FBB",
               "type": "Play",
               "n": 9,
               "chordPositions": [
@@ -1249,7 +1289,7 @@
               "ratchets": 1
             },
             {
-              "id": "0BD09562-21E3-47DF-94B8-9BE47BB7140C",
+              "id": "ED6AFBCA-957D-4805-A523-165A65817113",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -1258,7 +1298,7 @@
               "ratchets": 1
             },
             {
-              "id": "185155F9-3065-4037-B85C-2D6C428B17AC",
+              "id": "1B01F2AD-F790-4FFE-9A87-0274235E2F5D",
               "type": "Play",
               "n": 8,
               "chordPositions": [
@@ -1272,7 +1312,7 @@
               "ratchets": 1
             },
             {
-              "id": "5C1A1E5E-04EB-4198-94BF-41395905905F",
+              "id": "674BDEFF-7447-451A-9A6C-8B7F34ED457B",
               "type": "Hold",
               "n": 8,
               "chordPositions": [],
@@ -1286,58 +1326,58 @@
           "scale": "Chromatic"
         },
         {
-          "trackID": "442EC3B8-981A-41E0-8B7C-8C1DF7D9C7AC",
+          "trackID": "0787D37C-F5B5-4F81-B78C-E765CEDA6B3C",
           "notePool": [
             {
-              "id": "5F19AFB7-EA55-452B-BF8C-E332B7EC764B",
+              "id": "DFAE93AA-2C3F-438F-B18D-1ACCCFE8B687",
               "midiNote": 36,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "7A8380AF-2E0D-498D-BC9F-FB1947BB2E54",
+              "id": "69B2DA0B-87E9-405A-A161-B3AFCE311210",
               "midiNote": 38,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "ADAE22BC-D7FF-4BAD-9EB6-5F2CB128F8F1",
+              "id": "EE0328AA-BA89-43AC-86CE-A60DA1C47B8B",
               "midiNote": 40,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "CA304F19-9B1C-4FA1-A33C-229CCDCED0F9",
+              "id": "9EBEE043-3CC3-47CE-A957-45676A9F72A2",
               "midiNote": 41,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "A908C9A6-E005-4D79-BB60-A39E1FA5A08A",
+              "id": "2C5F0550-E3E5-407F-8B7A-E5A0ED2DA038",
               "midiNote": 42,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "D9B30313-BDCF-4298-AF4B-DBFED62A6361",
+              "id": "0E8B7A7D-1A14-4609-9D13-3F97BF5BD78A",
               "midiNote": 43,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "611B82B5-8F5C-40A1-B5DC-134E2CE67B6A",
+              "id": "4217ED98-32EE-49AA-8BBE-E08F360F88D8",
               "midiNote": 45,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "5818E918-B9D2-4E4F-964B-29C278DE2488",
+              "id": "76A8A3D0-31A4-4915-AC65-48C1EB647415",
               "midiNote": 47,
               "velocity": 78,
               "gateLength": 0.95
             },
             {
-              "id": "E0BD6AD7-B9D6-4ED8-9B47-A1857FDC00E1",
+              "id": "6B9092C1-9F71-41C5-8D3D-7904536A0AAC",
               "midiNote": 48,
               "velocity": 78,
               "gateLength": 0.95
@@ -1345,7 +1385,7 @@
           ],
           "steps": [
             {
-              "id": "8F528542-A7D3-4237-B271-B99B41230CF9",
+              "id": "D47756CA-F098-4A29-9EC4-E297A4D4FEC7",
               "type": "Play",
               "n": 9,
               "chordPositions": [
@@ -1358,7 +1398,7 @@
               "ratchets": 1
             },
             {
-              "id": "87D06E88-E5C3-4080-A6B0-2AE13057EE01",
+              "id": "31681738-0053-4C74-8A6C-11EA8DC44E24",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -1367,7 +1407,7 @@
               "ratchets": 1
             },
             {
-              "id": "DBCC0452-94C6-48ED-9366-CEEC18A7FBB5",
+              "id": "CD07212D-74BE-482F-B173-670F48CB5B61",
               "type": "Play",
               "n": 7,
               "chordPositions": [
@@ -1380,7 +1420,7 @@
               "ratchets": 1
             },
             {
-              "id": "385C8052-55C6-4E04-A499-3D7498A1820E",
+              "id": "8F536A9C-2FDA-4A4D-8A17-5969C470AD3B",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -1389,7 +1429,7 @@
               "ratchets": 1
             },
             {
-              "id": "06859D63-C43E-4F94-86B5-4B26394148FE",
+              "id": "7E5489D6-5985-4193-B8EE-D794ACBEC31D",
               "type": "Play",
               "n": 8,
               "chordPositions": [
@@ -1402,7 +1442,7 @@
               "ratchets": 1
             },
             {
-              "id": "4F58EB4B-99C5-47DA-9479-A71FDD2D1492",
+              "id": "EBF8A752-8DD6-44DE-9ECF-106D0C8C53EA",
               "type": "Hold",
               "n": 2,
               "chordPositions": [],
@@ -1411,7 +1451,7 @@
               "ratchets": 1
             },
             {
-              "id": "D18B6665-47B1-4724-A92F-5DCB1D8B60EB",
+              "id": "0056BAA8-351B-4EFD-80E4-BC353B137248",
               "type": "Play",
               "n": 9,
               "chordPositions": [
@@ -1425,7 +1465,7 @@
               "ratchets": 1
             },
             {
-              "id": "C7579144-5910-4C1B-BA8F-0C0E930F96CF",
+              "id": "81A09FDC-39FE-44D5-93AD-193DD5D390EC",
               "type": "Hold",
               "n": 8,
               "chordPositions": [],
@@ -1440,6 +1480,5 @@
         }
       ]
     }
-  ],
-  "id": "00000000-0000-0000-0000-000000000000"
+  ]
 }
