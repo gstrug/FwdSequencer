@@ -20,13 +20,25 @@ final class CPUMonitor: ObservableObject {
     /// across buffers, so this is where to start paying attention, not where it breaks.
     static let warningLoad: Double = 0.70
 
-    private var timer: Timer?
+    /// Off the main thread deliberately. Sampling asks the kernel for every thread in
+    /// the process and then for each thread's CPU time — with a few AUv3s loaded that is
+    /// a long list and a syscall apiece. On a main-thread Timer, twice a second, the
+    /// readout was adding hitches to the very thing it claims to measure.
+    private let sampleQueue = DispatchQueue(label: "com.fwd.cpumonitor", qos: .utility)
+    private var timer: DispatchSourceTimer?
 
     /// Twice a second — enough to watch a level, cheap enough to leave running, and slow
     /// enough that reading it does not itself become a cost worth measuring.
     func start() {
         guard timer == nil else { return }
-        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+        let timer = DispatchSource.makeTimerSource(queue: sampleQueue)
+        // A second of leeway: this is a readout, not a clock, and letting the system
+        // coalesce the wakeup keeps it off its own critical path.
+        timer.schedule(deadline: .now() + 0.5, repeating: 0.5, leeway: .seconds(1))
+        // Weak on the handler, not just on the Task: a dispatch source holds its handler
+        // until it is cancelled, so a strong capture here would keep the monitor — and
+        // the store behind it — alive for the life of the process.
+        timer.setEventHandler { [weak self] in
             // Bound before the Task: capturing the optional `self` and unwrapping it
             // inside means capturing a var across concurrency domains, which is an error
             // under Swift 6.
@@ -34,16 +46,16 @@ final class CPUMonitor: ObservableObject {
             let sample = Self.currentProcessLoad()
             Task { @MainActor in self.load = sample }
         }
-        RunLoop.main.add(timer, forMode: .common)
+        timer.resume()
         self.timer = timer
     }
 
     func stop() {
-        timer?.invalidate()
+        timer?.cancel()
         timer = nil
     }
 
-    deinit { timer?.invalidate() }
+    deinit { timer?.cancel() }
 
     /// Sum the CPU of every thread in this process.
     ///
