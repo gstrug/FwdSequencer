@@ -505,6 +505,52 @@ private struct SectionTarget: Identifiable {
     var id: Int { index }
 }
 
+/// Deliver a touch on a pad the moment it lands.
+///
+/// A UIScrollView holds content touches for about 150 ms while it works out whether the
+/// gesture is a scroll, and the section strip is a scroll view — so pressing a pad waited
+/// that long before anything sounded. Pressing a SECOND pad while one was already held
+/// did not wait, because the scroll view had already settled that question for the touch
+/// sequence in progress. That asymmetry is what identified it: the audio path is the same
+/// in both cases, so the delay could not have been in the audio path.
+///
+/// Only in Trigger mode, where a chip IS a pad and immediacy is the whole point. Left on
+/// elsewhere, because with the delay off a touch that turns into a scroll sounds the
+/// pattern before it is cancelled — worth it for a pad, not for a chip you tap to select.
+private struct ImmediateTouches: UIViewRepresentable {
+    let enabled: Bool
+
+    final class Probe: UIView {
+        var enabled = false { didSet { apply() } }
+        private weak var scrollView: UIScrollView?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            var view: UIView? = superview
+            while let current = view {
+                if let scroll = current as? UIScrollView { scrollView = scroll; break }
+                view = current.superview
+            }
+            apply()
+        }
+
+        private func apply() {
+            // canCancelContentTouches is left alone: dragging the strip must still scroll,
+            // and the pad must be released rather than left sounding when it does.
+            scrollView?.delaysContentTouches = !enabled
+        }
+    }
+
+    func makeUIView(context: Context) -> Probe {
+        let probe = Probe()
+        probe.isUserInteractionEnabled = false
+        probe.enabled = enabled
+        return probe
+    }
+
+    func updateUIView(_ view: Probe, context: Context) { view.enabled = enabled }
+}
+
 private struct ArrangementStrip: View {
     @EnvironmentObject var songStore: SongStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -526,6 +572,7 @@ private struct ArrangementStrip: View {
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
+                    .background(ImmediateTouches(enabled: songStore.triggerMode))
                 }
                 .onChange(of: songStore.selectedSection) { index in
                     guard songStore.song.sections.indices.contains(index) else { return }
