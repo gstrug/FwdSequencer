@@ -317,6 +317,15 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
+    /// Called wherever a track's signal path is (re)formed. There are two such places —
+    /// addTrack wires a bare sampler straight to the mixer, and rebuildChainLocked
+    /// rebuilds a path that has an AUv3 or effects in it — and a track that only ever
+    /// takes the first one still needs its latency known.
+    private func refreshLatencyLocked(for trackID: UUID) {
+        recomputeLatencyLocked(for: trackID)
+        observeLatencyLocked(for: trackID)
+    }
+
     private func forgetLatencyLocked(for trackID: UUID) {
         latencyObservers.removeValue(forKey: trackID)
         trackLatency.removeValue(forKey: trackID)
@@ -634,6 +643,12 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                 installMasterTap()
             }
             installLevelTap(id: id, node: mixerNode)
+            // This path wires the sampler straight to the mixer without going through
+            // rebuildChainLocked, so the latency has to be taken here too. A track that
+            // never gains a plugin or an effect reaches no other site, and was left with
+            // no entry at all — which read back as zero and quietly disabled its share of
+            // the delay compensation.
+            refreshLatencyLocked(for: id)
         }
     }
 
@@ -1140,11 +1155,9 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         // open editor and costs nothing to bring back.
         engine.connect(upstream, to: mixer, format: nil)
 
-        // The one place every change to a track's path passes through — effect load,
-        // move, remove and bypass, instrument swap and sampler attach all end here — so
-        // it is where the kept latency is brought up to date.
-        recomputeLatencyLocked(for: trackID)
-        observeLatencyLocked(for: trackID)
+        // Effect load, move, remove and bypass, and instrument swap all end here, so this
+        // is where the kept latency is brought up to date for a track with a real chain.
+        refreshLatencyLocked(for: trackID)
     }
 
     private func swapInstrument(_ newUnit: AVAudioUnit, for trackID: UUID, mixer: AVAudioMixerNode) {
