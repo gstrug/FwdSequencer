@@ -66,6 +66,11 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// An array rather than a single optional so raising SongTrack.maximumEffects is a
     /// constant change rather than a restructuring here.
     private var effectUnits: [UUID: [AVAudioUnit]] = [:]
+    /// Effects the host is bypassing, held by unit identity rather than by index —
+    /// indices move when the chain is reordered. Entries are dropped the moment a unit
+    /// is detached: an address freed and reused would otherwise silently bypass whatever
+    /// took its place.
+    private var bypassedUnits: Set<ObjectIdentifier> = []
     private var trackMixers: [UUID: AVAudioMixerNode] = [:]
 
     private let callbackLock = NSLock()
@@ -258,9 +263,10 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     func latency(ofTrack trackID: UUID) -> Double {
         withLock {
             let instrument = auv3Units[trackID]?.auAudioUnit.latency ?? 0
-            // A bypassed effect is still in the graph and still delays its audio, so it
-            // counts. Excluding it would make bypassing shift the track in time.
+            // Only what the audio actually passes through. A bypassed effect is routed
+            // around, so it delays nothing and must not be compensated for.
             let effects = (effectUnits[trackID] ?? [])
+                .filter { !bypassedUnits.contains(ObjectIdentifier($0)) }
                 .reduce(0.0) { $0 + $1.auAudioUnit.latency }
             return instrument + effects
         }
@@ -468,6 +474,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             samplers.removeAll()
             auv3Units.removeAll()
             effectUnits.removeAll()
+            bypassedUnits.removeAll()
             trackMixers.removeAll()
             suspendCounts.removeAll()
             // Must go with the units themselves. A track left in the settled set has no
@@ -615,8 +622,9 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                     var chain = self.effectUnits[trackID] ?? []
                     chain.insert(unit, at: min(max(0, index), chain.count))
                     self.effectUnits[trackID] = chain
-                    // Before the graph runs, so a saved bypass never has an audible gap
-                    // where the effect is briefly in circuit.
+                    // Registered before the rebuild below, so a saved bypass never has an
+                    // audible gap where the effect is briefly in circuit.
+                    if bypassed { self.bypassedUnits.insert(ObjectIdentifier(unit)) }
                     unit.auAudioUnit.shouldBypassEffect = bypassed
                     self.rebuildChainLocked(for: trackID)
                     _ = self.startEngineIfNeeded()
@@ -668,18 +676,37 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             guard var chain = effectUnits[trackID], chain.indices.contains(index) else { return }
             let unit = chain.remove(at: index)
             effectUnits[trackID] = chain
+            bypassedUnits.remove(ObjectIdentifier(unit))
             engine.disconnectNodeOutput(unit)
             engine.detach(unit)
             rebuildChainLocked(for: trackID)
         }
     }
 
-    /// Bypass leaves the effect in the graph — and so in the latency sum — rather than
-    /// unplugging it, so toggling it cannot shift the track in time.
+    /// Bypass by rewiring the chain around the effect, not by asking it to bypass itself.
+    ///
+    /// `shouldBypassEffect` is advisory: the AU has to read it in its own render block,
+    /// and plenty do not — AudioKit's rack reverb ignores it completely, which is how
+    /// this was found. A host that only sets the flag has a bypass switch that works on
+    /// some plugins and silently does nothing on others.
+    ///
+    /// The flag is still set, for the AUs that do honour it: those can ring a reverb tail
+    /// out rather than having it cut, and it costs nothing where it is ignored.
+    ///
+    /// This reverses an earlier decision to keep a bypassed effect in the graph so its
+    /// latency stayed in the sum and toggling could not shift the track in time. That
+    /// preserved timing at the cost of the feature not working, which is the wrong trade:
+    /// an unplugged effect no longer delays the track, so its compensation must go too.
     func setEffectBypassed(_ bypassed: Bool, at index: Int, for trackID: UUID) {
+        suspendTrack(trackID)
+        defer { resumeTrack(trackID) }
         withLock {
             guard let chain = effectUnits[trackID], chain.indices.contains(index) else { return }
-            chain[index].auAudioUnit.shouldBypassEffect = bypassed
+            let unit = chain[index]
+            if bypassed { bypassedUnits.insert(ObjectIdentifier(unit)) }
+            else { bypassedUnits.remove(ObjectIdentifier(unit)) }
+            unit.auAudioUnit.shouldBypassEffect = bypassed
+            rebuildChainLocked(for: trackID)
         }
     }
 
@@ -705,6 +732,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
     private func detachEffectsLocked(for trackID: UUID) {
         for unit in effectUnits.removeValue(forKey: trackID) ?? [] {
+            bypassedUnits.remove(ObjectIdentifier(unit))
             engine.disconnectNodeOutput(unit)
             engine.detach(unit)
         }
@@ -1051,10 +1079,12 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         // `format: nil` throughout, as for the instrument: let the engine negotiate
         // rather than forcing stereo, which has silenced plugins here before.
         var upstream: AVAudioNode = source
-        for unit in chain {
+        for unit in chain where !bypassedUnits.contains(ObjectIdentifier(unit)) {
             engine.connect(upstream, to: unit, format: nil)
             upstream = unit
         }
+        // A bypassed unit is left attached but unconnected, so it keeps its state and its
+        // open editor and costs nothing to bring back.
         engine.connect(upstream, to: mixer, format: nil)
     }
 
