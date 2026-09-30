@@ -71,6 +71,19 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// is detached: an address freed and reused would otherwise silently bypass whatever
     /// took its place.
     private var bypassedUnits: Set<ObjectIdentifier> = []
+    /// Each track's total signal-path latency, KEPT rather than polled.
+    ///
+    /// The sequencer asks for this on every tick and again for every track it triggers —
+    /// 64 calls a second measured with two tracks and no plugins, scaling with
+    /// tracks × tempo × effects. Answering meant walking the chain and touching an
+    /// `AUAudioUnit` property per unit, on the sequencer's own queue and under this lock.
+    /// It is now recomputed only when the path changes.
+    private var trackLatency: [UUID: Double] = [:]
+    /// One observer per unit in a track's path, so a plugin that changes its OWN latency
+    /// — a lookahead limiter being switched on, say — is still picked up without polling,
+    /// which is what the per-tick read used to give us. Rebuilt with the chain, so an
+    /// observer never outlives the unit it watches.
+    private var latencyObservers: [UUID: [NSKeyValueObservation]] = [:]
     private var trackMixers: [UUID: AVAudioMixerNode] = [:]
 
     private let callbackLock = NSLock()
@@ -261,15 +274,36 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// some instruments a little — which is what makes compensation worth doing even
     /// before there are any effects to insert.
     func latency(ofTrack trackID: UUID) -> Double {
-        withLock {
-            let instrument = auv3Units[trackID]?.auAudioUnit.latency ?? 0
-            // Only what the audio actually passes through. A bypassed effect is routed
-            // around, so it delays nothing and must not be compensated for.
-            let effects = (effectUnits[trackID] ?? [])
-                .filter { !bypassedUnits.contains(ObjectIdentifier($0)) }
-                .reduce(0.0) { $0 + $1.auAudioUnit.latency }
-            return instrument + effects
+        withLock { trackLatency[trackID] ?? 0 }
+    }
+
+    /// Only what the audio actually passes through. A bypassed effect is routed around,
+    /// so it delays nothing and must not be compensated for.
+    private func recomputeLatencyLocked(for trackID: UUID) {
+        let instrument = auv3Units[trackID]?.auAudioUnit.latency ?? 0
+        let effects = (effectUnits[trackID] ?? [])
+            .filter { !bypassedUnits.contains(ObjectIdentifier($0)) }
+            .reduce(0.0) { $0 + $1.auAudioUnit.latency }
+        trackLatency[trackID] = instrument + effects
+    }
+
+    /// Watch every unit now in the path. The callback arrives on whatever thread the
+    /// plugin set the property from, so it takes the lock like any other caller.
+    private func observeLatencyLocked(for trackID: UUID) {
+        var units: [AUAudioUnit] = []
+        if let instrument = auv3Units[trackID]?.auAudioUnit { units.append(instrument) }
+        units.append(contentsOf: (effectUnits[trackID] ?? []).map(\.auAudioUnit))
+        latencyObservers[trackID] = units.map { unit in
+            unit.observe(\.latency) { [weak self] _, _ in
+                guard let self else { return }
+                withLock { self.recomputeLatencyLocked(for: trackID) }
+            }
         }
+    }
+
+    private func forgetLatencyLocked(for trackID: UUID) {
+        latencyObservers.removeValue(forKey: trackID)
+        trackLatency.removeValue(forKey: trackID)
     }
 
     func sendMIDIClockPulse(afterSeconds: Double) {
@@ -475,6 +509,8 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             auv3Units.removeAll()
             effectUnits.removeAll()
             bypassedUnits.removeAll()
+            trackLatency.removeAll()
+            latencyObservers.removeAll()
             trackMixers.removeAll()
             suspendCounts.removeAll()
             // Must go with the units themselves. A track left in the settled set has no
@@ -731,6 +767,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     }
 
     private func detachEffectsLocked(for trackID: UUID) {
+        forgetLatencyLocked(for: trackID)
         for unit in effectUnits.removeValue(forKey: trackID) ?? [] {
             bypassedUnits.remove(ObjectIdentifier(unit))
             engine.disconnectNodeOutput(unit)
@@ -1086,6 +1123,12 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         // A bypassed unit is left attached but unconnected, so it keeps its state and its
         // open editor and costs nothing to bring back.
         engine.connect(upstream, to: mixer, format: nil)
+
+        // The one place every change to a track's path passes through — effect load,
+        // move, remove and bypass, instrument swap and sampler attach all end here — so
+        // it is where the kept latency is brought up to date.
+        recomputeLatencyLocked(for: trackID)
+        observeLatencyLocked(for: trackID)
     }
 
     private func swapInstrument(_ newUnit: AVAudioUnit, for trackID: UUID, mixer: AVAudioMixerNode) {
