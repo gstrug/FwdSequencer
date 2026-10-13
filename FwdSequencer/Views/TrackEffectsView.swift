@@ -26,6 +26,10 @@ struct TrackEffectsView: View {
                     } else {
                         ForEach(Array(slots.enumerated()), id: \.element.id) { index, slot in
                             row(index: index, slot: slot)
+                                // Removing is the row's own Remove button; without this,
+                                // the always-on edit mode below would add a red delete
+                                // control as well.
+                                .deleteDisabled(true)
                         }
                         .onMove { source, destination in
                             songStore.moveEffects(from: source, to: destination, for: trackID)
@@ -37,7 +41,7 @@ struct TrackEffectsView: View {
                     Text("Effects process this track's instrument before it reaches the "
                          + "mixer, top to bottom. Their own settings are saved with the "
                          + "song."
-                         + (slots.count > 1 ? " Use Edit to reorder them." : ""))
+                         + (slots.count > 1 ? " Drag the handles to reorder them." : ""))
                 }
 
                 Section {
@@ -58,13 +62,13 @@ struct TrackEffectsView: View {
                     }
                 }
             }
+            // Reordering is always on once there is an order to change, so the drag handles
+            // are simply there. It used to sit behind an Edit button, which nobody thought
+            // to press: the natural thing is to grab an effect and move it.
+            .environment(\.editMode, .constant(slots.count > 1 ? .active : .inactive))
             .navigationTitle(track?.name ?? "Effects")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                // Only worth offering once there is an order to change.
-                if slots.count > 1 {
-                    ToolbarItem(placement: .navigationBarLeading) { EditButton() }
-                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
