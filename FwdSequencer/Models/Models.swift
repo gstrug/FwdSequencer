@@ -815,21 +815,25 @@ nonisolated enum NoteShape: String, CaseIterable, Identifiable {
 }
 
 nonisolated enum NoteShaper {
-    /// NoteEntry's own defaults — the centre every shape is built around, and what
-    /// Reset All returns to.
+    /// NoteEntry's own defaults — what Reset All returns to.
     static let defaultVelocity = 100
     static let defaultGate = 0.5
-    /// The furthest either side of the default a shape may go, as a fraction of it.
-    static let maximumRange = 0.5
 
-    /// Where each of `count` notes sits, from -1 (bottom of the range) to 1 (top).
+    /// The limits a shape's minimum and maximum can be set to. Velocity starts at 1
+    /// because 0 is not a quiet note: MIDI treats a note-on at velocity 0 as a
+    /// note-off, and the sequencer never sends below 1. Gate starts at 5%, the
+    /// shortest a note's own fader allows.
+    static let velocityLimits = 1...127
+    static let gateLimits = 0.05...1.0
+
+    /// Where each of `count` notes sits, from -1 (the minimum) to 1 (the maximum).
     ///
     /// `random` must return values in 0..<1. It is a parameter so tests can make the
-    /// random shapes reproducible; the UI gives a fresh roll on every Apply.
+    /// random shapes reproducible; the UI gives a fresh roll on every press.
     static func positions(_ shape: NoteShape, count: Int,
                           random: () -> Double) -> [Double] {
         guard count > 0 else { return [] }
-        // One note has nothing to ramp or wander between: it keeps the default.
+        // One note has nothing to ramp or wander between: it sits midway.
         // Random still rolls, since that is what was asked for.
         if count == 1 { return [shape == .random ? random() * 2 - 1 : 0] }
 
@@ -866,7 +870,7 @@ nonisolated enum NoteShaper {
 
     /// Ends at the bottom, middle at the top. With an even count the two middle notes
     /// share the peak — otherwise four notes would only reach a third of the way up.
-    /// Two notes have no middle, so they stay at the default.
+    /// Two notes have no middle, so they sit midway.
     private static func archPositions(count: Int) -> [Double] {
         let centre = Double(count - 1) / 2
         let distances = (0..<count).map { abs(Double($0) - centre) / centre }
@@ -875,29 +879,37 @@ nonisolated enum NoteShaper {
         return distances.map { 1 - 2 * ($0 - nearest) / (1 - nearest) }
     }
 
-    /// `pool` with `shape` applied to velocity and/or gate, `range` either side of the
-    /// defaults (0...maximumRange). Values are clamped to what a note can hold, so the
-    /// top of a wide velocity range stops at 127.
+    /// `pool` with `shape` applied between a minimum and maximum. A nil range leaves
+    /// that parameter alone. Ranges given the wrong way round are swapped, and both are
+    /// held inside what a note can store.
     static func apply(_ shape: NoteShape, to pool: [NoteEntry],
-                      velocity: Bool, gate: Bool, range: Double,
+                      velocity: ClosedRange<Int>?, gate: ClosedRange<Double>?,
                       random: () -> Double) -> [NoteEntry] {
-        let spread = min(max(range, 0), maximumRange)
         // Drawn separately for velocity and gate, so random shapes do not move the two
         // in lockstep — a loud note is not automatically a long one.
-        let velocityPositions = velocity ? positions(shape, count: pool.count, random: random) : []
-        let gatePositions = gate ? positions(shape, count: pool.count, random: random) : []
+        let velocityPositions = velocity == nil ? [] : positions(shape, count: pool.count, random: random)
+        let gatePositions = gate == nil ? [] : positions(shape, count: pool.count, random: random)
         var result = pool
         for i in result.indices {
-            if velocity {
-                let value = Double(defaultVelocity) * (1 + spread * velocityPositions[i])
-                result[i].velocity = min(max(Int(value.rounded()), 1), 127)
+            if let velocity {
+                let low = Double(clampVelocity(velocity.lowerBound))
+                let high = Double(clampVelocity(velocity.upperBound))
+                let value = low + (velocityPositions[i] + 1) / 2 * (high - low)
+                result[i].velocity = clampVelocity(Int(value.rounded()))
             }
-            if gate {
-                let value = defaultGate * (1 + spread * gatePositions[i])
-                result[i].gateLength = min(max(value, 0.05), 1.0)
+            if let gate {
+                let low = clampGate(gate.lowerBound), high = clampGate(gate.upperBound)
+                result[i].gateLength = clampGate(low + (gatePositions[i] + 1) / 2 * (high - low))
             }
         }
         return result
+    }
+
+    private static func clampVelocity(_ v: Int) -> Int {
+        min(max(v, velocityLimits.lowerBound), velocityLimits.upperBound)
+    }
+    private static func clampGate(_ g: Double) -> Double {
+        min(max(g, gateLimits.lowerBound), gateLimits.upperBound)
     }
 
     /// Every note back to the defaults.

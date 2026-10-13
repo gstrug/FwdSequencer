@@ -8,8 +8,12 @@ struct NoteParametersView: View {
     @AppStorage("noteShape.pattern") private var shapeRaw = NoteShape.rampUp.rawValue
     @AppStorage("noteShape.velocity") private var shapeVelocity = true
     @AppStorage("noteShape.gate") private var shapeGate = false
-    /// Percent either side of the defaults, 0...50.
-    @AppStorage("noteShape.range") private var shapeRange = 30.0
+    // The range each shape spans, as explicit limits. Velocity in MIDI units, gate in
+    // percent of the step, matching what the faders below show.
+    @AppStorage("noteShape.velocityMin") private var velocityMin = 60.0
+    @AppStorage("noteShape.velocityMax") private var velocityMax = 120.0
+    @AppStorage("noteShape.gateMin") private var gateMin = 25.0
+    @AppStorage("noteShape.gateMax") private var gateMax = 75.0
 
     private var shape: NoteShape { NoteShape(rawValue: shapeRaw) ?? .rampUp }
 
@@ -73,37 +77,30 @@ extension NoteParametersView {
             }
             .pickerStyle(.segmented)
 
+            limitsRow(title: "Velocity", isOn: $shapeVelocity,
+                      low: $velocityMin, high: $velocityMax,
+                      limits: Double(NoteShaper.velocityLimits.lowerBound)...Double(NoteShaper.velocityLimits.upperBound),
+                      defaults: (60, 120), format: { "\(Int($0))" })
+
+            limitsRow(title: "Gate", isOn: $shapeGate,
+                      low: $gateMin, high: $gateMax,
+                      limits: (NoteShaper.gateLimits.lowerBound * 100)...(NoteShaper.gateLimits.upperBound * 100),
+                      defaults: (25, 75), format: { "\(Int($0))%" })
+
             HStack(spacing: 10) {
-                Toggle("Velocity", isOn: $shapeVelocity)
-                    .toggleStyle(.button)
-                Toggle("Gate", isOn: $shapeGate)
-                    .toggleStyle(.button)
+                Text(caption)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-                Divider().frame(height: 20)
-
-                Text("Range").font(.caption).foregroundStyle(.secondary)
-                Slider(value: $shapeRange, in: 0...(NoteShaper.maximumRange * 100), step: 1)
-                    .resetsOnDoubleTap { shapeRange = 30 }
-                    .frame(minWidth: 120, maxWidth: 220)
-                    .accessibilityLabel("Range")
-                    .accessibilityValue("plus or minus \(Int(shapeRange)) percent")
-                Text("±\(Int(shapeRange))%")
-                    .font(.caption.monospacedDigit())
-                    .frame(width: 44, alignment: .leading)
-
-                Spacer(minLength: 0)
+                Spacer(minLength: 8)
 
                 Button("Reset All") {
                     notePool = NoteShaper.reset(notePool)
                 }
                 .buttonStyle(.bordered)
 
-                Button {
-                    notePool = NoteShaper.apply(shape, to: notePool,
-                                                velocity: shapeVelocity, gate: shapeGate,
-                                                range: shapeRange / 100,
-                                                random: { Double.random(in: 0..<1) })
-                } label: {
+                Button(action: applyShape) {
                     // Random shapes roll again on every press, and the label says so.
                     Text(shape.isRandom ? "Roll" : "Apply")
                         .frame(minWidth: 56)
@@ -112,33 +109,76 @@ extension NoteParametersView {
                 .disabled(!shapeVelocity && !shapeGate)
             }
             .controlSize(.small)
-
-            Text(caption)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
         }
         .padding(12)
     }
 
-    private var caption: String {
-        let target: String
-        switch (shapeVelocity, shapeGate) {
-        case (true, true):  target = "velocity and gate"
-        case (true, false): target = "velocity"
-        case (false, true): target = "gate"
-        default:            return "Choose Velocity, Gate or both to shape."
+    private func applyShape() {
+        // Built low-to-high whatever the sliders say: a ClosedRange the wrong way
+        // round is a crash, not an empty range.
+        var velocity: ClosedRange<Int>? = nil
+        if shapeVelocity {
+            velocity = Int(min(velocityMin, velocityMax))...Int(max(velocityMin, velocityMax))
         }
+        var gate: ClosedRange<Double>? = nil
+        if shapeGate {
+            gate = (min(gateMin, gateMax) / 100)...(max(gateMin, gateMax) / 100)
+        }
+        notePool = NoteShaper.apply(shape, to: notePool, velocity: velocity, gate: gate,
+                                    random: { Double.random(in: 0..<1) })
+    }
+
+    /// One parameter's on/off and its Min and Max. Each limit is pushed along by the
+    /// other rather than allowed to cross it, so the pair always reads low → high.
+    private func limitsRow(title: String, isOn: Binding<Bool>,
+                           low: Binding<Double>, high: Binding<Double>,
+                           limits: ClosedRange<Double>, defaults: (Double, Double),
+                           format: @escaping (Double) -> String) -> some View {
+        HStack(spacing: 10) {
+            Toggle(title, isOn: isOn)
+                .toggleStyle(.button)
+                .frame(width: 92, alignment: .leading)
+
+            Text("Min").font(.caption).foregroundStyle(.secondary)
+            Slider(value: Binding(
+                get: { low.wrappedValue },
+                set: { low.wrappedValue = $0; if high.wrappedValue < $0 { high.wrappedValue = $0 } }
+            ), in: limits, step: 1)
+                .resetsOnDoubleTap { low.wrappedValue = defaults.0 }
+                .accessibilityLabel("\(title) minimum")
+                .accessibilityValue(format(low.wrappedValue))
+            Text(format(low.wrappedValue))
+                .font(.caption.monospacedDigit())
+                .frame(width: 40, alignment: .leading)
+
+            Text("Max").font(.caption).foregroundStyle(.secondary)
+            Slider(value: Binding(
+                get: { high.wrappedValue },
+                set: { high.wrappedValue = $0; if low.wrappedValue > $0 { low.wrappedValue = $0 } }
+            ), in: limits, step: 1)
+                .resetsOnDoubleTap { high.wrappedValue = defaults.1 }
+                .accessibilityLabel("\(title) maximum")
+                .accessibilityValue(format(high.wrappedValue))
+            Text(format(high.wrappedValue))
+                .font(.caption.monospacedDigit())
+                .frame(width: 40, alignment: .leading)
+        }
+        .controlSize(.small)
+        .opacity(isOn.wrappedValue ? 1 : 0.5)
+    }
+
+    private var caption: String {
         let detail: String
         switch shape {
-        case .rampUp:   detail = "rising from the lowest note to the highest"
-        case .rampDown: detail = "falling from the lowest note to the highest"
-        case .arch:     detail = "rising to the middle notes, then falling"
-        case .valley:   detail = "falling to the middle notes, then rising"
-        case .random:   detail = "set at random for each note"
-        case .stagger:  detail = "lurching up and down from note to note"
+        case .rampUp:   detail = "Rises from Min on the lowest note to Max on the highest."
+        case .rampDown: detail = "Falls from Max on the lowest note to Min on the highest."
+        case .arch:     detail = "Rises from Min to Max at the middle notes, then falls."
+        case .valley:   detail = "Falls from Max to Min at the middle notes, then rises."
+        case .random:   detail = "Each note anywhere between Min and Max."
+        case .stagger:  detail = "Lurches up and down between Min and Max, note to note."
         }
-        return "Sets \(target) \(detail), within ±\(Int(shapeRange))% of the default "
-            + "(velocity 100, gate 50%). Replaces the current values."
+        guard shapeVelocity || shapeGate else { return "Turn on Velocity, Gate or both to shape." }
+        return detail + " Replaces the current values."
     }
 }
 

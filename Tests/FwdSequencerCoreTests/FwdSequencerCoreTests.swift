@@ -1767,17 +1767,25 @@ final class FwdSequencerCoreTests: XCTestCase {
 
     func testRampsClimbAndFallAcrossTheWholeRange() {
         var g = SeededRandomGenerator(seed: 1)
-        let up = NoteShaper.apply(.rampUp, to: pool(5), velocity: true, gate: true,
-                                  range: 0.3, random: { g.nextUnitInterval() })
-        XCTAssertEqual(up.map(\.velocity), [70, 85, 100, 115, 127],
-                       "70 to 130, with the top clamped to MIDI's 127")
-        XCTAssertEqual(up.first!.gateLength, 0.35, accuracy: 1e-9)
-        XCTAssertEqual(up.last!.gateLength, 0.65, accuracy: 1e-9)
+        let up = NoteShaper.apply(.rampUp, to: pool(5), velocity: 40...120, gate: 0.25...0.75,
+                                  random: { g.nextUnitInterval() })
+        XCTAssertEqual(up.map(\.velocity), [40, 60, 80, 100, 120])
+        XCTAssertEqual(up.first!.gateLength, 0.25, accuracy: 1e-9)
+        XCTAssertEqual(up.last!.gateLength, 0.75, accuracy: 1e-9)
 
-        let down = NoteShaper.apply(.rampDown, to: pool(5), velocity: true, gate: false,
-                                    range: 0.3, random: { g.nextUnitInterval() })
-        XCTAssertEqual(down.map(\.velocity), [127, 115, 100, 85, 70])
+        let down = NoteShaper.apply(.rampDown, to: pool(5), velocity: 40...120, gate: nil,
+                                    random: { g.nextUnitInterval() })
+        XCTAssertEqual(down.map(\.velocity), [120, 100, 80, 60, 40])
         XCTAssertTrue(down.allSatisfy { $0.gateLength == 0.5 }, "gate was not selected")
+
+        // Limits outside what a note can hold are pulled in: velocity 0 would be a
+        // note-off, and a gate under 5% is shorter than the fader allows.
+        let wide = NoteShaper.apply(.rampUp, to: pool(3), velocity: 0...200, gate: 0...2,
+                                    random: { g.nextUnitInterval() })
+        XCTAssertEqual(wide.first!.velocity, 1)
+        XCTAssertEqual(wide.last!.velocity, 127)
+        XCTAssertEqual(wide.first!.gateLength, 0.05, accuracy: 1e-9)
+        XCTAssertEqual(wide.last!.gateLength, 1.0, accuracy: 1e-9)
     }
 
     func testArchAndValleyPeakAndDipInTheMiddle() {
@@ -1791,7 +1799,7 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(NoteShaper.positions(.arch, count: 2, random: none), [0, 0])
     }
 
-    func testOneNoteKeepsTheDefaultExceptUnderRandom() {
+    func testOneNoteSitsMidwayExceptUnderRandom() {
         let half: () -> Double = { 0.9 }
         for shape in [NoteShape.rampUp, .rampDown, .arch, .valley, .stagger] {
             XCTAssertEqual(NoteShaper.positions(shape, count: 1, random: half), [0], "\(shape)")
@@ -1816,10 +1824,11 @@ final class FwdSequencerCoreTests: XCTestCase {
         }
     }
 
-    func testZeroRangeAndResetLeaveTheDefaults() {
-        let flat = NoteShaper.apply(.stagger, to: pool(6), velocity: true, gate: true,
-                                    range: 0, random: { Double.random(in: 0..<1) })
-        XCTAssertTrue(flat.allSatisfy { $0.velocity == 100 && $0.gateLength == 0.5 })
+    func testEqualLimitsPinTheValueAndResetRestoresDefaults() {
+        // Min equal to Max pins every note there, whatever the shape.
+        let flat = NoteShaper.apply(.stagger, to: pool(6), velocity: 90...90, gate: 0.3...0.3,
+                                    random: { Double.random(in: 0..<1) })
+        XCTAssertTrue(flat.allSatisfy { $0.velocity == 90 && abs($0.gateLength - 0.3) < 1e-9 })
 
         var shaped = pool(3)
         shaped[0].velocity = 12; shaped[2].gateLength = 0.9
