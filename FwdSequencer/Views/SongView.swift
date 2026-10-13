@@ -499,10 +499,12 @@ private extension View {
 
 // MARK: - Arrangement strip
 
-/// Identifiable wrapper so a section index can drive `.sheet(item:)`.
+/// Identifiable wrapper so a section index, and which of its settings is being
+/// edited, can drive `.sheet(item:)`.
 private struct SectionTarget: Identifiable {
     let index: Int
-    var id: Int { index }
+    let field: SectionEditorSheet.Field
+    var id: String { "\(index)-\(field)" }
 }
 
 /// Deliver a touch on a pad the moment it lands.
@@ -554,7 +556,7 @@ private struct ImmediateTouches: UIViewRepresentable {
 private struct ArrangementStrip: View {
     @EnvironmentObject var songStore: SongStore
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var editingSection: Int? = nil
+    @State private var editingSection: SectionTarget? = nil
     /// Drives the queued chip's pulse. A single flag for the strip rather than one per
     /// chip, so every queued pad would flash in step — there is only ever one, but it
     /// keeps the animation owned in one place.
@@ -597,11 +599,8 @@ private struct ArrangementStrip: View {
         // Started once and left running: the pulse is only visible where a chip opts in,
         // so there is nothing to start and stop as the queue changes.
         .onAppear { queuePulse = true }
-        .sheet(item: Binding(
-            get: { editingSection.map { SectionTarget(index: $0) } },
-            set: { editingSection = $0?.index }
-        )) { target in
-            SectionEditorSheet(sectionIndex: target.index)
+        .sheet(item: $editingSection) { target in
+            SectionEditorSheet(sectionIndex: target.index, field: target.field)
         }
     }
 
@@ -609,11 +608,19 @@ private struct ArrangementStrip: View {
     /// a chip, so the two cannot drift apart.
     @ViewBuilder
     private func sectionActions(for index: Int) -> some View {
+        // Name and length are separate items: "Rename & Length" hid the bar count behind
+        // a label that read as renaming only, so people did not find where to set it.
         Button {
             songStore.selectedSection = index
-            editingSection = index
+            editingSection = SectionTarget(index: index, field: .name)
         } label: {
-            Label("Rename & Length…", systemImage: "pencil")
+            Label("Rename…", systemImage: "pencil")
+        }
+        Button {
+            songStore.selectedSection = index
+            editingSection = SectionTarget(index: index, field: .bars)
+        } label: {
+            Label("Number of Bars…", systemImage: "ruler")
         }
         Divider()
         Button { songStore.addSection() } label: {
@@ -714,9 +721,13 @@ private struct ArrangementStrip: View {
         .accessibilityValue(chipAccessibilityValue(section, isSelected: isSelected,
                                                    isPlaying: isPlaying))
         .accessibilityAction { songStore.selectedSection = idx }
-        .accessibilityAction(named: Text("Edit section")) {
+        .accessibilityAction(named: Text("Rename section")) {
             songStore.selectedSection = idx
-            editingSection = idx
+            editingSection = SectionTarget(index: idx, field: .name)
+        }
+        .accessibilityAction(named: Text("Set number of bars")) {
+            songStore.selectedSection = idx
+            editingSection = SectionTarget(index: idx, field: .bars)
         }
     }
 }
