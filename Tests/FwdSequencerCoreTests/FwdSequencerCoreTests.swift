@@ -1799,6 +1799,14 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(NoteShaper.positions(.arch, count: 2, random: none), [0, 0])
     }
 
+    func testAlternateSwingsMaxMinFromTheLowestNote() {
+        var g = SeededRandomGenerator(seed: 3)
+        let shaped = NoteShaper.apply(.alternate, to: pool(5), velocity: 40...120, gate: nil,
+                                      random: { g.nextUnitInterval() })
+        XCTAssertEqual(shaped.map(\.velocity), [120, 40, 120, 40, 120])
+        XCTAssertEqual(NoteShaper.positions(.alternate, count: 1, random: { 0.5 }), [1])
+    }
+
     func testOneNoteSitsMidwayExceptUnderRandom() {
         let half: () -> Double = { 0.9 }
         for shape in [NoteShape.rampUp, .rampDown, .arch, .valley, .stagger] {

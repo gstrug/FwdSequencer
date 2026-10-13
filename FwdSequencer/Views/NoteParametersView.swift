@@ -177,6 +177,7 @@ extension NoteParametersView {
         case .rampDown: detail = "Falls from Max on the lowest note to Min on the highest."
         case .arch:     detail = "Rises from Min to Max at the middle notes, then falls."
         case .valley:   detail = "Falls from Max to Min at the middle notes, then rises."
+        case .alternate: detail = "Max, Min, Max, Min… from the lowest note up."
         case .random:   detail = "Each note anywhere between Min and Max."
         case .stagger:  detail = "Lurches up and down between Min and Max, note to note."
         }

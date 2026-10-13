@@ -802,6 +802,8 @@ nonisolated enum NoteShape: String, CaseIterable, Identifiable {
     case rampDown = "Ramp Down"
     case arch     = "Arch"
     case valley   = "Valley"
+    /// Max, Min, Max, Min… — an even, regular swing, where Stagger is uneven.
+    case alternate = "Alternate"
     case random   = "Random"
     /// A drunk walk: each note lurches up or down from the last by an uneven amount,
     /// bouncing off the edges of the range. Wandering but connected, where Random is
@@ -835,7 +837,14 @@ nonisolated enum NoteShaper {
         guard count > 0 else { return [] }
         // One note has nothing to ramp or wander between: it sits midway.
         // Random still rolls, since that is what was asked for.
-        if count == 1 { return [shape == .random ? random() * 2 - 1 : 0] }
+        // Alternate starts on Max, so one note is simply Max.
+        if count == 1 {
+            switch shape {
+            case .random:    return [random() * 2 - 1]
+            case .alternate: return [1]
+            default:         return [0]
+            }
+        }
 
         let last = Double(count - 1)
         switch shape {
@@ -847,6 +856,8 @@ nonisolated enum NoteShaper {
             return archPositions(count: count)
         case .valley:
             return archPositions(count: count).map { -$0 }
+        case .alternate:
+            return (0..<count).map { $0 % 2 == 0 ? 1 : -1 }
         case .random:
             return (0..<count).map { _ in random() * 2 - 1 }
         case .stagger:
