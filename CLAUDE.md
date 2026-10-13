@@ -16,6 +16,31 @@ as the source of truth; if this file disagrees with them, the repo wins.
   build number (`CURRENT_PROJECT_VERSION`) bumped first; commits like
   "Bump build to NN for TestFlight" are the convention.
 - Commit often with plain-English messages stating *why* (see `git log` for the style).
+  Author commits as `Graham Struwig <g.struwig@gmail.com>`.
+
+### Release workflow — Graham's rule (2026-10-13)
+
+1. Make the change and **commit locally only**. **Do not push to GitHub.**
+2. Graham builds from Xcode and tests on his iPad.
+3. When he says so: bump `CURRENT_PROJECT_VERSION` (both Debug and Release), commit
+   "Bump build to NN for TestFlight", and **only then push** to GitHub.
+4. Graham archives and uploads to TestFlight himself.
+
+### How Claude reaches the code (since 2026-10-13, personal Claude account)
+
+- The project folder on Graham's Mac (`~/Desktop/FwdSequencer`) is connected to the
+  session; edits and commits happen there via the device shell. That shell is a Linux
+  sandbox: no Xcode, no `swift`, and no network access to GitHub.
+- Git there needs delete permission on the folder (git removes its own lock/temp
+  files); without it commits leave `.git/*.lock` files that break git and Xcode.
+- To push: `git bundle create .build/claude-transfer.bundle origin/main..main` on the
+  Mac, stage the bundle to the cloud workspace, fetch it into the cloud clone of
+  `gstrug/FwdSequencer` and push from there (the Claude GitHub App is installed on the
+  repo). Then `git update-ref refs/remotes/origin/main <sha>` on the Mac so it knows.
+- GitHub Actions (`Validate`) then runs `swift test` and simulator builds — the only
+  compile check available, since nothing here can run Xcode. Check it with `gh run list`.
+- Contributors: Philipp ("filjo", philalimov@gmail.com) made ~21 commits in Aug 2026
+  via `codex/*` PRs; he is a contributor but inactive.
 
 ## What it is
 
@@ -88,6 +113,11 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
 - Decide whether a hosted-plugin build (FWD as an AUv3 MIDI generator) is wanted; it
   affects where the scheduler seam goes (see `TIMING.md` section 6).
 - Groove templates (per-position offset tables) not built; swing covers the common case.
+- **Parked (Graham hears no problem on device):** the Timing feel caps at 40 ms
+  (`SongTrack.effectiveTimingJitter`), but `scheduleLead` is 20 ms, so early pushes
+  beyond 20 ms are clamped and the feel skews late above ~20 ms. The comment there
+  wrongly says the lead is 50 ms; `TIMING.md` §5 still says 15 ms. Check export parity
+  if this is ever touched.
 - Parameter automation deferred; per-section tempo deferred.
 - Finish and tick `RELEASE_CHECKLIST.md` before any App Store submission (privacy
   answers, screenshots, accessibility, oldest/newest iPadOS smoke test).
