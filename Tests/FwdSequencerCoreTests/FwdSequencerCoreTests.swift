@@ -1720,6 +1720,20 @@ final class FwdSequencerCoreTests: XCTestCase {
         }
     }
 
+    /// The five Chinese modes are rotations of ONE set of five notes, starting on each
+    /// of its degrees in turn. A typo in any of them breaks that, which this catches.
+    func testChineseModesAreRotationsOfOnePentatonic() {
+        let gong = MusicalScale.gong.intervals
+        let modes: [MusicalScale] = [.gong, .shang, .jue, .zhi, .yu]
+        for (degree, mode) in modes.enumerated() {
+            let root = gong[degree]
+            let rotated = gong.map { ($0 - root + 12) % 12 }.sorted()
+            XCTAssertEqual(mode.intervals, rotated, "\(mode.rawValue) is not degree \(degree + 1) of Gong")
+        }
+        XCTAssertEqual(MusicalScale.gong.intervals, MusicalScale.pentatonic.intervals)
+        XCTAssertEqual(MusicalScale.yu.intervals, MusicalScale.minorPentatonic.intervals)
+    }
+
     /// A generated sequence must always sound: every step can carry a probability below
     /// 1, and at short lengths a draw could otherwise leave nothing certain to play.
     func testEveryGeneratedSequenceHasACertainOpeningStep() {

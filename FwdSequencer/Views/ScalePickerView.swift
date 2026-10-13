@@ -71,8 +71,14 @@ struct KeyScalePickerView: View {
                                         Image(systemName: "checkmark").foregroundStyle(.tint)
                                     }
                                 }
+                                // The whole row is the target, not just the name: a plain
+                                // button only answers touches on what it draws, so the gap
+                                // before the tick did nothing — and that is where people
+                                // tap. Same fix as the Shape and Feel lists.
+                                .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityAddTraits(option == scale ? [.isSelected] : [])
                         }
                     }
                 }

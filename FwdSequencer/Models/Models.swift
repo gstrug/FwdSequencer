@@ -652,6 +652,7 @@ nonisolated enum MusicalScale: String, Codable, CaseIterable, Equatable {
         case modes = "Modes"
         case symmetric = "Symmetric"
         case japanese = "Japanese"
+        case chinese = "Chinese"
         case indian = "Indian"
         case exotic = "Exotic"
         var id: String { rawValue }
@@ -668,6 +669,8 @@ nonisolated enum MusicalScale: String, Codable, CaseIterable, Equatable {
             return .symmetric
         case .hirajoshi, .inSen, .iwato, .kumoi, .yo:
             return .japanese
+        case .gong, .shang, .jue, .zhi, .yu:
+            return .chinese
         case .bhairav, .marva, .purvi, .todi:
             return .indian
         case .hungarianMinor, .doubleHarmonic, .phrygianDominant,
@@ -717,6 +720,16 @@ nonisolated enum MusicalScale: String, Codable, CaseIterable, Equatable {
     case enigmatic        = "Enigmatic"
     case prometheus       = "Prometheus"
     case augmented        = "Augmented"
+    // The five modes of the Chinese pentatonic, one starting on each degree of the
+    // same five notes. Three coincide with scales already listed — Gong is the major
+    // pentatonic, Yu the minor pentatonic, Zhi the same notes as Yo — but they are
+    // offered under their own names because that is how someone looking for Chinese
+    // scales will look for them. New, so at the end like the eastern scales above.
+    case gong             = "Gong"
+    case shang            = "Shang"
+    case jue              = "Jue"
+    case zhi              = "Zhi"
+    case yu               = "Yu"
 
     var intervals: [Int] {
         switch self {
@@ -754,6 +767,12 @@ nonisolated enum MusicalScale: String, Codable, CaseIterable, Equatable {
         case .enigmatic:       return [0,1,4,6,8,10,11]
         case .prometheus:      return [0,2,4,6,9,10]
         case .augmented:       return [0,3,4,7,8,11]
+        // Chinese pentatonic modes (宫 商 角 徵 羽)
+        case .gong:            return [0,2,4,7,9]
+        case .shang:           return [0,2,5,7,10]
+        case .jue:             return [0,3,5,8,10]
+        case .zhi:             return [0,2,5,7,9]
+        case .yu:              return [0,3,5,7,10]
         }
     }
 }
