@@ -659,8 +659,12 @@ class SongStore: ObservableObject {
     }
 
     func midiPanic() {
-        sequencer.stop()                       // cancels pending note-offs and ratchets
-        audioEngine.panic()                    // aggressive: clears notes we may not be tracking
+        // The sweep runs once the sequencer has actually stopped. Run alongside, as it
+        // was, it could land while the sequencer was still mid-tick on its own queue and
+        // be followed by one more note it then had nothing to catch.
+        sequencer.stop { [weak self] in        // cancels pending note-offs and ratchets
+            self?.audioEngine.panic()          // aggressive: clears notes we may not be tracking
+        }
         isPlaying = false
         isPaused = false
         playback.playingNotes.removeAll()

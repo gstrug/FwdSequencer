@@ -59,6 +59,10 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// Serial, for outputs that cannot be stamped (the built-in sampler): a concurrent
     /// queue could let a note-off overtake its note-on and hang the note.
     private let scheduleQueue = DispatchQueue(label: "com.fwd.schedule", qos: .userInteractive)
+    /// Bumped by stop, pause, song end and panic. A delayed note-on records the value it
+    /// was scheduled under and is dropped on arrival if it has changed since — see
+    /// `discardInFlightNotes`. Guarded by `auLock`.
+    private var noteGeneration: UInt64 = 0
     private var midiClient = MIDIClientRef()
     private var midiClockSource = MIDIEndpointRef()
     private var samplers: [UUID: AVAudioUnitSampler] = [:]
@@ -1267,11 +1271,23 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
             return
         }
+        let generation = withLock { noteGeneration }
         // Serial and shared by every track: a concurrent queue could let a note-off
         // overtake its note-on and hang the note.
         scheduleQueue.asyncAfter(deadline: .now() + afterSeconds) { [weak self] in
-            self?.playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
+            guard let self else { return }
+            // Checked and played under one lock hold, so a stop cannot slip in between.
+            withLock {
+                // Stopped since this was scheduled: its release has been cancelled, so
+                // sounding it now would hang it.
+                guard generation == noteGeneration else { return }
+                playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
+            }
         }
+    }
+
+    func discardInFlightNotes() {
+        withLock { noteGeneration &+= 1 }
     }
 
     func stopNote(trackID: UUID, midiNote: UInt8, afterSeconds: Double) {
@@ -1356,6 +1372,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// settledInstruments). Safe on settled instruments — they take MIDI normally.
     func panic() {
         withLock {
+            noteGeneration &+= 1   // nothing already in flight may sound after a panic
             for (id, unit) in auv3Units where settledInstruments.contains(id) {
                 sendMIDI(to: unit, bytes: [0xB0, 120, 0])   // All Sound Off
                 sendMIDI(to: unit, bytes: [0xB0, 123, 0])   // All Notes Off

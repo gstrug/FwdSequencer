@@ -28,6 +28,18 @@ nonisolated protocol SequencerAudioOutput: AnyObject {
     /// note-on scheduled just past the stop would hang (TIMING.md §4).
     func allNotesOff(afterSeconds: Double)
 
+    /// Drop every note-on already handed over with an offset but not yet delivered.
+    ///
+    /// A note sent ahead — by the lead, and further by swing, Timing or delay
+    /// compensation — cannot be recalled, and its release is a cancellable work item
+    /// that stopping cancels. So a note-on that landed after a stop sounded with nothing
+    /// left to end it: a hung note. The delayed sweep only caught those due within the
+    /// lead plus a margin, while swing alone can push a note a third of a step late —
+    /// hundreds of milliseconds on a slow track. Discarding at the source covers every
+    /// delay, however long, and cannot cut notes from a later restart, which a longer
+    /// sweep could. Note-offs are never discarded.
+    func discardInFlightNotes()
+
     // MARK: MIDI clock (phase 4)
     //
     // The clock is emitted BY the sequencer, on the sequencer's own timeline, rather
@@ -64,6 +76,7 @@ extension SequencerAudioOutput {
     }
 
     func allNotesOff(afterSeconds: Double) { allNotesOff() }
+    func discardInFlightNotes() {}
     func latency(ofTrack trackID: UUID) -> Double { 0 }
     func sendMIDIClockPulse(afterSeconds: Double) {}
     func sendMIDITransport(_ status: UInt8) {}
@@ -347,6 +360,8 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// the moment play was pressed. Starting has nothing in flight to catch anyway:
     /// `startAllNotesOff` is the right call there.
     private func flushAllNotesForStop() {
+        // First, so nothing still in flight can sound after the sweeps below.
+        audioEngine?.discardInFlightNotes()
         audioEngine?.allNotesOff()
         guard scheduleLead > 0 else { return }
         audioEngine?.allNotesOff(afterSeconds: scheduleLead + 0.005)

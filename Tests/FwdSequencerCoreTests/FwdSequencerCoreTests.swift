@@ -54,6 +54,9 @@ final class FwdSequencerCoreTests: XCTestCase {
         func allNotesOff(afterSeconds: Double) {
             lock.lock(); _flushOffsets.append(afterSeconds); lock.unlock()
         }
+        private var _discards = 0
+        var discards: Int { lock.lock(); defer { lock.unlock() }; return _discards }
+        func discardInFlightNotes() { lock.lock(); _discards += 1; lock.unlock() }
 
         private var _clockOffsets: [Double] = []
         private var _transport: [UInt8] = []
@@ -1223,6 +1226,18 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertFalse(flushes.isEmpty, "a stop must sweep past the look-ahead window")
         XCTAssertTrue(flushes.allSatisfy { $0 > 0.020 },
                       "the sweep must land after anything already stamped, not with it")
+    }
+
+    /// Stopping must also drop notes already handed over but not yet delivered. Swing
+    /// can push one far past the delayed sweep, and its release has been cancelled, so
+    /// if it sounded it would hang.
+    func testStoppingDiscardsNotesStillInFlight() {
+        let (engine, out, _) = makeStampingEngine(lead: 0.020)
+        Thread.sleep(forTimeInterval: 0.4)
+        XCTAssertEqual(out.discards, 0, "starting must not discard the notes it schedules")
+        engine.stop()
+        Thread.sleep(forTimeInterval: 0.1)
+        XCTAssertGreaterThan(out.discards, 0, "a stop must discard notes still in flight")
     }
 
     // MARK: - Phase 4: one timeline for notes and clock

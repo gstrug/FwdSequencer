@@ -136,6 +136,14 @@ Each is separately shippable and independently revertable.
    `clearBeforeStarting` for those that BEGIN it, including rewind, which keeps playing.
    Starting has nothing in flight to catch in any case.
 
+   **A third gap, closed 2026-10-13.** The delayed sweep only catches notes due within
+   the lead plus 5 ms, but swing, Timing and delay compensation hand notes over far
+   later than that — swing alone up to a third of a step. Such a note arrived after
+   both sweeps, its release already cancelled, and hung. Delayed note-ons now carry a
+   generation number; stop, pause, song end and panic bump it, and a note-on whose
+   generation has changed is dropped on arrival (`discardInFlightNotes`). Note-offs are
+   never dropped. Panic also now sweeps after the sequencer has stopped, not alongside.
+
    This is the bug the first fix missed, because the first diagnosis blamed an
    asymmetry between sampler and plugin tracks that did not exist — the songs affected
    had plugins on every track. Two bugs, one flush design.
