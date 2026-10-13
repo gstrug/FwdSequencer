@@ -945,6 +945,26 @@ class SongStore: ObservableObject {
         audioEngine.moveEffect(from: source, to: destination, for: trackID)
     }
 
+    /// Swap the effect in one slot for another, keeping its place in the chain.
+    ///
+    /// Built from the same two steps as removing an effect and adding one — the paths
+    /// already proven on device — rather than a new way of rewiring the graph. The new
+    /// effect starts fresh: the old one's settings mean nothing to a different plugin,
+    /// and it starts in circuit, since you are swapping it in to hear it.
+    func replaceEffect(at index: Int, with info: PluginInfo, for trackID: UUID) {
+        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        var slots = song.tracks[idx].effectSlots
+        guard slots.indices.contains(index) else { return }
+        guard slots[index].pluginInfo != info else { return }   // same effect: nothing to do
+        slots[index] = PluginSlot(pluginInfo: info)
+        song.tracks[idx].effects = slots
+        audioEngine.removeEffect(at: index, for: trackID)
+        audioEngine.loadEffect(info, at: index, for: trackID) { [weak self] result in
+            guard case .failure(let error) = result else { return }
+            self?.notice = error.localizedDescription
+        }
+    }
+
     func removeEffect(at index: Int, from trackID: UUID) {
         guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
         var slots = song.tracks[idx].effectSlots

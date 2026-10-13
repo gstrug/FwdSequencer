@@ -13,6 +13,8 @@ struct TrackEffectsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showPicker = false
     @State private var editingIndex: Int?
+    /// The slot whose effect is being swapped for another, if any.
+    @State private var replacingIndex: Int?
 
     private var track: SongTrack? { songStore.song.tracks.first { $0.id == trackID } }
     private var slots: [PluginSlot] { track?.effectSlots ?? [] }
@@ -80,6 +82,15 @@ struct TrackEffectsView: View {
                 }
             }
             .sheet(item: Binding(
+                get: { replacingIndex.map { EffectEditorTarget(index: $0) } },
+                set: { replacingIndex = $0?.index }
+            )) { target in
+                EffectPickerView { info in
+                    songStore.replaceEffect(at: target.index, with: info, for: trackID)
+                    replacingIndex = nil
+                }
+            }
+            .sheet(item: Binding(
                 get: { editingIndex.map { EffectEditorTarget(index: $0) } },
                 set: { editingIndex = $0?.index }
             )) { target in
@@ -114,6 +125,13 @@ struct TrackEffectsView: View {
                 .toggleStyle(.button).controlSize(.small).tint(.orange)
 
                 Spacer(minLength: 0)
+
+                // Swap for a different effect in the same place in the chain, rather
+                // than removing it, adding the new one and dragging it back into line.
+                Button { replacingIndex = index } label: {
+                    Label("Replace", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(.bordered).controlSize(.small)
 
                 Button(role: .destructive) {
                     songStore.removeEffect(at: index, from: trackID)
