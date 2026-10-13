@@ -809,6 +809,16 @@ final class FwdSequencerCoreTests: XCTestCase {
                            "\(triplet) must be three in the time of two \(parent)")
         }
 
+        // The long values are whole multiples of a whole note: 2/1, 3/1, 4/1.
+        let ticksPerWhole = TempoDivision.whole.sequencerTicks
+        XCTAssertEqual(TempoDivision.breve.sequencerTicks, ticksPerWhole * 2)
+        XCTAssertEqual(TempoDivision.dottedBreve.sequencerTicks, ticksPerWhole * 3)
+        XCTAssertEqual(TempoDivision.longa.sequencerTicks, ticksPerWhole * 4)
+
+        // The menu lists them longest first, and each is longer than the next.
+        let ticks = TempoDivision.allCases.map(\.sequencerTicks)
+        XCTAssertEqual(ticks, ticks.sorted(by: >), "menu order must run longest to shortest")
+
         // Every division is a whole number of ticks — nothing rounds.
         for division in TempoDivision.allCases {
             XCTAssertGreaterThan(division.sequencerTicks, 0, "\(division)")

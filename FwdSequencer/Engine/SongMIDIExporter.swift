@@ -415,6 +415,8 @@ nonisolated enum SongMIDIExporter {
     /// divisions land on whole ticks here too.
     private static func triggerTicks(for division: TempoDivision) -> Int {
         switch division {
+        case .longa:            return ticksPerQuarter * 16
+        case .dottedBreve:      return ticksPerQuarter * 12
         case .breve:            return ticksPerQuarter * 8
         case .whole:            return ticksPerQuarter * 4
         case .half:             return ticksPerQuarter * 2

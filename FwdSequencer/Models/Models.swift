@@ -599,6 +599,10 @@ extension StepType: Codable {
 // MARK: - Enumerations
 
 nonisolated enum TempoDivision: String, Codable, CaseIterable, Equatable {
+    // Declared longest first because this order IS the menu order. Saved songs store the
+    // raw value, not the position, so new cases can go anywhere without disturbing them.
+    case longa            = "Longa"          // 4/1 — four whole notes
+    case dottedBreve      = "Dotted Breve"   // 3/1 — three whole notes
     case breve            = "Breve"
     case whole            = "Whole"
     case half             = "Half"
@@ -612,6 +616,8 @@ nonisolated enum TempoDivision: String, Codable, CaseIterable, Equatable {
 
     var abbreviation: String {
         switch self {
+        case .longa:            return "4/1"
+        case .dottedBreve:      return "3/1"
         case .breve:            return "2/1"
         case .whole:            return "1/1"
         case .half:             return "1/2"
@@ -629,6 +635,8 @@ nonisolated enum TempoDivision: String, Codable, CaseIterable, Equatable {
     /// A triplet is three in the time of two, hence the 2/3.
     var sequencerTicks: Int {
         switch self {
+        case .longa:            return 384
+        case .dottedBreve:      return 288
         case .breve:            return 192
         case .whole:            return 96
         case .half:             return 48

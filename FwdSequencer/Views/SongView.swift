@@ -1718,7 +1718,9 @@ private struct SongTrackRowView: View {
         VStack(alignment: .leading, spacing: 8) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    Text("Rate").font(.caption2).foregroundStyle(.secondary)
+                    // "Time" rather than "Rate": it is how long each step lasts, and
+                    // a step of 4/1 is not something anyone would call a rate.
+                    Text("Time").font(.caption2).foregroundStyle(.secondary)
                     Picker("", selection: $part.tempoDivision) {
                         ForEach(TempoDivision.allCases, id: \.self) { Text($0.abbreviation).tag($0) }
                     }
