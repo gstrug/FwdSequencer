@@ -784,3 +784,129 @@ nonisolated enum MusicalScale: String, Codable, CaseIterable, Equatable {
         }
     }
 }
+
+// MARK: - Note shaping
+//
+// Sets every note in a pool's velocity and gate to a pattern in one go, instead of
+// fader by fader. A one-shot edit of the stored values, NOT a playback effect: once
+// applied, the faders hold the result and stay editable, and playback, recording and
+// MIDI export all read the stored values exactly as they would hand-set ones. That
+// also keeps it clear of Feel → Variation, which varies each note anew every time it
+// plays.
+//
+// Pools are kept in pitch order (PianoKeyboardView inserts sorted), which is also the
+// order the faders sit in and the order Fwd walks — so "up" means low notes to high.
+
+nonisolated enum NoteShape: String, CaseIterable, Identifiable {
+    case rampUp   = "Ramp Up"
+    case rampDown = "Ramp Down"
+    case arch     = "Arch"
+    case valley   = "Valley"
+    case random   = "Random"
+    /// A drunk walk: each note lurches up or down from the last by an uneven amount,
+    /// bouncing off the edges of the range. Wandering but connected, where Random is
+    /// scattered with no relation between neighbours.
+    case stagger  = "Stagger"
+
+    var id: String { rawValue }
+
+    /// Whether applying it twice can give a different result.
+    var isRandom: Bool { self == .random || self == .stagger }
+}
+
+nonisolated enum NoteShaper {
+    /// NoteEntry's own defaults — the centre every shape is built around, and what
+    /// Reset All returns to.
+    static let defaultVelocity = 100
+    static let defaultGate = 0.5
+    /// The furthest either side of the default a shape may go, as a fraction of it.
+    static let maximumRange = 0.5
+
+    /// Where each of `count` notes sits, from -1 (bottom of the range) to 1 (top).
+    ///
+    /// `random` must return values in 0..<1. It is a parameter so tests can make the
+    /// random shapes reproducible; the UI gives a fresh roll on every Apply.
+    static func positions(_ shape: NoteShape, count: Int,
+                          random: () -> Double) -> [Double] {
+        guard count > 0 else { return [] }
+        // One note has nothing to ramp or wander between: it keeps the default.
+        // Random still rolls, since that is what was asked for.
+        if count == 1 { return [shape == .random ? random() * 2 - 1 : 0] }
+
+        let last = Double(count - 1)
+        switch shape {
+        case .rampUp:
+            return (0..<count).map { -1 + 2 * Double($0) / last }
+        case .rampDown:
+            return (0..<count).map { 1 - 2 * Double($0) / last }
+        case .arch:
+            return archPositions(count: count)
+        case .valley:
+            return archPositions(count: count).map { -$0 }
+        case .random:
+            return (0..<count).map { _ in random() * 2 - 1 }
+        case .stagger:
+            // Start somewhere near the middle, then lurch. Each step is between a
+            // quarter and the whole of the half-range, in a direction chosen afresh
+            // every time — so it can lurch the same way twice, unlike a zig-zag.
+            var value = random() - 0.5
+            var result = [value]
+            for _ in 1..<count {
+                let step = 0.25 + random() * 0.75
+                value += random() < 0.5 ? -step : step
+                // Bounce off the edges rather than sticking to them.
+                if value > 1 { value = 2 - value }
+                if value < -1 { value = -2 - value }
+                value = min(max(value, -1), 1)
+                result.append(value)
+            }
+            return result
+        }
+    }
+
+    /// Ends at the bottom, middle at the top. With an even count the two middle notes
+    /// share the peak — otherwise four notes would only reach a third of the way up.
+    /// Two notes have no middle, so they stay at the default.
+    private static func archPositions(count: Int) -> [Double] {
+        let centre = Double(count - 1) / 2
+        let distances = (0..<count).map { abs(Double($0) - centre) / centre }
+        let nearest = distances.min() ?? 0
+        guard nearest < 1 else { return Array(repeating: 0, count: count) }
+        return distances.map { 1 - 2 * ($0 - nearest) / (1 - nearest) }
+    }
+
+    /// `pool` with `shape` applied to velocity and/or gate, `range` either side of the
+    /// defaults (0...maximumRange). Values are clamped to what a note can hold, so the
+    /// top of a wide velocity range stops at 127.
+    static func apply(_ shape: NoteShape, to pool: [NoteEntry],
+                      velocity: Bool, gate: Bool, range: Double,
+                      random: () -> Double) -> [NoteEntry] {
+        let spread = min(max(range, 0), maximumRange)
+        // Drawn separately for velocity and gate, so random shapes do not move the two
+        // in lockstep — a loud note is not automatically a long one.
+        let velocityPositions = velocity ? positions(shape, count: pool.count, random: random) : []
+        let gatePositions = gate ? positions(shape, count: pool.count, random: random) : []
+        var result = pool
+        for i in result.indices {
+            if velocity {
+                let value = Double(defaultVelocity) * (1 + spread * velocityPositions[i])
+                result[i].velocity = min(max(Int(value.rounded()), 1), 127)
+            }
+            if gate {
+                let value = defaultGate * (1 + spread * gatePositions[i])
+                result[i].gateLength = min(max(value, 0.05), 1.0)
+            }
+        }
+        return result
+    }
+
+    /// Every note back to the defaults.
+    static func reset(_ pool: [NoteEntry]) -> [NoteEntry] {
+        pool.map {
+            var note = $0
+            note.velocity = defaultVelocity
+            note.gateLength = defaultGate
+            return note
+        }
+    }
+}

@@ -1759,6 +1759,75 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(MusicalScale.yu.intervals, MusicalScale.minorPentatonic.intervals)
     }
 
+    // MARK: - Note shaping
+
+    private func pool(_ count: Int) -> [NoteEntry] {
+        (0..<count).map { NoteEntry(midiNote: 60 + $0) }
+    }
+
+    func testRampsClimbAndFallAcrossTheWholeRange() {
+        var g = SeededRandomGenerator(seed: 1)
+        let up = NoteShaper.apply(.rampUp, to: pool(5), velocity: true, gate: true,
+                                  range: 0.3, random: { g.nextUnitInterval() })
+        XCTAssertEqual(up.map(\.velocity), [70, 85, 100, 115, 127],
+                       "70 to 130, with the top clamped to MIDI's 127")
+        XCTAssertEqual(up.first!.gateLength, 0.35, accuracy: 1e-9)
+        XCTAssertEqual(up.last!.gateLength, 0.65, accuracy: 1e-9)
+
+        let down = NoteShaper.apply(.rampDown, to: pool(5), velocity: true, gate: false,
+                                    range: 0.3, random: { g.nextUnitInterval() })
+        XCTAssertEqual(down.map(\.velocity), [127, 115, 100, 85, 70])
+        XCTAssertTrue(down.allSatisfy { $0.gateLength == 0.5 }, "gate was not selected")
+    }
+
+    func testArchAndValleyPeakAndDipInTheMiddle() {
+        let none: () -> Double = { 0.5 }
+        XCTAssertEqual(NoteShaper.positions(.arch, count: 5, random: none), [-1, 0, 1, 0, -1])
+        XCTAssertEqual(NoteShaper.positions(.valley, count: 5, random: none), [1, 0, -1, 0, 1])
+        // Even counts share the peak between the two middle notes rather than stopping
+        // a third of the way up.
+        XCTAssertEqual(NoteShaper.positions(.arch, count: 4, random: none), [-1, 1, 1, -1])
+        // Two notes have no middle.
+        XCTAssertEqual(NoteShaper.positions(.arch, count: 2, random: none), [0, 0])
+    }
+
+    func testOneNoteKeepsTheDefaultExceptUnderRandom() {
+        let half: () -> Double = { 0.9 }
+        for shape in [NoteShape.rampUp, .rampDown, .arch, .valley, .stagger] {
+            XCTAssertEqual(NoteShaper.positions(shape, count: 1, random: half), [0], "\(shape)")
+        }
+        XCTAssertEqual(NoteShaper.positions(.random, count: 1, random: half)[0], 0.8,
+                       accuracy: 1e-9)
+    }
+
+    /// Random and Stagger must never leave the range, whatever the roll, and Stagger
+    /// must actually wander rather than settle.
+    func testRandomShapesStayInsideTheRange() {
+        for seed in UInt64(1)...50 {
+            var g = SeededRandomGenerator(seed: seed)
+            for shape in [NoteShape.random, .stagger] {
+                let positions = NoteShaper.positions(shape, count: 16,
+                                                     random: { g.nextUnitInterval() })
+                XCTAssertTrue(positions.allSatisfy { (-1...1).contains($0) }, "\(shape) \(seed)")
+            }
+            let walk = NoteShaper.positions(.stagger, count: 16, random: { g.nextUnitInterval() })
+            let moves = zip(walk, walk.dropFirst()).map { abs($1 - $0) }
+            XCTAssertTrue(moves.allSatisfy { $0 > 0 }, "a drunk never stands still, seed \(seed)")
+        }
+    }
+
+    func testZeroRangeAndResetLeaveTheDefaults() {
+        let flat = NoteShaper.apply(.stagger, to: pool(6), velocity: true, gate: true,
+                                    range: 0, random: { Double.random(in: 0..<1) })
+        XCTAssertTrue(flat.allSatisfy { $0.velocity == 100 && $0.gateLength == 0.5 })
+
+        var shaped = pool(3)
+        shaped[0].velocity = 12; shaped[2].gateLength = 0.9
+        let reset = NoteShaper.reset(shaped)
+        XCTAssertTrue(reset.allSatisfy { $0.velocity == 100 && $0.gateLength == 0.5 })
+        XCTAssertEqual(reset.map(\.midiNote), shaped.map(\.midiNote), "notes themselves untouched")
+    }
+
     /// A generated sequence must always sound: every step can carry a probability below
     /// 1, and at short lengths a draw could otherwise leave nothing certain to play.
     func testEveryGeneratedSequenceHasACertainOpeningStep() {
