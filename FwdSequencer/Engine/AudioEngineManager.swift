@@ -1277,11 +1277,11 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         scheduleQueue.asyncAfter(deadline: .now() + afterSeconds) { [weak self] in
             guard let self else { return }
             // Checked and played under one lock hold, so a stop cannot slip in between.
-            withLock {
+            self.withLock {
                 // Stopped since this was scheduled: its release has been cancelled, so
                 // sounding it now would hang it.
-                guard generation == noteGeneration else { return }
-                playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
+                guard generation == self.noteGeneration else { return }
+                self.playNote(trackID: trackID, midiNote: midiNote, velocity: velocity)
             }
         }
     }
