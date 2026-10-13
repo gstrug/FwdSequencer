@@ -95,10 +95,13 @@ extension NoteParametersView {
 
                 Spacer(minLength: 8)
 
-                Button("Reset All") {
-                    notePool = NoteShaper.reset(notePool)
+                // Resets only what is selected, like Apply: velocity back to 100
+                // and/or gate back to 50%.
+                Button("Reset") {
+                    notePool = NoteShaper.reset(notePool, velocity: shapeVelocity, gate: shapeGate)
                 }
                 .buttonStyle(.bordered)
+                .disabled(!shapeVelocity && !shapeGate)
 
                 Button(action: applyShape) {
                     // Random shapes roll again on every press, and the label says so.

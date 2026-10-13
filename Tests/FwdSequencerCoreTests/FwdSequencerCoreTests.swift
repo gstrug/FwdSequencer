@@ -1832,9 +1832,17 @@ final class FwdSequencerCoreTests: XCTestCase {
 
         var shaped = pool(3)
         shaped[0].velocity = 12; shaped[2].gateLength = 0.9
-        let reset = NoteShaper.reset(shaped)
+        let reset = NoteShaper.reset(shaped, velocity: true, gate: true)
         XCTAssertTrue(reset.allSatisfy { $0.velocity == 100 && $0.gateLength == 0.5 })
         XCTAssertEqual(reset.map(\.midiNote), shaped.map(\.midiNote), "notes themselves untouched")
+
+        // Only what is selected is reset.
+        let velocityOnly = NoteShaper.reset(shaped, velocity: true, gate: false)
+        XCTAssertEqual(velocityOnly[0].velocity, 100)
+        XCTAssertEqual(velocityOnly[2].gateLength, 0.9, "gate left as it was")
+        let gateOnly = NoteShaper.reset(shaped, velocity: false, gate: true)
+        XCTAssertEqual(gateOnly[0].velocity, 12, "velocity left as it was")
+        XCTAssertEqual(gateOnly[2].gateLength, 0.5)
     }
 
     /// A generated sequence must always sound: every step can carry a probability below

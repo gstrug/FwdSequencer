@@ -912,12 +912,13 @@ nonisolated enum NoteShaper {
         min(max(g, gateLimits.lowerBound), gateLimits.upperBound)
     }
 
-    /// Every note back to the defaults.
-    static func reset(_ pool: [NoteEntry]) -> [NoteEntry] {
+    /// Every note's velocity and/or gate back to the default. Only what is asked for
+    /// is touched, so resetting velocity keeps a shaped gate, and the other way round.
+    static func reset(_ pool: [NoteEntry], velocity: Bool, gate: Bool) -> [NoteEntry] {
         pool.map {
             var note = $0
-            note.velocity = defaultVelocity
-            note.gateLength = defaultGate
+            if velocity { note.velocity = defaultVelocity }
+            if gate { note.gateLength = defaultGate }
             return note
         }
     }
