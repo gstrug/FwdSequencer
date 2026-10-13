@@ -1805,6 +1805,10 @@ final class FwdSequencerCoreTests: XCTestCase {
                                       random: { g.nextUnitInterval() })
         XCTAssertEqual(shaped.map(\.velocity), [120, 40, 120, 40, 120])
         XCTAssertEqual(NoteShaper.positions(.alternate, count: 1, random: { 0.5 }), [1])
+
+        let flipped = NoteShaper.apply(.alternate, to: pool(5), velocity: 40...120, gate: nil,
+                                       flipped: true, random: { g.nextUnitInterval() })
+        XCTAssertEqual(flipped.map(\.velocity), [40, 120, 40, 120, 40], "flipped starts on Min")
     }
 
     func testOneNoteSitsMidwayExceptUnderRandom() {

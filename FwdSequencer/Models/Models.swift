@@ -891,15 +891,20 @@ nonisolated enum NoteShaper {
     }
 
     /// `pool` with `shape` applied between a minimum and maximum. A nil range leaves
-    /// that parameter alone. Ranges given the wrong way round are swapped, and both are
-    /// held inside what a note can store.
+    /// that parameter alone. Both are held inside what a note can store. `flipped`
+    /// mirrors the shape top to bottom — Max becomes Min — which is how Alternate is
+    /// made to start on Min instead.
     static func apply(_ shape: NoteShape, to pool: [NoteEntry],
                       velocity: ClosedRange<Int>?, gate: ClosedRange<Double>?,
+                      flipped: Bool = false,
                       random: () -> Double) -> [NoteEntry] {
         // Drawn separately for velocity and gate, so random shapes do not move the two
         // in lockstep — a loud note is not automatically a long one.
-        let velocityPositions = velocity == nil ? [] : positions(shape, count: pool.count, random: random)
-        let gatePositions = gate == nil ? [] : positions(shape, count: pool.count, random: random)
+        let sign: Double = flipped ? -1 : 1
+        let velocityPositions = velocity == nil ? []
+            : positions(shape, count: pool.count, random: random).map { $0 * sign }
+        let gatePositions = gate == nil ? []
+            : positions(shape, count: pool.count, random: random).map { $0 * sign }
         var result = pool
         for i in result.indices {
             if let velocity {

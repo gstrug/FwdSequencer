@@ -127,8 +127,18 @@ extension NoteParametersView {
         if shapeGate {
             gate = (min(gateMin, gateMax) / 100)...(max(gateMin, gateMax) / 100)
         }
-        notePool = NoteShaper.apply(shape, to: notePool, velocity: velocity, gate: gate,
-                                    random: { Double.random(in: 0..<1) })
+        let shaped = NoteShaper.apply(shape, to: notePool, velocity: velocity, gate: gate,
+                                      random: { Double.random(in: 0..<1) })
+        // Alternate: pressing again on notes that already start on Max starts them on
+        // Min instead, and the next press swaps back — so where the pattern starts can
+        // be shifted. Worked out from the notes themselves rather than remembered, so
+        // it does the right thing whatever has happened since the last press.
+        if shape == .alternate, shaped == notePool {
+            notePool = NoteShaper.apply(shape, to: notePool, velocity: velocity, gate: gate,
+                                        flipped: true, random: { Double.random(in: 0..<1) })
+        } else {
+            notePool = shaped
+        }
     }
 
     /// One parameter's on/off and its Min and Max. Each limit is pushed along by the
@@ -177,7 +187,7 @@ extension NoteParametersView {
         case .rampDown: detail = "Falls from Max on the lowest note to Min on the highest."
         case .arch:     detail = "Rises from Min to Max at the middle notes, then falls."
         case .valley:   detail = "Falls from Max to Min at the middle notes, then rises."
-        case .alternate: detail = "Max, Min, Max, Min… from the lowest note up."
+        case .alternate: detail = "Max, Min, Max, Min… from the lowest note up. Apply again to start on Min."
         case .random:   detail = "Each note anywhere between Min and Max."
         case .stagger:  detail = "Lurches up and down between Min and Max, note to note."
         }
