@@ -226,11 +226,21 @@ private struct AuditionKeyboard: View {
         61,63,nil,66,68,70,nil,
     ]
 
+    /// Notes currently held by a finger, for drawing them pressed.
+    @State private var held = Set<Int>()
+
     var body: some View {
         GeometryReader { geo in
             let wCount = Self.whiteKeys.count
             let wWidth = geo.size.width / CGFloat(wCount)
             let wHeight = geo.size.height
+            let blacks: [(midi: Int, x: CGFloat)] = (0..<wCount).compactMap { i in
+                guard let m = Self.blackMidi[i] else { return nil }
+                return (midi: Int(m), x: CGFloat(i) * wWidth + wWidth * 0.6)
+            }
+            let layout = KeyboardLayout(whiteKeys: Self.whiteKeys.map { Int($0.midi) },
+                                        whiteWidth: wWidth, blackKeys: blacks,
+                                        blackWidth: wWidth * 0.7, blackHeight: wHeight * 0.6)
             ZStack(alignment: .topLeading) {
                 // White keys
                 HStack(spacing: 0) {
@@ -238,6 +248,7 @@ private struct AuditionKeyboard: View {
                         let midi = Self.whiteKeys[i].midi
                         KeyButton(midi: midi, isBlack: false,
                                   width: wWidth, height: wHeight,
+                                  pressed: held.contains(Int(midi)),
                                   onNoteOn: onNoteOn, onNoteOff: onNoteOff)
                     }
                 }
@@ -247,24 +258,37 @@ private struct AuditionKeyboard: View {
                         let xOffset = CGFloat(i) * wWidth + wWidth * 0.6
                         KeyButton(midi: bMidi, isBlack: true,
                                   width: wWidth * 0.7, height: wHeight * 0.6,
+                                  pressed: held.contains(Int(bMidi)),
                                   onNoteOn: onNoteOn, onNoteOff: onNoteOff)
                             .offset(x: xOffset)
                     }
                 }
             }
             .keyboardCase()
+            // One surface follows every finger, so notes play as a finger slides along
+            // the keys and are always released when it lifts — see KeyboardTouchSurface.
+            .overlay {
+                KeyboardTouchSurface(
+                    keyAt: { layout.key(at: $0) },
+                    onPress: { note in held.insert(note); onNoteOn(UInt8(note)) },
+                    onRelease: { note in held.remove(note); onNoteOff(UInt8(note)) }
+                )
+                .accessibilityHidden(true)
+            }
         }
     }
 }
 
+/// A single key's look and its VoiceOver action; touch is handled for the whole
+/// keyboard by KeyboardTouchSurface.
 private struct KeyButton: View {
     let midi: UInt8
     let isBlack: Bool
     let width: CGFloat
     let height: CGFloat
+    let pressed: Bool
     let onNoteOn:  (UInt8) -> Void
     let onNoteOff: (UInt8) -> Void
-    @State private var pressed = false
 
     private var noteName: String {
         let names = ["C", "C sharp", "D", "D sharp", "E", "F",
@@ -277,39 +301,13 @@ private struct KeyButton: View {
                      tint: pressed ? .colored(.accentColor) : .natural,
                      pressed: pressed)
             .frame(width: width, height: height)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        if !pressed {
-                            pressed = true
-                            onNoteOn(midi)
-                        }
-                    }
-                    .onEnded { _ in
-                        pressed = false
-                        onNoteOff(midi)
-                    }
-            )
             .accessibilityElement()
             .accessibilityLabel(noteName)
             .accessibilityValue(pressed ? "Playing" : "Ready")
             .accessibilityAddTraits(.isButton)
             .accessibilityAction {
-                guard !pressed else { return }
-                pressed = true
                 onNoteOn(midi)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    guard pressed else { return }
-                    pressed = false
-                    onNoteOff(midi)
-                }
-            }
-            .onDisappear {
-                if pressed {
-                    pressed = false
-                    onNoteOff(midi)
-                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onNoteOff(midi) }
             }
     }
 }

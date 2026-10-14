@@ -148,7 +148,7 @@ struct PlayDockView: View {
     }
 }
 
-// MARK: - Playable keyboard (scrollable, wide keys, press-and-hold, chromatic)
+// MARK: - Playable keyboard (wide keys, multi-touch, slide between notes, chromatic)
 
 private struct PlayableKeyboard: View {
     let onNoteOn: (UInt8) -> Void
@@ -156,7 +156,7 @@ private struct PlayableKeyboard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private static let lowMidi = 36    // C2
-    private static let highMidi = 84   // C6 (≈4 octaves; ~3 visible at a time)
+    private static let highMidi = 84   // C6 (≈4 octaves; ~2–3 visible at a time)
     private static func isWhite(_ m: Int) -> Bool { [0,2,4,5,7,9,11].contains(m % 12) }
     private static let whiteKeys: [Int] = (lowMidi...highMidi).filter { isWhite($0) }
     private static let blackKeys: [Int] = (lowMidi...highMidi).filter { !isWhite($0) }
@@ -167,8 +167,17 @@ private struct PlayableKeyboard: View {
     private let keyH: CGFloat = 132
     private var blackW: CGFloat { whiteW * 0.6 }
     private var blackH: CGFloat { keyH * 0.62 }
+    private var totalW: CGFloat { CGFloat(Self.whiteKeys.count) * whiteW }
 
     @State private var centerC = 60   // middle C — octave-button target (always a C = white)
+    /// Notes currently held by a finger, for drawing them pressed.
+    @State private var held = Set<Int>()
+
+    private var layout: KeyboardLayout {
+        KeyboardLayout(whiteKeys: Self.whiteKeys, whiteWidth: whiteW,
+                       blackKeys: Self.blackKeys.map { (midi: $0, x: blackX($0)) },
+                       blackWidth: blackW, blackHeight: blackH)
+    }
 
     var body: some View {
         VStack(spacing: 4) {
@@ -192,36 +201,53 @@ private struct PlayableKeyboard: View {
             }
             .padding(.horizontal, 8)
 
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: true) {
-                    ZStack(alignment: .topLeading) {
-                        HStack(spacing: 0) {
-                            ForEach(Self.whiteKeys, id: \.self) { m in
-                                PlayKey(midi: m, isBlack: false, width: whiteW, height: keyH,
-                                        onNoteOn: onNoteOn, onNoteOff: onNoteOff)
-                                    .overlay(alignment: .bottom) { octaveLabel(m) }
-                                    .id(m)
-                            }
-                        }
-                        ForEach(Self.blackKeys, id: \.self) { m in
-                            PlayKey(midi: m, isBlack: true, width: blackW, height: blackH,
+            // No scroll view any more: sliding a finger along the keys now PLAYS them,
+            // so a drag cannot also scroll. The octave buttons move the view instead.
+            // (The scroll view was also one of the ways a touch got taken from a key
+            // mid-press, leaving its note hanging.)
+            GeometryReader { geo in
+                let visible = geo.size.width
+                ZStack(alignment: .topLeading) {
+                    HStack(spacing: 0) {
+                        ForEach(Self.whiteKeys, id: \.self) { m in
+                            PlayKey(midi: m, isBlack: false, width: whiteW, height: keyH,
+                                    pressed: held.contains(m),
                                     onNoteOn: onNoteOn, onNoteOff: onNoteOff)
-                                .offset(x: blackX(m))
+                                .overlay(alignment: .bottom) { octaveLabel(m) }
                         }
                     }
-                    .frame(width: CGFloat(Self.whiteKeys.count) * whiteW, height: keyH, alignment: .topLeading)
-                    .keyboardCase()
+                    ForEach(Self.blackKeys, id: \.self) { m in
+                        PlayKey(midi: m, isBlack: true, width: blackW, height: blackH,
+                                pressed: held.contains(m),
+                                onNoteOn: onNoteOn, onNoteOff: onNoteOff)
+                            .offset(x: blackX(m))
+                    }
                 }
-                .frame(maxWidth: .infinity)
-                .frame(height: keyH)
+                .frame(width: totalW, height: keyH, alignment: .topLeading)
+                .keyboardCase()
+                .overlay {
+                    KeyboardTouchSurface(
+                        keyAt: { layout.key(at: $0) },
+                        onPress: { note in held.insert(note); onNoteOn(UInt8(note)) },
+                        onRelease: { note in held.remove(note); onNoteOff(UInt8(note)) }
+                    )
+                    // VoiceOver plays the keys through their own actions instead.
+                    .accessibilityHidden(true)
+                }
+                .offset(x: -scrollOffset(visible: visible))
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: centerC)
+                .frame(width: visible, height: keyH, alignment: .topLeading)
                 .clipped()
-                .onAppear { proxy.scrollTo(centerC, anchor: .center) }
-                .onChange(of: centerC) { c in
-                    if reduceMotion { proxy.scrollTo(c, anchor: .center) }
-                    else { withAnimation { proxy.scrollTo(c, anchor: .center) } }
-                }
             }
+            .frame(height: keyH)
         }
+    }
+
+    /// How far the keyboard is slid left so the chosen C sits in the middle, without
+    /// running past either end.
+    private func scrollOffset(visible: CGFloat) -> CGFloat {
+        let centre = CGFloat(Self.whiteIndex[centerC] ?? 0) * whiteW + whiteW / 2
+        return min(max(0, centre - visible / 2), max(0, totalW - visible))
     }
 
     @ViewBuilder
@@ -245,16 +271,16 @@ private struct PlayableKeyboard: View {
     }
 }
 
-// A single key: press-and-hold to sound, release to stop. Multi-touch friendly, so
-// chords work (each key owns its own gesture).
+/// A single key's look and its VoiceOver action. Touch is handled for the whole
+/// keyboard by KeyboardTouchSurface, which is what lets a finger slide between keys.
 private struct PlayKey: View {
     let midi: Int
     let isBlack: Bool
     let width: CGFloat
     let height: CGFloat
+    let pressed: Bool
     let onNoteOn: (UInt8) -> Void
     let onNoteOff: (UInt8) -> Void
-    @State private var pressed = false
 
     private var noteName: String {
         let names = ["C", "C sharp", "D", "D sharp", "E", "F",
@@ -267,35 +293,13 @@ private struct PlayKey: View {
                      tint: pressed ? .colored(.accentColor) : .natural,
                      pressed: pressed)
             .frame(width: width, height: height)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { _ in
-                        if !pressed { pressed = true; onNoteOn(UInt8(midi)) }
-                    }
-                    .onEnded { _ in
-                        pressed = false; onNoteOff(UInt8(midi))
-                    }
-            )
             .accessibilityElement()
             .accessibilityLabel(noteName)
             .accessibilityValue(pressed ? "Playing" : "Ready")
             .accessibilityAddTraits(.isButton)
             .accessibilityAction {
-                guard !pressed else { return }
-                pressed = true
                 onNoteOn(UInt8(midi))
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    guard pressed else { return }
-                    pressed = false
-                    onNoteOff(UInt8(midi))
-                }
-            }
-            .onDisappear {
-                if pressed {
-                    pressed = false
-                    onNoteOff(UInt8(midi))
-                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onNoteOff(UInt8(midi)) }
             }
     }
 }
