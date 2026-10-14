@@ -12,7 +12,7 @@ as the source of truth; if this file disagrees with them, the repo wins.
   technical steps yourself, and say what you did.
 - Personal project (not company work). GitHub: `gstrug/FwdSequencer`, branch `main`.
 - Apple developer team `8MDY92DSB9`, bundle id `com.grahamstruwig.FwdSequencer`.
-- Version 1.0, **build 83** (last bumped 2026-10-13). Every TestFlight upload needs the
+- Version 1.0, **build 84** (last bumped 2026-10-14). Every TestFlight upload needs the
   build number (`CURRENT_PROJECT_VERSION`) bumped first; commits like
   "Bump build to NN for TestFlight" are the convention.
 - Commit often with plain-English messages stating *why* (see `git log` for the style).
