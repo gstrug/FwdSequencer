@@ -983,6 +983,19 @@ class SongStore: ObservableObject {
         audioEngine.setEffectBypassed(bypassed, at: index, for: trackID)
     }
 
+    /// The FX button's tap: bypass every effect on the track if any is processing,
+    /// otherwise bring them all back in. Goes through setEffectBypassed, the same path
+    /// as each effect's own Bypass switch, so model and audio stay in step.
+    func toggleAllEffectsBypassed(for trackID: UUID) {
+        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        let slots = song.tracks[idx].effectSlots
+        guard !slots.isEmpty else { return }
+        let bypassAll = slots.contains { !$0.bypassed }
+        for index in slots.indices where slots[index].bypassed != bypassAll {
+            setEffectBypassed(bypassAll, at: index, for: trackID)
+        }
+    }
+
     /// Capture an effect's own state, so its settings persist with the song exactly as
     /// an instrument's do.
     func captureEffectState(at index: Int, for trackID: UUID) {

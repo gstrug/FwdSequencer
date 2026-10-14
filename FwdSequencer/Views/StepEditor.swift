@@ -239,32 +239,29 @@ struct StepRow: View {
             // Hidden for Hold/Pause, which don't play a note.
             if step.type != .hold && step.type != .pause {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        Text("Gate").font(.caption2).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
-                        StudioSlider(value: $step.gate, range: 0.05...1.0, defaultValue: 1.0,
-                                     accessibilityLabel: "Gate",
-                                     format: { "\(Int(($0 * 100).rounded()))%" })
-                        Text("\(Int(step.gate * 100))%")
-                            .font(.caption2).monospacedDigit().frame(width: 38)
-                    }
-                    HStack(spacing: 8) {
-                        Text("Probability").font(.caption2).foregroundStyle(.secondary).frame(width: 64, alignment: .leading)
-                        StudioSlider(value: $step.probability, range: 0...1, defaultValue: 1.0,
-                                     step: 0.05, accessibilityLabel: "Probability",
-                                     format: { "\(Int(($0 * 100).rounded()))%" })
-                        Text("\(Int((step.probability * 100).rounded()))%")
-                            .font(.caption2).monospacedDigit().frame(width: 38)
-                    }
-                    HStack(spacing: 8) {
-                        Text("Divide").font(.caption2).foregroundStyle(.secondary)
-                            .frame(width: 64, alignment: .leading)
-                        // Bounded and left-aligned: a full-width Stepper put its +/-
-                        // buttons under the slider knob on the row above.
-                        Stepper(value: $step.ratchets, in: 1...8) {
-                            Text("\(step.ratchets)")
-                                .font(.caption2).monospacedDigit()
+                    // Gate and Probability as knobs, on one line with Divide: three
+                    // short rows became one. Knob values read under each knob.
+                    HStack(alignment: .center, spacing: 22) {
+                        StudioKnob(value: $step.gate, range: 0.05...1.0, defaultValue: 1.0,
+                                   size: 44, tint: .accentColor,
+                                   label: "Gate \(Int((step.gate * 100).rounded()))%",
+                                   format: { "\(Int(($0 * 100).rounded()))%" })
+                        // Snapped to 5% steps as before, so the label reads cleanly.
+                        StudioKnob(value: Binding(get: { step.probability },
+                                                  set: { step.probability = ($0 * 20).rounded() / 20 }),
+                                   range: 0...1, defaultValue: 1.0,
+                                   size: 44, tint: .green,
+                                   label: "Probability \(Int((step.probability * 100).rounded()))%",
+                                   format: { "\(Int(($0 * 100).rounded()))%" })
+                        VStack(spacing: 4) {
+                            Stepper(value: $step.ratchets, in: 1...8) {
+                                Text("\(step.ratchets)")
+                                    .font(.callout.monospacedDigit())
+                            }
+                            .fixedSize()
+                            Text("Divide").font(.caption2).foregroundStyle(Color(white: 0.78))
                         }
-                        .fixedSize()
+                        .accessibilityElement(children: .combine)
                         Spacer(minLength: 0)
                     }
                     Text(articulationHelp)

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// A track's AUv3 effect chain: instrument → effects, in signal order, → mixer.
 ///
@@ -150,7 +151,7 @@ struct TrackEffectsView: View {
 /// Grey when there are none, green when at least one is processing, orange when every
 /// one is bypassed — orange because that is the colour of the Bypass switch in the
 /// effects list, and so as not to be mistaken for the yellow Solo button beside it.
-enum EffectsStatus {
+enum EffectsStatus: Equatable {
     case none, active, allBypassed
 
     init(_ slots: [PluginSlot]) {
@@ -180,6 +181,57 @@ enum EffectsStatus {
             return "\(slots.count) loaded, \(on) active"
         case .allBypassed: return "\(slots.count) loaded, all bypassed"
         }
+    }
+}
+
+/// A track's FX button, on the track row and the mixer channel.
+///
+/// Tap switches the whole chain in and out — bypassing every effect, or bringing them
+/// all back — so comparing with and without effects is one tap. Long press opens the
+/// effects list for editing. With no effects loaded there is nothing to switch, so a
+/// tap opens the list too.
+///
+/// Drawn rather than a Button: a Button fires its action at the end of a long press as
+/// well, so the chain would toggle every time the list was opened.
+struct EffectsToggleButton: View {
+    let trackID: UUID
+    let trackName: String
+    let slots: [PluginSlot]
+    @EnvironmentObject var songStore: SongStore
+    @State private var showEffects = false
+
+    private var status: EffectsStatus { EffectsStatus(slots) }
+
+    var body: some View {
+        Text(EffectsStatus.title(slots))
+            .font(.caption2.bold())
+            .foregroundStyle(status == .none ? Color(white: 0.8) : status.tint)
+            .frame(minWidth: 16)
+            .padding(.horizontal, 9).padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 7)
+                .fill((status == .none ? Color.gray : status.tint).opacity(0.2)))
+            .contentShape(Rectangle())
+            .onTapGesture { tap() }
+            .onLongPressGesture(minimumDuration: 0.45) {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                showEffects = true
+            }
+            .sheet(isPresented: $showEffects) {
+                TrackEffectsView(trackID: trackID).environmentObject(songStore)
+            }
+            .accessibilityElement()
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Effects for \(trackName)")
+            .accessibilityValue(EffectsStatus.accessibilityValue(slots))
+            .accessibilityHint(slots.isEmpty ? "Opens the effects list"
+                               : "Switches all effects on or off. Use the Edit Effects action to change them.")
+            .accessibilityAction { tap() }
+            .accessibilityAction(named: Text("Edit Effects")) { showEffects = true }
+    }
+
+    private func tap() {
+        if slots.isEmpty { showEffects = true }
+        else { songStore.toggleAllEffectsBypassed(for: trackID) }
     }
 }
 

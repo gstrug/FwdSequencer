@@ -173,6 +173,16 @@ private struct SongTransportBar: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back to songs")
 
+                // Which song this is sits with the way back to the song list, and the
+                // "Saved" confirmation beside the name it refers to.
+                HStack(spacing: 8) {
+                    songNameField
+                    Label("Saved", systemImage: "checkmark.circle.fill")
+                        .font(.caption.bold()).foregroundStyle(.green)
+                        .opacity(savedVisible ? 1 : 0)
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: savedVisible)
+                }
+
                 Divider().frame(height: 26)
 
                 Button { songStore.rewind() } label: {
@@ -226,16 +236,11 @@ private struct SongTransportBar: View {
                 .help("Loop song")
                 .accessibilityLabel("Loop song")
                 .accessibilityValue(songStore.loopEnabled ? "On" : "Off")
-
-                    Label("Saved", systemImage: "checkmark.circle.fill")
-                        .font(.subheadline.bold()).foregroundStyle(.green)
-                        .opacity(savedVisible ? 1 : 0)
-                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: savedVisible)
                 }
                 .fixedSize(horizontal: true, vertical: false)
             }
 
-            // ── Row 2: song settings + panels ────────────────────────────
+            // ── Row 2: time, output, panels ──────────────────────────────
             // Wrapped rather than scrolled sideways. This row is wider than an iPad in
             // portrait, and the horizontal ScrollView it used to live in gave no sign of
             // that: the song name was cut mid-word and Mixer and Song Settings sat off
@@ -248,15 +253,16 @@ private struct SongTransportBar: View {
             // dangles with nothing after it, and one starting a row is worse. Wider
             // spacing separates them instead, and each cluster stays whole when the row
             // breaks because it is a single subview.
+            //
+            // Ordered by what each cluster is about: time (tempo, meter, where the
+            // song is), then output (master level and volume, CPU), then the panels.
             FlowLayout(horizontalSpacing: 20, verticalSpacing: 8) {
                 Group {
                     tempoControls
-                    beatIndicator
-                    SongBarCounter(totalBars: currentSectionBars)
-                    CPUReadout()
                     timeSignaturePicker
-                    masterVolumeControl
-                    songNameField
+                    positionIndicator
+                    masterOutputControl
+                    CPUReadout()
                 }
                 Group {
                     Button { showPlayDock.toggle() } label: {
@@ -341,6 +347,15 @@ private struct SongTransportBar: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
+    /// Beat dots and bar counter together: both say where the song is.
+    private var positionIndicator: some View {
+        HStack(spacing: 10) {
+            beatIndicator
+            SongBarCounter(totalBars: currentSectionBars)
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
     private var beatIndicator: some View {
         HStack(spacing: 4) {
             ForEach(0..<beatCount, id: \.self) { beat in
@@ -369,15 +384,21 @@ private struct SongTransportBar: View {
         .fixedSize(horizontal: true, vertical: false)
     }
 
-    private var masterVolumeControl: some View {
+    /// Master volume with the master level meter directly under it, so what the
+    /// slider does and what is coming out are read together.
+    private var masterOutputControl: some View {
         HStack(spacing: 6) {
             Image(systemName: "speaker.wave.2.fill")
                 .font(.caption2).foregroundStyle(.secondary)
-            StudioSlider(value: Binding(get: { Double(songStore.song.masterVolume) },
-                                        set: { songStore.song.masterVolume = Float($0) }),
-                         range: 0...1, defaultValue: 1, accessibilityLabel: "Master volume",
-                         format: { "\(Int(($0 * 100).rounded()))%" })
-                .frame(width: 130)
+            VStack(spacing: 2) {
+                StudioSlider(value: Binding(get: { Double(songStore.song.masterVolume) },
+                                            set: { songStore.song.masterVolume = Float($0) }),
+                             range: 0...1, defaultValue: 1, accessibilityLabel: "Master volume",
+                             format: { "\(Int(($0 * 100).rounded()))%" })
+                MasterLevelBar()
+                    .padding(.horizontal, 10)
+            }
+            .frame(width: 150)
         }
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -415,7 +436,7 @@ private struct SongTransportBar: View {
         } label: {
             // Tinted while armed: the chips behave differently, and that needs to be
             // visible from the transport without opening the menu.
-            Label("Song Settings", systemImage: "gearshape")
+            Label("Settings", systemImage: "gearshape")
         }
         .buttonStyle(.bordered)
         .tint(songStore.triggerMode ? .accentColor : nil)
@@ -1017,17 +1038,10 @@ private struct TrackEffectsButton: View {
     let trackID: UUID
     let trackName: String
     let slots: [PluginSlot]
-    @State private var showEffects = false
 
+    // Tap: all effects in/out. Long press: edit them. See EffectsToggleButton.
     var body: some View {
-        Button { showEffects = true } label: {
-            Text(EffectsStatus.title(slots)).font(.caption2.bold()).frame(minWidth: 16)
-        }
-        .buttonStyle(.bordered)
-        .tint(EffectsStatus(slots).tint)
-        .accessibilityLabel("Effects for \(trackName)")
-        .accessibilityValue(EffectsStatus.accessibilityValue(slots))
-        .sheet(isPresented: $showEffects) { TrackEffectsView(trackID: trackID) }
+        EffectsToggleButton(trackID: trackID, trackName: trackName, slots: slots)
     }
 }
 
@@ -1912,6 +1926,17 @@ private struct SongBarCounter: View {
             Text("of").font(.caption).foregroundStyle(.secondary)
             Text("\(totalBars)").font(.caption.monospacedDigit())
         }
+    }
+}
+
+/// The master output level, on its side, for the transport. Observes the levels
+/// itself so a level tick re-renders only this, not the transport.
+private struct MasterLevelBar: View {
+    @EnvironmentObject var levels: LevelMonitor
+    var body: some View {
+        SegmentedMeter(level: levels.masterLevel, segments: 16, vertical: false)
+            .frame(height: 6)
+            .accessibilityLabel("Master level")
     }
 }
 

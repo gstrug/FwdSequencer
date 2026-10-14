@@ -49,7 +49,6 @@ struct SongMixerView: View {
 
 struct SongChannelStrip: View {
     @Binding var track: SongTrack
-    @State private var showEffects = false
 
     var body: some View {
         VStack(spacing: 14) {
@@ -65,17 +64,9 @@ struct SongChannelStrip: View {
 
             // Inserts belong on the channel strip, as in a DAW — the sequencer rows
             // stay about notes.
-            // Text only: the "fx" symbol beside the word FX read as "FX FX".
-            Button { showEffects = true } label: {
-                Text(EffectsStatus.title(track.effectSlots))
-                    .font(.caption2.bold())
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .tint(EffectsStatus(track.effectSlots).tint)
-            .accessibilityLabel("Effects for \(track.name)")
-            .accessibilityValue(EffectsStatus.accessibilityValue(track.effectSlots))
-            .sheet(isPresented: $showEffects) { TrackEffectsView(trackID: track.id) }
+            // Tap: all effects in/out. Long press: edit them.
+            EffectsToggleButton(trackID: track.id, trackName: track.name,
+                                slots: track.effectSlots)
 
             StudioKnob(value: Binding(get: { Double(track.mixer.pan) },
                                       set: { track.mixer.pan = Float($0) }),

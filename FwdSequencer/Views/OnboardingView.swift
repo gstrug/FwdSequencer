@@ -44,7 +44,7 @@ struct OnboardingView: View {
 
         ("hand.tap",
          "Try a section on its own",
-         "Turn on Pattern Trigger Mode in Song Settings and the section chips become "
+         "Turn on Pattern Trigger Mode in Settings and the section chips become "
          + "pads — press one to hear just that section. It plays through once, or round "
          + "and round if Loop is on, and you can set it to sound only while held. Press "
          + "another while one is playing and it is queued: the pad pulses, then takes "
