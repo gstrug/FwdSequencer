@@ -373,10 +373,11 @@ private struct SongTransportBar: View {
         HStack(spacing: 6) {
             Image(systemName: "speaker.wave.2.fill")
                 .font(.caption2).foregroundStyle(.secondary)
-            Slider(value: $songStore.song.masterVolume, in: 0...1)
-                .resetsOnDoubleTap { songStore.song.masterVolume = 1.0 }
+            StudioSlider(value: Binding(get: { Double(songStore.song.masterVolume) },
+                                        set: { songStore.song.masterVolume = Float($0) }),
+                         range: 0...1, defaultValue: 1, accessibilityLabel: "Master volume",
+                         format: { "\(Int(($0 * 100).rounded()))%" })
                 .frame(width: 130)
-                .accessibilityLabel("Master volume")
         }
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -1421,9 +1422,8 @@ private struct SongTrackRowView: View {
             // Every element before the toggles is now a fixed width, so volume, mute
             // and solo line up down the whole track list regardless of naming.
             Image(systemName: "speaker.wave.1").font(.system(size: 9)).foregroundStyle(.secondary)
-            Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB).frame(width: 70)
-                .resetsOnDoubleTap { track.mixer.volume = 1.0 }   // 0 dB
-                .accessibilityLabel("\(track.name) volume")
+            StudioSlider.volume($track.mixer.volume, label: "\(track.name) volume")
+                .frame(width: 70)
             // Explicit width: the meter is maxWidth-greedy, which has no intrinsic size
             // to resolve inside a fixed-size row.
             SongTrackMeter(trackID: track.id).frame(width: 44)
@@ -1502,10 +1502,8 @@ private struct SongTrackRowView: View {
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "speaker.wave.1").font(.caption2).foregroundStyle(.secondary)
-                Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB)
-                    .resetsOnDoubleTap { track.mixer.volume = 1.0 }   // 0 dB
+                StudioSlider.volume($track.mixer.volume, label: "\(track.name) volume")
                     .frame(minWidth: 70, maxWidth: 150)
-                    .accessibilityLabel("\(track.name) volume")
                 SongTrackMeter(trackID: track.id)
             }
         }
@@ -1688,15 +1686,21 @@ private struct SongTrackRowView: View {
                 Image(systemName: "speaker.wave.2")
                     .font(.caption2).foregroundStyle(.secondary)
                     .frame(width: 28, alignment: .leading)
-                Slider(value: FaderScale.binding($track.mixer.volume), in: FaderScale.minDB...FaderScale.maxDB)
-                    .resetsOnDoubleTap { track.mixer.volume = 1.0 }   // 0 dB
+                StudioSlider.volume($track.mixer.volume, label: "\(track.name) volume")
             }
 
             HStack(spacing: 6) {
                 Text("Pan").font(.caption2).foregroundStyle(.secondary)
                     .frame(width: 28, alignment: .leading)
-                Slider(value: $track.mixer.pan, in: -1...1)
-                    .resetsOnDoubleTap { track.mixer.pan = 0 }   // centre
+                // A knob, as on the mixer: a small square instead of a slider's width.
+                StudioKnob(value: Binding(get: { Double(track.mixer.pan) },
+                                          set: { track.mixer.pan = Float($0) }),
+                           range: -1...1, defaultValue: 0, bipolar: true, size: 30,
+                           format: { p in
+                               abs(p) < 0.05 ? "C" : (p < 0 ? "L\(Int(abs(p) * 100))" : "R\(Int(p * 100))")
+                           })
+                    .accessibilityLabel("\(track.name) pan")
+                Spacer(minLength: 0)
                 Toggle("M", isOn: $track.mixer.isMuted)
                     .toggleStyle(.button).tint(.orange).font(.caption2.bold())
                     .accessibilityLabel("Mute \(track.name)")
@@ -1914,51 +1918,13 @@ private struct SongBarCounter: View {
 struct SongTrackMeter: View {
     let trackID: UUID
     @EnvironmentObject var levels: LevelMonitor
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    @State private var latch = ClipLatch()
-    @State private var heldPeak: CGFloat = 0
-    @State private var holdExpiry = Date.distantPast
 
     var body: some View {
-        let level = levels.trackLevels[trackID] ?? .silent
-        // Same dBFS scale as the mixer meters: RMS fills the bar, a marker shows the
-        // recent peak, and the cap latches red on an over until the level settles.
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 2).fill(Color.secondary.opacity(0.2))
-
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(level.peakDB > -6 ? Color.orange
-                          : level.peakDB > -18 ? .yellow : .green)
-                    .frame(width: geo.size.width * level.rmsFraction)
-                    .animation(reduceMotion ? nil : .easeOut(duration: 0.08),
-                               value: level.rmsFraction)
-
-                Rectangle()
-                    .fill(Color.primary.opacity(0.7))
-                    .frame(width: 1.5)
-                    .offset(x: geo.size.width * heldPeak - 0.75)
-                    .opacity(heldPeak > 0 ? 1 : 0)
-
-                if latch.isLit {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(Color.red)
-                        .frame(width: 3)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { latch.clear(); heldPeak = 0 }
-        }
-        .frame(maxWidth: .infinity, minHeight: 10, maxHeight: 10)
-        .onChange(of: level) { newValue in
-            let now = Date()
-            latch.update(with: newValue, now: now)
-            if newValue.peakFraction >= heldPeak || now > holdExpiry {
-                heldPeak = newValue.peakFraction
-                holdExpiry = now.addingTimeInterval(1.5)
-            }
-        }
+        // The mixer's segmented meter, laid on its side: RMS body, held peak segment,
+        // latching red clip segment (tap to clear). Observes the levels itself, so a
+        // level tick re-renders only this.
+        SegmentedMeter(level: levels.trackLevels[trackID] ?? .silent,
+                       segments: 12, vertical: false)
+            .frame(maxWidth: .infinity, minHeight: 8, maxHeight: 8)
     }
 }

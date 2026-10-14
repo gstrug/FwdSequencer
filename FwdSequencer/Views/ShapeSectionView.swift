@@ -256,14 +256,15 @@ struct ShapeSectionView: View {
             }
             // A slider too: 1 to 32 is a long way by stepper, and a coarse drag then a
             // nudge is how anyone actually lands on 24.
-            Slider(
+            StudioSlider(
                 value: Binding(
                     get: { Double(songStore.generatorLength) },
                     set: { songStore.generatorLength = Int($0.rounded()) }
                 ),
-                in: StepGenerator.lengthSliderRange, step: 1
+                range: StepGenerator.lengthSliderRange, defaultValue: 8, step: 1,
+                accessibilityLabel: "Length",
+                format: { "\(Int($0.rounded())) steps" }
             )
-            .resetsOnDoubleTap { songStore.generatorLength = 8 }
 
             ForEach(StepCharacter.allCases) { option in
                 Button {

@@ -153,25 +153,21 @@ extension NoteParametersView {
                 .frame(width: 92, alignment: .leading)
 
             Text("Min").font(.caption).foregroundStyle(.secondary)
-            Slider(value: Binding(
+            StudioSlider(value: Binding(
                 get: { low.wrappedValue },
                 set: { low.wrappedValue = $0; if high.wrappedValue < $0 { high.wrappedValue = $0 } }
-            ), in: limits, step: 1)
-                .resetsOnDoubleTap { low.wrappedValue = defaults.0 }
-                .accessibilityLabel("\(title) minimum")
-                .accessibilityValue(format(low.wrappedValue))
+            ), range: limits, defaultValue: defaults.0, step: 1,
+               accessibilityLabel: "\(title) minimum", format: format)
             Text(format(low.wrappedValue))
                 .font(.caption.monospacedDigit())
                 .frame(width: 40, alignment: .leading)
 
             Text("Max").font(.caption).foregroundStyle(.secondary)
-            Slider(value: Binding(
+            StudioSlider(value: Binding(
                 get: { high.wrappedValue },
                 set: { high.wrappedValue = $0; if low.wrappedValue > $0 { low.wrappedValue = $0 } }
-            ), in: limits, step: 1)
-                .resetsOnDoubleTap { high.wrappedValue = defaults.1 }
-                .accessibilityLabel("\(title) maximum")
-                .accessibilityValue(format(high.wrappedValue))
+            ), range: limits, defaultValue: defaults.1, step: 1,
+               accessibilityLabel: "\(title) maximum", format: format)
             Text(format(high.wrappedValue))
                 .font(.caption.monospacedDigit())
                 .frame(width: 40, alignment: .leading)
@@ -211,15 +207,13 @@ struct NoteStrip: View {
             VStack(spacing: 4) {
                 Text("\(entry.velocity)")
                     .font(.caption2).monospacedDigit()
-                Slider(value: Binding(
-                    get: { Double(entry.velocity) },
-                    set: { entry.velocity = Int($0) }
-                ), in: 1...127, step: 1)
-                    // NoteEntry's own default velocity.
-                    .resetsOnDoubleTap { entry.velocity = 100 }
-                    .frame(width: 130)
-                    .rotationEffect(.degrees(-90))
-                    .frame(width: 36, height: 130)
+                // NoteEntry's own default velocity is 100.
+                StudioFader(value: Binding(
+                                get: { Double(entry.velocity) },
+                                set: { entry.velocity = Int($0.rounded()) }),
+                            range: 1...127, defaultValue: 100, height: 130,
+                            accessibilityLabel: "Velocity",
+                            format: { "\(Int($0.rounded()))" })
                 Text("Vel")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -229,11 +223,9 @@ struct NoteStrip: View {
             VStack(spacing: 4) {
                 Text(String(format: "%.0f%%", entry.gateLength * 100))
                     .font(.caption2).monospacedDigit()
-                Slider(value: $entry.gateLength, in: 0.05...1.0)
-                    .resetsOnDoubleTap { entry.gateLength = 0.5 }
-                    .frame(width: 130)
-                    .rotationEffect(.degrees(-90))
-                    .frame(width: 36, height: 130)
+                StudioFader(value: $entry.gateLength, range: 0.05...1.0, defaultValue: 0.5,
+                            height: 130, accessibilityLabel: "Gate",
+                            format: { "\(Int(($0 * 100).rounded()))%" })
                 Text("Gate")
                     .font(.caption2)
                     .foregroundStyle(.secondary)

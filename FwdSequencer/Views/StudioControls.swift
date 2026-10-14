@@ -190,6 +190,115 @@ struct StudioFader: View {
     }
 }
 
+// MARK: - Slider (horizontal)
+
+/// The horizontal counterpart of StudioFader: a recessed track, a glowing fill and a
+/// small domed thumb. Same feel — sideways drag, vertical distance for fine trims, a
+/// detent and haptic at the default, a value bubble, double tap to reset.
+///
+/// Unlike a system Slider it does not jump to where the finger lands: it moves by how
+/// far the finger travels. That is what makes fine adjustment possible, and it means
+/// brushing the track by accident does not throw the value across the range.
+struct StudioSlider: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let defaultValue: Double
+    /// Snap to multiples of this (from the bottom of the range), if set.
+    var step: Double? = nil
+    /// Fill out from the default instead of from the bottom (pan).
+    var bipolar: Bool = false
+    var tint: Color = .accentColor
+    var accessibilityLabel: String = "Slider"
+    let format: (Double) -> String
+
+    @GestureState private var drag: DragTrack? = nil
+
+    private let thumb: CGFloat = 20
+
+    private func fraction(_ v: Double) -> CGFloat {
+        CGFloat(min(max((v - range.lowerBound) / (range.upperBound - range.lowerBound), 0), 1))
+    }
+
+    private func snapped(_ v: Double) -> Double {
+        guard let step, step > 0 else { return v }
+        let n = ((v - range.lowerBound) / step).rounded()
+        return min(max(range.lowerBound + n * step, range.lowerBound), range.upperBound)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let travel = max(1, geo.size.width - thumb)
+            let x = thumb / 2 + travel * fraction(value)
+            let fillFrom = bipolar ? thumb / 2 + travel * fraction(defaultValue) : thumb / 2
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(LinearGradient(colors: [StudioStyle.trackTop, StudioStyle.trackBottom],
+                                         startPoint: .top, endPoint: .bottom))
+                    .frame(height: 8)
+                    .padding(.horizontal, thumb / 2 - 4)
+                Capsule()
+                    .fill(tint)
+                    .frame(width: abs(x - fillFrom), height: 4)
+                    .offset(x: min(x, fillFrom))
+                    .shadow(color: tint.opacity(0.6), radius: 2)
+                // Domed thumb.
+                Circle()
+                    .fill(RadialGradient(colors: [Color(white: 0.48), Color(white: 0.28), Color(white: 0.18)],
+                                         center: UnitPoint(x: 0.4, y: 0.3),
+                                         startRadius: 0, endRadius: thumb * 0.6))
+                    .overlay(Circle().stroke(Color.black.opacity(0.5), lineWidth: 0.5))
+                    .overlay(Circle().fill(tint).frame(width: 4, height: 4))
+                    .frame(width: thumb, height: thumb)
+                    .shadow(color: .black.opacity(0.55), radius: 2, y: 2)
+                    .offset(x: x - thumb / 2)
+                if drag != nil {
+                    ValueBubble(text: format(value))
+                        .position(x: x, y: geo.size.height / 2 - 22)
+                }
+            }
+            .frame(height: geo.size.height)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 2)
+                    .updating($drag) { g, state, _ in
+                        var t = state ?? DragTrack(raw: value)
+                        // Drag is horizontal here: hand applyDrag the axes swapped, so
+                        // right means up and vertical distance means fine.
+                        let swapped = CGSize(width: g.translation.height,
+                                             height: -g.translation.width)
+                        value = snapped(applyDrag(&t, translation: swapped, travel: travel,
+                                                  range: range, detent: defaultValue))
+                        state = t
+                    }
+            )
+            .onTapGesture(count: 2) { value = defaultValue }
+        }
+        .frame(height: 28)
+        .accessibilityElement()
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(format(value))
+        .accessibilityAdjustableAction { direction in
+            let stepSize = step ?? (range.upperBound - range.lowerBound) / 20
+            switch direction {
+            case .increment: value = min(range.upperBound, value + stepSize)
+            case .decrement: value = max(range.lowerBound, value - stepSize)
+            @unknown default: break
+            }
+        }
+    }
+}
+
+extension StudioSlider {
+    /// A volume slider over FaderScale's dB range, driving a linear gain.
+    static func volume(_ gain: Binding<Float>, label: String) -> StudioSlider {
+        StudioSlider(value: Binding(get: { Double(FaderScale.dB(fromLinear: gain.wrappedValue)) },
+                                    set: { gain.wrappedValue = FaderScale.linear(fromDB: Float($0)) }),
+                     range: Double(FaderScale.minDB)...Double(FaderScale.maxDB),
+                     defaultValue: 0, accessibilityLabel: label,
+                     format: { $0 <= Double(FaderScale.minDB) ? "-∞" : String(format: "%+.1f dB", $0) })
+    }
+}
+
 // MARK: - Knob
 
 /// A domed rotary knob with a value arc. Drag up to turn it up, down to turn it down;
