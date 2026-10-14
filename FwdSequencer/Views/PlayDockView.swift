@@ -210,6 +210,7 @@ private struct PlayableKeyboard: View {
                         }
                     }
                     .frame(width: CGFloat(Self.whiteKeys.count) * whiteW, height: keyH, alignment: .topLeading)
+                    .keyboardCase()
                 }
                 .frame(maxWidth: .infinity)
                 .frame(height: keyH)
@@ -228,7 +229,7 @@ private struct PlayableKeyboard: View {
         if m % 12 == 0 {
             Text("C\(m / 12 - 1)")
                 .font(.system(size: 10)).foregroundStyle(.secondary)
-                .padding(.bottom, 5).allowsHitTesting(false)
+                .padding(.bottom, 9).allowsHitTesting(false)
         }
     }
 
@@ -262,11 +263,11 @@ private struct PlayKey: View {
     }
 
     var body: some View {
-        Rectangle()
-            .fill(pressed ? Color.accentColor
-                          : (isBlack ? Color.black : Color.white))
+        PianoKeyFace(isBlack: isBlack,
+                     tint: pressed ? .colored(.accentColor) : .natural,
+                     pressed: pressed)
             .frame(width: width, height: height)
-            .overlay(Rectangle().stroke(Color.gray.opacity(0.4), lineWidth: 0.5))
+            .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { _ in

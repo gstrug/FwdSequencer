@@ -80,18 +80,18 @@ struct PianoKeyboardView: View {
     private static let playingWhite  = Color.yellow
     private static let playingBlack  = Color(red: 0.72, green: 0.55, blue: 0.04)
 
-    private func whiteColor(_ midi: Int) -> Color {
-        if playingNotes.contains(midi) { return Self.playingWhite }
-        if isSelected(midi)    { return Self.selectedWhite }
-        if !isInScale(midi)    { return Color.gray.opacity(0.25) }
-        return .white
+    private func whiteTint(_ midi: Int) -> PianoKeyFace.Tint {
+        if playingNotes.contains(midi) { return .colored(Self.playingWhite) }
+        if isSelected(midi)    { return .colored(Self.selectedWhite) }
+        if !isInScale(midi)    { return .dimmed }
+        return .natural
     }
 
-    private func blackColor(_ midi: Int) -> Color {
-        if playingNotes.contains(midi) { return Self.playingBlack }
-        if isSelected(midi)    { return Self.selectedBlack }
-        if !isInScale(midi)    { return Color(white: 0.45) }
-        return .black
+    private func blackTint(_ midi: Int) -> PianoKeyFace.Tint {
+        if playingNotes.contains(midi) { return .colored(Self.playingBlack) }
+        if isSelected(midi)    { return .colored(Self.selectedBlack) }
+        if !isInScale(midi)    { return .dimmed }
+        return .natural
     }
 
     var body: some View {
@@ -110,10 +110,12 @@ struct PianoKeyboardView: View {
                         // White keys
                         HStack(spacing: 0) {
                             ForEach(whiteKeys, id: \.self) { midi in
-                                Rectangle()
-                                    .fill(whiteColor(midi))
+                                // A sounding note is drawn pressed down as well as lit,
+                                // so playback looks like the keys being played.
+                                PianoKeyFace(isBlack: false, tint: whiteTint(midi),
+                                             pressed: playingNotes.contains(midi))
                                     .frame(width: whiteW, height: keyH)
-                                    .overlay(Rectangle().stroke(Color.gray.opacity(0.4), lineWidth: 0.5))
+                                    .contentShape(Rectangle())
                                     .overlay(alignment: .bottom) {
                                         cMarker(midi: midi, whiteW: whiteW)
                                     }
@@ -128,9 +130,10 @@ struct PianoKeyboardView: View {
                         }
                         // Black keys — absolutely positioned via offset
                         ForEach(blackKeys, id: \.self) { midi in
-                            Rectangle()
-                                .fill(blackColor(midi))
+                            PianoKeyFace(isBlack: true, tint: blackTint(midi),
+                                         pressed: playingNotes.contains(midi))
                                 .frame(width: blackW, height: blackH)
+                                .contentShape(Rectangle())
                                 .offset(x: blackKeyX(midi, whiteW: whiteW))
                                 .onTapGesture { toggle(midi) }
                                 .accessibilityElement()
@@ -141,6 +144,7 @@ struct PianoKeyboardView: View {
                         }
                     }
                     .frame(width: totalW, height: keyH)
+                    .keyboardCase()
                 }
                 .onAppear {
                     // Small delay lets layout complete before scrolling
@@ -162,14 +166,15 @@ struct PianoKeyboardView: View {
             if midi == 60 {
                 Text("C4")
                     .font(.system(size: max(7, whiteW * 0.38), weight: .bold))
-                    .foregroundColor(.blue)
-                    .padding(.bottom, 5)
+                    // Blue on a selected (blue) key would vanish.
+                    .foregroundColor(whiteTint(midi) == .natural ? .blue : .white)
+                    .padding(.bottom, 9)
                     .allowsHitTesting(false)
             } else {
                 Circle()
                     .fill(Color.gray.opacity(0.45))
                     .frame(width: max(5, whiteW * 0.22), height: max(5, whiteW * 0.22))
-                    .padding(.bottom, 5)
+                    .padding(.bottom, 9)
                     .allowsHitTesting(false)
             }
         }

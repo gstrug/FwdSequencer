@@ -233,11 +233,11 @@ private struct AuditionKeyboard: View {
             let wHeight = geo.size.height
             ZStack(alignment: .topLeading) {
                 // White keys
-                HStack(spacing: 1) {
+                HStack(spacing: 0) {
                     ForEach(0..<wCount, id: \.self) { i in
                         let midi = Self.whiteKeys[i].midi
                         KeyButton(midi: midi, isBlack: false,
-                                  width: wWidth - 1, height: wHeight,
+                                  width: wWidth, height: wHeight,
                                   onNoteOn: onNoteOn, onNoteOff: onNoteOff)
                     }
                 }
@@ -252,6 +252,7 @@ private struct AuditionKeyboard: View {
                     }
                 }
             }
+            .keyboardCase()
         }
     }
 }
@@ -272,12 +273,11 @@ private struct KeyButton: View {
     }
 
     var body: some View {
-        Rectangle()
-            .fill(pressed
-                  ? (isBlack ? Color.gray : Color.accentColor.opacity(0.4))
-                  : (isBlack ? Color.black : Color.white))
+        PianoKeyFace(isBlack: isBlack,
+                     tint: pressed ? .colored(.accentColor) : .natural,
+                     pressed: pressed)
             .frame(width: width, height: height)
-            .overlay(Rectangle().stroke(Color.gray.opacity(0.4), lineWidth: 0.5))
+            .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { _ in
