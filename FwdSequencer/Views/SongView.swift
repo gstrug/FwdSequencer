@@ -152,6 +152,9 @@ private struct SongTransportBar: View {
     @State private var finishedRecordingURL: URL?
     @State private var recordingFormat: RecordingFormat = .wav
     @State private var showingOnboarding = false
+    /// Typing an exact tempo, from a tap on the tempo display.
+    @State private var editingTempo = false
+    @State private var tempoText = ""
     /// Read only so the tutorial knows it is being reopened rather than met for the
     /// first time; the first-run showing itself belongs to the song list.
     @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding = false
@@ -236,6 +239,15 @@ private struct SongTransportBar: View {
                 .help("Loop song")
                 .accessibilityLabel("Loop song")
                 .accessibilityValue(songStore.loopEnabled ? "On" : "Off")
+
+                // Tempo sits with the transport: it is what you reach for alongside
+                // play. One child, as the row is at SwiftUI's ten-view limit.
+                HStack(spacing: 8) {
+                    Divider().frame(height: 26)
+                    tempoReadout
+                    StudioTapButton(title: "TAP") { handleTap() }
+                        .accessibilityLabel("Tap tempo")
+                }
                 }
                 .fixedSize(horizontal: true, vertical: false)
             }
@@ -256,30 +268,27 @@ private struct SongTransportBar: View {
             //
             // Ordered by what each cluster is about: time (tempo, meter, where the
             // song is), then output (master level and volume, CPU), then the panels.
-            FlowLayout(horizontalSpacing: 20, verticalSpacing: 8) {
-                Group {
-                    tempoControls
-                    timeSignaturePicker
+            //
+            // When it all fits on one line the panels sit at the right-hand end; when
+            // it does not, the same clusters wrap instead.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 20) {
                     positionIndicator
+                    timeSignatureMenu
                     masterOutputControl
                     CPUReadout()
+                    Spacer(minLength: 20)
+                    panelButtons
                 }
-                Group {
-                    Button { showPlayDock.toggle() } label: {
-                        Label("Play", systemImage: "pianokeys")
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(showPlayDock ? .accentColor : nil)
-
-                    Button { showMixer = true } label: {
-                        Label("Mixer", systemImage: "slider.vertical.3")
-                    }
-                    .buttonStyle(.bordered)
-
-                    songSettingsMenu
+                FlowLayout(horizontalSpacing: 20, verticalSpacing: 8) {
+                    positionIndicator
+                    timeSignatureMenu
+                    masterOutputControl
+                    CPUReadout()
+                    panelButtons
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -331,20 +340,72 @@ private struct SongTransportBar: View {
     // wrap: a Layout needs them as separate subviews, and the whole row in one expression
     // was already close to what the SwiftUI type-checker will accept.
 
-    private var tempoControls: some View {
-        HStack(spacing: 6) {
-            Text("BPM").font(.caption).foregroundStyle(.secondary)
-            Text("\(Int(songStore.song.tempo))")
-                .font(.caption.monospacedDigit())
-                .frame(width: 36, alignment: .trailing)
-            Stepper("", value: $songStore.song.tempo, in: 20...400, step: 1)
-                .labelsHidden()
-            Button { handleTap() } label: {
-                Label("Tap", systemImage: "hand.tap.fill").font(.caption)
+    private var panelButtons: some View {
+        HStack(spacing: 10) {
+            Button { showPlayDock.toggle() } label: {
+                Label("Play", systemImage: "pianokeys")
             }
-            .buttonStyle(.borderedProminent).controlSize(.small)
+            .buttonStyle(.bordered)
+            .tint(showPlayDock ? .accentColor : nil)
+
+            Button { showMixer = true } label: {
+                Label("Mixer", systemImage: "slider.vertical.3")
+            }
+            .buttonStyle(.bordered)
+
+            songSettingsMenu
         }
         .fixedSize(horizontal: true, vertical: false)
+    }
+
+    /// Tempo in a display window: drag to change, double tap for 120, tap to type.
+    private var tempoReadout: some View {
+        StudioReadout(value: $songStore.song.tempo, range: 20...400, defaultValue: 120,
+                      unit: "BPM", accessibilityLabel: "Tempo",
+                      onTap: {
+                          tempoText = "\(Int(songStore.song.tempo))"
+                          editingTempo = true
+                      },
+                      format: { "\(Int($0.rounded()))" })
+            .alert("Tempo", isPresented: $editingTempo) {
+                TextField("BPM", text: $tempoText)
+                    .keyboardType(.numberPad)
+                Button("Cancel", role: .cancel) {}
+                Button("Set") {
+                    if let bpm = Double(tempoText.trimmingCharacters(in: .whitespaces)) {
+                        songStore.song.tempo = min(400, max(20, bpm.rounded()))
+                    }
+                }
+            } message: {
+                Text("20 to 400 BPM")
+            }
+    }
+
+    /// Time signature in the same display style; a tap opens the choices.
+    private var timeSignatureMenu: some View {
+        Menu {
+            Picker("Beats per bar", selection: $songStore.song.timeSignature.numerator) {
+                ForEach(1...32, id: \.self) { Text("\($0)").tag($0) }
+            }
+            .pickerStyle(.menu)
+            Picker("Beat value", selection: $songStore.song.timeSignature.denominator) {
+                ForEach([1, 2, 4, 8, 16, 32], id: \.self) { Text("\($0)").tag($0) }
+            }
+            .pickerStyle(.menu)
+        } label: {
+            HStack(spacing: 4) {
+                Text("\(songStore.song.timeSignature.numerator)/\(songStore.song.timeSignature.denominator)")
+                    .font(.system(size: 18, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(StudioStyle.displayText)
+                    .shadow(color: Color.accentColor.opacity(0.6), radius: 3)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(StudioStyle.scaleText)
+            }
+            .studioWindow()
+        }
+        .accessibilityLabel("Time signature")
+        .accessibilityValue("\(songStore.song.timeSignature.numerator) \(songStore.song.timeSignature.denominator)")
     }
 
     /// Beat dots and bar counter together: both say where the song is.
@@ -368,20 +429,6 @@ private struct SongTransportBar: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Beat \(currentBeat + 1) of \(beatCount)")
-    }
-
-    private var timeSignaturePicker: some View {
-        HStack(spacing: 4) {
-            Text("Time").font(.caption).foregroundStyle(.secondary)
-            Picker("", selection: $songStore.song.timeSignature.numerator) {
-                ForEach(1...32, id: \.self) { Text("\($0)").tag($0) }
-            }.pickerStyle(.menu).fixedSize()
-            Text("/").font(.body.bold()).foregroundStyle(.secondary)
-            Picker("", selection: $songStore.song.timeSignature.denominator) {
-                ForEach([1,2,4,8,16,32], id: \.self) { Text("\($0)").tag($0) }
-            }.pickerStyle(.menu).fixedSize()
-        }
-        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// Master volume with the master level meter directly under it, so what the

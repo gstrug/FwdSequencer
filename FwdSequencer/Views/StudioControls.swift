@@ -28,6 +28,8 @@ enum StudioStyle {
     static let capBottom = Color(white: 0.18)
     static let unlit = Color(white: 0.17)
     static let scaleText = Color(white: 0.56)
+    /// Digits in a readout window.
+    static let displayText = Color(red: 0.50, green: 0.83, blue: 1.0)
 }
 
 /// The drag arithmetic shared by fader and knob.
@@ -460,5 +462,124 @@ struct SegmentedMeter: View {
         .accessibilityValue(level.peakDB.isFinite
                             ? String(format: "%.0f decibels%@", level.peakDB, latch.isLit ? ", clipping" : "")
                             : "Silent")
+    }
+}
+
+// MARK: - Readout
+
+/// A value shown in a recessed dark window with glowing digits, like a hardware
+/// display, that can be dragged up and down to change it (with the same fine
+/// adjustment, detent and bubble as the knobs). Double tap returns to the default;
+/// a single tap calls `onTap`, e.g. to type an exact value.
+struct StudioReadout: View {
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let defaultValue: Double
+    var unit: String = ""
+    /// Points of drag for the whole range. Large, so a value moves about one per
+    /// step of the finger rather than racing.
+    var travel: CGFloat = 600
+    var accessibilityLabel: String = "Value"
+    var onTap: (() -> Void)? = nil
+    let format: (Double) -> String
+
+    @GestureState private var drag: DragTrack? = nil
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 5) {
+            Text(format(value))
+                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                .foregroundStyle(StudioStyle.displayText)
+                .shadow(color: Color.accentColor.opacity(0.6), radius: 3)
+            if !unit.isEmpty {
+                Text(unit)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(StudioStyle.scaleText)
+            }
+        }
+        .studioWindow()
+        .overlay(alignment: .top) {
+            if drag != nil { ValueBubble(text: format(value)).offset(y: -24) }
+        }
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 2)
+                .updating($drag) { g, state, _ in
+                    var t = state ?? DragTrack(raw: value)
+                    value = applyDrag(&t, translation: g.translation, travel: travel,
+                                      range: range, detent: nil).rounded()
+                    state = t
+                }
+        )
+        .onTapGesture(count: 2) { value = defaultValue }
+        .onTapGesture { onTap?() }
+        .accessibilityElement()
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue("\(format(value)) \(unit)")
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment: value = min(range.upperBound, value + 1)
+            case .decrement: value = max(range.lowerBound, value - 1)
+            @unknown default: break
+            }
+        }
+    }
+}
+
+/// A raised button in the studio style with a small light that flashes when pressed —
+/// the Tap tempo button.
+struct StudioTapButton: View {
+    let title: String
+    let action: () -> Void
+    @State private var lit = false
+
+    var body: some View {
+        Button {
+            action()
+            lit = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { lit = false }
+        } label: {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(lit ? Color.red : Color(white: 0.3))
+                    .frame(width: 6, height: 6)
+                    .shadow(color: lit ? .red : .clear, radius: 3)
+                Text(title)
+                    .font(.system(size: 11, weight: .bold))
+                    .tracking(0.8)
+                    .foregroundStyle(Color(white: 0.87))
+            }
+            .padding(.horizontal, 11)
+            .frame(height: 34)
+            .background(
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(LinearGradient(colors: [StudioStyle.capTop, StudioStyle.capBottom],
+                                         startPoint: .top, endPoint: .bottom))
+            )
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color.white.opacity(0.10), lineWidth: 0.5))
+            .shadow(color: .black.opacity(0.55), radius: 2, y: 2)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+extension View {
+    /// The recessed dark window behind a readout.
+    func studioWindow() -> some View {
+        self
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(
+                RoundedRectangle(cornerRadius: 9)
+                    .fill(LinearGradient(colors: [StudioStyle.trackTop, Color(white: 0.09)],
+                                         startPoint: .top, endPoint: .bottom))
+            )
+            .overlay(
+                // Inner shadow along the top edge, and a faint catch-light on the
+                // bottom edge, so it reads as set into the panel.
+                RoundedRectangle(cornerRadius: 9)
+                    .stroke(LinearGradient(colors: [Color.black.opacity(0.9), Color.white.opacity(0.08)],
+                                           startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            )
     }
 }
