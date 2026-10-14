@@ -224,14 +224,9 @@ struct EffectsToggleButton: View {
     private var status: EffectsStatus { EffectsStatus(track) }
 
     var body: some View {
-        Text(EffectsStatus.title(slots))
-            .font(.caption2.bold())
-            .foregroundStyle(status == .none ? Color(white: 0.8) : status.tint)
-            .frame(minWidth: 16)
-            .padding(.horizontal, 9).padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 7)
-                .fill((status == .none ? Color.gray : status.tint).opacity(0.2)))
-            .contentShape(Rectangle())
+        // Same chip as M and S, so the three read as a set.
+        StudioChipLabel(title: EffectsStatus.title(slots), tint: status.tint,
+                        look: status == .none ? .off : .status)
             .onTapGesture { tap() }
             .onLongPressGesture(minimumDuration: 0.45) {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()

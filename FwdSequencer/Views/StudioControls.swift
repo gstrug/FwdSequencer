@@ -583,3 +583,63 @@ extension View {
             )
     }
 }
+
+// MARK: - Chips (M, S, FX)
+
+/// The small square-ish buttons on track rows and mixer strips — Mute, Solo, FX —
+/// drawn one way so they read as a set.
+///
+/// Sized for a fingertip: the visible chip is 32 × 30, and the touch area extends a
+/// further 7 pt above and below it. The old system toggles were about 22 pt tall in a
+/// list that scrolls vertically, so the slightest movement of a finger on one was read
+/// as the start of a scroll and the tap was cancelled — which is why Solo was hard to
+/// hit on a playing track.
+struct StudioChipLabel: View {
+    let title: String
+    let tint: Color
+    /// On: solid colour with dark text, so the state is unmistakable at a glance.
+    /// Off: dim. `status` draws the FX in-between look — tinted text on a tinted wash.
+    enum Look { case on, off, status }
+    let look: Look
+
+    var body: some View {
+        Text(title)
+            .font(.caption.bold())
+            .foregroundStyle(look == .on ? Color.black.opacity(0.85)
+                             : look == .status ? tint : Color(white: 0.75))
+            .frame(minWidth: 32, minHeight: 30)
+            .padding(.horizontal, title.count > 1 ? 6 : 0)
+            .background(
+                RoundedRectangle(cornerRadius: 7)
+                    .fill(look == .on ? tint
+                          : look == .status ? tint.opacity(0.22) : Color(white: 0.22))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 7)
+                    .stroke(Color.white.opacity(look == .on ? 0.25 : 0.07), lineWidth: 0.5)
+            )
+            // Extend the touch area beyond the drawn chip, without moving anything.
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+            .padding(.vertical, -7)
+    }
+}
+
+/// Mute or Solo.
+struct StudioToggleChip: View {
+    let title: String
+    @Binding var isOn: Bool
+    let tint: Color
+    var accessibilityLabel: String
+
+    var body: some View {
+        StudioChipLabel(title: title, tint: tint, look: isOn ? .on : .off)
+            .onTapGesture { isOn.toggle() }
+            .accessibilityElement()
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAddTraits(isOn ? .isSelected : [])
+            .accessibilityLabel(accessibilityLabel)
+            .accessibilityValue(isOn ? "On" : "Off")
+            .accessibilityAction { isOn.toggle() }
+    }
+}

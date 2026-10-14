@@ -1485,10 +1485,10 @@ private struct SongTrackRowView: View {
             // to resolve inside a fixed-size row.
             SongTrackMeter(trackID: track.id).frame(width: 44)
 
-            Toggle("M", isOn: $track.mixer.isMuted).toggleStyle(.button).tint(.orange).font(.caption2.bold())
-                .accessibilityLabel("Mute \(track.name)")
-            Toggle("S", isOn: $track.mixer.isSoloed).toggleStyle(.button).tint(.yellow).font(.caption2.bold())
-                .accessibilityLabel("Solo \(track.name)")
+            StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
+                             accessibilityLabel: "Mute \(track.name)")
+            StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
+                             accessibilityLabel: "Solo \(track.name)")
             TrackEffectsButton(track: track)
 
             Divider().frame(height: 16)
@@ -1540,12 +1540,10 @@ private struct SongTrackRowView: View {
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
-                Toggle("M", isOn: $track.mixer.isMuted)
-                    .toggleStyle(.button).tint(.orange).font(.caption2.bold())
-                    .accessibilityLabel("Mute \(track.name)")
-                Toggle("S", isOn: $track.mixer.isSoloed)
-                    .toggleStyle(.button).tint(.yellow).font(.caption2.bold())
-                    .accessibilityLabel("Solo \(track.name)")
+                StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
+                                 accessibilityLabel: "Mute \(track.name)")
+                StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
+                                 accessibilityLabel: "Solo \(track.name)")
                 TrackEffectsButton(track: track)
             }
             HStack(spacing: 8) {
@@ -1756,12 +1754,10 @@ private struct SongTrackRowView: View {
                            })
                     .accessibilityLabel("\(track.name) pan")
                 Spacer(minLength: 0)
-                Toggle("M", isOn: $track.mixer.isMuted)
-                    .toggleStyle(.button).tint(.orange).font(.caption2.bold())
-                    .accessibilityLabel("Mute \(track.name)")
-                Toggle("S", isOn: $track.mixer.isSoloed)
-                    .toggleStyle(.button).tint(.yellow).font(.caption2.bold())
-                    .accessibilityLabel("Solo \(track.name)")
+                StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
+                                 accessibilityLabel: "Mute \(track.name)")
+                StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
+                                 accessibilityLabel: "Solo \(track.name)")
                 TrackEffectsButton(track: track)
             }
 

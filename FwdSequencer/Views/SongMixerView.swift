@@ -74,10 +74,10 @@ struct SongChannelStrip: View {
                        format: { _ in panLabel })
 
             HStack(spacing: 6) {
-                Toggle("M", isOn: $track.mixer.isMuted)
-                    .toggleStyle(.button).tint(.orange).font(.caption.bold())
-                Toggle("S", isOn: $track.mixer.isSoloed)
-                    .toggleStyle(.button).tint(.yellow).font(.caption.bold())
+                StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
+                                 accessibilityLabel: "Mute \(track.name)")
+                StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
+                                 accessibilityLabel: "Solo \(track.name)")
             }
         }
         .frame(width: 104)
