@@ -74,12 +74,11 @@ struct SongChannelStrip: View {
             .controlSize(.small)
             .sheet(isPresented: $showEffects) { TrackEffectsView(trackID: track.id) }
 
-            VStack(spacing: 2) {
-                Text(panLabel).font(.caption2).monospacedDigit()
-                Slider(value: $track.mixer.pan, in: -1...1).frame(width: 80)
-                    .resetsOnDoubleTap { track.mixer.pan = 0 }   // centre
-                Text("Pan").font(.caption2).foregroundStyle(.secondary)
-            }
+            StudioKnob(value: Binding(get: { Double(track.mixer.pan) },
+                                      set: { track.mixer.pan = Float($0) }),
+                       range: -1...1, defaultValue: 0, bipolar: true, size: 52,
+                       label: "Pan \(panLabel)",
+                       format: { _ in panLabel })
 
             HStack(spacing: 6) {
                 Toggle("M", isOn: $track.mixer.isMuted)
@@ -88,7 +87,7 @@ struct SongChannelStrip: View {
                     .toggleStyle(.button).tint(.yellow).font(.caption.bold())
             }
         }
-        .frame(width: 90)
+        .frame(width: 104)
     }
 
     private var panLabel: String {
