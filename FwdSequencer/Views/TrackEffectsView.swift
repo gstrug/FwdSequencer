@@ -145,6 +145,44 @@ struct TrackEffectsView: View {
     }
 }
 
+/// The state of a track's effects at a glance, for its FX buttons (track row and mixer).
+///
+/// Grey when there are none, green when at least one is processing, orange when every
+/// one is bypassed — orange because that is the colour of the Bypass switch in the
+/// effects list, and so as not to be mistaken for the yellow Solo button beside it.
+enum EffectsStatus {
+    case none, active, allBypassed
+
+    init(_ slots: [PluginSlot]) {
+        if slots.isEmpty { self = .none }
+        else if slots.allSatisfy(\.bypassed) { self = .allBypassed }
+        else { self = .active }
+    }
+
+    var tint: Color {
+        switch self {
+        case .none:        return .secondary
+        case .active:      return .green
+        case .allBypassed: return .orange
+        }
+    }
+
+    /// "FX", or "FX 3" with how many are loaded.
+    static func title(_ slots: [PluginSlot]) -> String {
+        slots.isEmpty ? "FX" : "FX \(slots.count)"
+    }
+
+    static func accessibilityValue(_ slots: [PluginSlot]) -> String {
+        switch EffectsStatus(slots) {
+        case .none:        return "No effects"
+        case .active:
+            let on = slots.filter { !$0.bypassed }.count
+            return "\(slots.count) loaded, \(on) active"
+        case .allBypassed: return "\(slots.count) loaded, all bypassed"
+        }
+    }
+}
+
 /// Identifiable wrapper so a plain index can drive `.sheet(item:)`.
 private struct EffectEditorTarget: Identifiable {
     let index: Int

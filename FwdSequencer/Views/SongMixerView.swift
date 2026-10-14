@@ -65,13 +65,16 @@ struct SongChannelStrip: View {
 
             // Inserts belong on the channel strip, as in a DAW — the sequencer rows
             // stay about notes.
+            // Text only: the "fx" symbol beside the word FX read as "FX FX".
             Button { showEffects = true } label: {
-                Label(track.effectSlots.isEmpty ? "FX" : "FX \(track.effectSlots.count)",
-                      systemImage: "fx")
-                    .font(.caption2)
+                Text(EffectsStatus.title(track.effectSlots))
+                    .font(.caption2.bold())
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
+            .tint(EffectsStatus(track.effectSlots).tint)
+            .accessibilityLabel("Effects for \(track.name)")
+            .accessibilityValue(EffectsStatus.accessibilityValue(track.effectSlots))
             .sheet(isPresented: $showEffects) { TrackEffectsView(trackID: track.id) }
 
             StudioKnob(value: Binding(get: { Double(track.mixer.pan) },
