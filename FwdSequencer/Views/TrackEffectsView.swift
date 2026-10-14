@@ -23,6 +23,21 @@ struct TrackEffectsView: View {
     var body: some View {
         NavigationStack {
             List {
+                // The same switch as tapping the FX button, so its state is visible
+                // and changeable here too. Each effect's own Bypass is separate.
+                if !slots.isEmpty {
+                    Section {
+                        Toggle("Effects On", isOn: Binding(
+                            get: { !(track?.chainBypassed ?? false) },
+                            set: { songStore.setEffectsChainBypassed(!$0, for: trackID) }
+                        ))
+                        .tint(.green)
+                    } footer: {
+                        Text("Switches the whole chain in or out. Effects bypassed "
+                             + "individually stay bypassed when it comes back on.")
+                    }
+                }
+
                 Section {
                     if slots.isEmpty {
                         Text("No effects").foregroundStyle(.secondary)
@@ -148,15 +163,17 @@ struct TrackEffectsView: View {
 
 /// The state of a track's effects at a glance, for its FX buttons (track row and mixer).
 ///
-/// Grey when there are none, green when at least one is processing, orange when every
-/// one is bypassed — orange because that is the colour of the Bypass switch in the
-/// effects list, and so as not to be mistaken for the yellow Solo button beside it.
+/// Grey when there are none, green when at least one is processing, orange when the
+/// chain is switched out or every effect is bypassed — orange because that is the
+/// colour of the Bypass switch in the effects list, and so as not to be mistaken for
+/// the yellow Solo button beside it.
 enum EffectsStatus: Equatable {
     case none, active, allBypassed
 
-    init(_ slots: [PluginSlot]) {
+    init(_ track: SongTrack) {
+        let slots = track.effectSlots
         if slots.isEmpty { self = .none }
-        else if slots.allSatisfy(\.bypassed) { self = .allBypassed }
+        else if track.chainBypassed || slots.allSatisfy(\.bypassed) { self = .allBypassed }
         else { self = .active }
     }
 
@@ -173,13 +190,16 @@ enum EffectsStatus: Equatable {
         slots.isEmpty ? "FX" : "FX \(slots.count)"
     }
 
-    static func accessibilityValue(_ slots: [PluginSlot]) -> String {
-        switch EffectsStatus(slots) {
+    static func accessibilityValue(_ track: SongTrack) -> String {
+        let slots = track.effectSlots
+        switch EffectsStatus(track) {
         case .none:        return "No effects"
         case .active:
             let on = slots.filter { !$0.bypassed }.count
             return "\(slots.count) loaded, \(on) active"
-        case .allBypassed: return "\(slots.count) loaded, all bypassed"
+        case .allBypassed:
+            return track.chainBypassed ? "\(slots.count) loaded, switched off"
+                                       : "\(slots.count) loaded, all bypassed"
         }
     }
 }
@@ -194,13 +214,14 @@ enum EffectsStatus: Equatable {
 /// Drawn rather than a Button: a Button fires its action at the end of a long press as
 /// well, so the chain would toggle every time the list was opened.
 struct EffectsToggleButton: View {
-    let trackID: UUID
-    let trackName: String
-    let slots: [PluginSlot]
+    let track: SongTrack
     @EnvironmentObject var songStore: SongStore
     @State private var showEffects = false
 
-    private var status: EffectsStatus { EffectsStatus(slots) }
+    private var trackID: UUID { track.id }
+    private var trackName: String { track.name }
+    private var slots: [PluginSlot] { track.effectSlots }
+    private var status: EffectsStatus { EffectsStatus(track) }
 
     var body: some View {
         Text(EffectsStatus.title(slots))
@@ -222,7 +243,7 @@ struct EffectsToggleButton: View {
             .accessibilityElement()
             .accessibilityAddTraits(.isButton)
             .accessibilityLabel("Effects for \(trackName)")
-            .accessibilityValue(EffectsStatus.accessibilityValue(slots))
+            .accessibilityValue(EffectsStatus.accessibilityValue(track))
             .accessibilityHint(slots.isEmpty ? "Opens the effects list"
                                : "Switches all effects on or off. Use the Edit Effects action to change them.")
             .accessibilityAction { tap() }
@@ -231,7 +252,7 @@ struct EffectsToggleButton: View {
 
     private func tap() {
         if slots.isEmpty { showEffects = true }
-        else { songStore.toggleAllEffectsBypassed(for: trackID) }
+        else { songStore.toggleEffectsChain(for: trackID) }
     }
 }
 

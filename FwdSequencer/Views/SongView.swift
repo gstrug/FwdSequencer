@@ -1035,14 +1035,10 @@ private struct SectionSnapshotsSheet: View {
 /// adding it cannot disturb the column alignment of the collapsed rows. Tinted when the
 /// track has effects, so their presence is visible without opening anything.
 private struct TrackEffectsButton: View {
-    let trackID: UUID
-    let trackName: String
-    let slots: [PluginSlot]
+    let track: SongTrack
 
-    // Tap: all effects in/out. Long press: edit them. See EffectsToggleButton.
-    var body: some View {
-        EffectsToggleButton(trackID: trackID, trackName: trackName, slots: slots)
-    }
+    // Tap: whole chain in/out. Long press: edit. See EffectsToggleButton.
+    var body: some View { EffectsToggleButton(track: track) }
 }
 
 /// Process CPU load, as a fraction of one core.
@@ -1446,8 +1442,7 @@ private struct SongTrackRowView: View {
                 .accessibilityLabel("Mute \(track.name)")
             Toggle("S", isOn: $track.mixer.isSoloed).toggleStyle(.button).tint(.yellow).font(.caption2.bold())
                 .accessibilityLabel("Solo \(track.name)")
-            TrackEffectsButton(trackID: track.id, trackName: track.name,
-                               slots: track.effectSlots)
+            TrackEffectsButton(track: track)
 
             Divider().frame(height: 16)
 
@@ -1504,8 +1499,7 @@ private struct SongTrackRowView: View {
                 Toggle("S", isOn: $track.mixer.isSoloed)
                     .toggleStyle(.button).tint(.yellow).font(.caption2.bold())
                     .accessibilityLabel("Solo \(track.name)")
-                TrackEffectsButton(trackID: track.id, trackName: track.name,
-                                   slots: track.effectSlots)
+                TrackEffectsButton(track: track)
             }
             HStack(spacing: 8) {
                 Text(part.tempoDivision.abbreviation).font(.caption2).foregroundStyle(.secondary)
@@ -1721,8 +1715,7 @@ private struct SongTrackRowView: View {
                 Toggle("S", isOn: $track.mixer.isSoloed)
                     .toggleStyle(.button).tint(.yellow).font(.caption2.bold())
                     .accessibilityLabel("Solo \(track.name)")
-                TrackEffectsButton(trackID: track.id, trackName: track.name,
-                                   slots: track.effectSlots)
+                TrackEffectsButton(track: track)
             }
 
             // Level meter spans the row beneath the controls, where it has room to read.

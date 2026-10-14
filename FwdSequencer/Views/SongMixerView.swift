@@ -65,8 +65,7 @@ struct SongChannelStrip: View {
             // Inserts belong on the channel strip, as in a DAW — the sequencer rows
             // stay about notes.
             // Tap: all effects in/out. Long press: edit them.
-            EffectsToggleButton(trackID: track.id, trackName: track.name,
-                                slots: track.effectSlots)
+            EffectsToggleButton(track: track)
 
             StudioKnob(value: Binding(get: { Double(track.mixer.pan) },
                                       set: { track.mixer.pan = Float($0) }),

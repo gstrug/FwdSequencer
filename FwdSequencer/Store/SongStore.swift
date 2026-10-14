@@ -910,7 +910,7 @@ class SongStore: ObservableObject {
             // while the effect was fully in circuit.
             audioEngine.loadEffect(slot.pluginInfo, at: index, for: track.id,
                                    stateData: slot.stateData,
-                                   bypassed: slot.bypassed) { [weak self] result in
+                                   bypassed: track.effectIsSilenced(at: index)) { [weak self] result in
                 guard case .failure(let error) = result else { return }
                 self?.notice = error.localizedDescription
             }
@@ -928,7 +928,9 @@ class SongStore: ObservableObject {
         let slot = PluginSlot(pluginInfo: info)
         let position = song.tracks[idx].effectSlots.count
         song.tracks[idx].effects = song.tracks[idx].effectSlots + [slot]
-        audioEngine.loadEffect(info, at: position, for: trackID) { [weak self] result in
+        // Joins switched out if the chain is switched out.
+        audioEngine.loadEffect(info, at: position, for: trackID,
+                               bypassed: song.tracks[idx].chainBypassed) { [weak self] result in
             guard case .failure(let error) = result else { return }
             self?.notice = error.localizedDescription
         }
@@ -959,7 +961,8 @@ class SongStore: ObservableObject {
         slots[index] = PluginSlot(pluginInfo: info)
         song.tracks[idx].effects = slots
         audioEngine.removeEffect(at: index, for: trackID)
-        audioEngine.loadEffect(info, at: index, for: trackID) { [weak self] result in
+        audioEngine.loadEffect(info, at: index, for: trackID,
+                               bypassed: song.tracks[idx].chainBypassed) { [weak self] result in
             guard case .failure(let error) = result else { return }
             self?.notice = error.localizedDescription
         }
@@ -980,19 +983,25 @@ class SongStore: ObservableObject {
         guard slots.indices.contains(index) else { return }
         slots[index].isBypassed = bypassed
         song.tracks[idx].effects = slots
-        audioEngine.setEffectBypassed(bypassed, at: index, for: trackID)
+        // While the chain is switched out the effect stays silent; its own setting is
+        // still recorded, and takes effect when the chain comes back in.
+        audioEngine.setEffectBypassed(song.tracks[idx].effectIsSilenced(at: index),
+                                      at: index, for: trackID)
     }
 
-    /// The FX button's tap: bypass every effect on the track if any is processing,
-    /// otherwise bring them all back in. Goes through setEffectBypassed, the same path
-    /// as each effect's own Bypass switch, so model and audio stay in step.
-    func toggleAllEffectsBypassed(for trackID: UUID) {
+    /// The FX button's tap: switch the whole chain out, or back in. Each effect's own
+    /// Bypass is left untouched, so switching back in restores exactly what was on.
+    func toggleEffectsChain(for trackID: UUID) {
+        setEffectsChainBypassed(!(song.tracks.first { $0.id == trackID }?.chainBypassed ?? false),
+                                for: trackID)
+    }
+
+    func setEffectsChainBypassed(_ bypassed: Bool, for trackID: UUID) {
         guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        let slots = song.tracks[idx].effectSlots
-        guard !slots.isEmpty else { return }
-        let bypassAll = slots.contains { !$0.bypassed }
-        for index in slots.indices where slots[index].bypassed != bypassAll {
-            setEffectBypassed(bypassAll, at: index, for: trackID)
+        song.tracks[idx].effectsBypassed = bypassed ? true : nil
+        let track = song.tracks[idx]
+        for index in track.effectSlots.indices {
+            audioEngine.setEffectBypassed(track.effectIsSilenced(at: index), at: index, for: trackID)
         }
     }
 

@@ -119,6 +119,20 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
 
     var effectSlots: [PluginSlot] { effects ?? [] }
 
+    /// The whole chain switched out from the FX button, on top of each effect's own
+    /// Bypass. Kept separate so switching the chain back in restores exactly the
+    /// effects that were on before — individually bypassed ones stay bypassed.
+    /// Optional so older songs decode; nil means the chain is in.
+    var effectsBypassed: Bool? = nil
+
+    var chainBypassed: Bool { effectsBypassed == true }
+
+    /// Whether the effect in `index` is actually out of circuit: bypassed itself, or
+    /// the whole chain is.
+    func effectIsSilenced(at index: Int) -> Bool {
+        chainBypassed || (effectSlots.indices.contains(index) && effectSlots[index].bypassed)
+    }
+
     // MARK: Feel
     //
     // How this instrument PLAYS, as opposed to what it plays — a performance
