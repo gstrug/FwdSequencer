@@ -3,6 +3,7 @@ import os
 @preconcurrency import AVFoundation
 import AudioToolbox
 import CoreMIDI
+import Accelerate
 
 nonisolated enum AudioEngineStatus: Equatable {
     case ready
@@ -111,11 +112,11 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     // and then the callback as separate properties, so each buffer took the lock twice on
     // the render thread to answer one question: is there anywhere to send this level?
     private func levelSink() -> ((UUID, AudioLevel) -> Void)? {
-        withCallbackLock { _telemetryPaused ? nil : _onLevelUpdate }
+        withCallbackLock { (_telemetryPaused || _appInBackground) ? nil : _onLevelUpdate }
     }
 
     private func masterLevelSink() -> ((AudioLevel) -> Void)? {
-        withCallbackLock { _telemetryPaused ? nil : _onMasterLevelUpdate }
+        withCallbackLock { (_telemetryPaused || _appInBackground) ? nil : _onMasterLevelUpdate }
     }
     var onLevelUpdate: ((UUID, AudioLevel) -> Void)? {
         get { withCallbackLock { _onLevelUpdate } }
@@ -151,6 +152,14 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     var telemetryPaused: Bool {
         get { withCallbackLock { _telemetryPaused } }
         set { withCallbackLock { _telemetryPaused = newValue } }
+    }
+    /// The app is in the background: nothing is on screen, so meters are not measured
+    /// and playback telemetry is not sent, while audio plays on exactly as before.
+    private var _appInBackground = false
+    /// Whether on-screen telemetry (meters, notes, steps) should be skipped right now —
+    /// a plugin UI is being built, or nobody can see it.
+    var telemetrySuppressed: Bool {
+        withCallbackLock { _telemetryPaused || _appInBackground }
     }
     private var sessionObservers: [NSObjectProtocol] = []
     private struct PluginLoadRequest {
@@ -239,7 +248,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             // release notes we actually started. A blanket 0...127 sweep is 129 MIDI
             // events into a plugin that may not tolerate them.
             guard settledInstruments.contains(id) else { return }
-            for n in ringing { sendMIDI(to: unit, bytes: [0x80, n, 0]) }
+            for n in ringing { sendMIDI(to: unit, 0x80, n, 0) }
         } else if let sampler = samplers[id] {
             for n in ringing { sampler.stopNote(n, onChannel: 0) }
         }
@@ -295,6 +304,18 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// before there are any effects to insert.
     func latency(ofTrack trackID: UUID) -> Double {
         withLock { trackLatency[trackID] ?? 0 }
+    }
+
+    /// Every track's latency in one lock acquisition, for the sequencer's per-tick read
+    /// — one track at a time it took this lock once per track per tick, competing with
+    /// the main thread and note delivery for it.
+    func latencySnapshot(forTracks trackIDs: [UUID]) -> [UUID: Double] {
+        withLock {
+            var result: [UUID: Double] = [:]
+            result.reserveCapacity(trackIDs.count)
+            for id in trackIDs { result[id] = trackLatency[id] ?? 0 }
+            return result
+        }
     }
 
     /// Only what the audio actually passes through. A bypassed effect is routed around,
@@ -444,6 +465,21 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             queue: .main
         ) { [weak self] note in
             self?.handleRouteChange(note)
+        })
+        // Background playback carries on; only the on-screen telemetry stops.
+        sessionObservers.append(center.addObserver(
+            // Named by string: UIApplication's constants are main-actor isolated, and this
+            // class is not.
+            forName: Notification.Name("UIApplicationDidEnterBackgroundNotification"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.withCallbackLock { self?._appInBackground = true }
+        })
+        sessionObservers.append(center.addObserver(
+            forName: Notification.Name("UIApplicationWillEnterForegroundNotification"),
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.withCallbackLock { self?._appInBackground = false }
         })
         sessionObservers.append(center.addObserver(
             forName: AVAudioSession.mediaServicesWereResetNotification,
@@ -1213,13 +1249,15 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         let channels = max(1, Int(buffer.format.channelCount))
         var sum: Float = 0
         var peak: Float = 0
+        // Accelerate rather than a per-sample loop: the same sum of squares and largest
+        // magnitude, computed with vector instructions.
         for channel in 0..<channels {
-            let samples = data[channel]
-            for i in 0..<count {
-                let sample = samples[i]
-                sum += sample * sample
-                peak = max(peak, abs(sample))
-            }
+            var channelSum: Float = 0
+            var channelPeak: Float = 0
+            vDSP_svesq(data[channel], 1, &channelSum, vDSP_Length(count))
+            vDSP_maxmgv(data[channel], 1, &channelPeak, vDSP_Length(count))
+            sum += channelSum
+            peak = max(peak, channelPeak)
         }
         return AudioLevel(peak: peak, rms: sqrt(sum / Float(count * channels)))
     }
@@ -1239,7 +1277,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             guard !isSuspended(trackID) else { return }
             activeNotes[trackID, default: []].insert(midiNote)
             if let unit = auv3Units[trackID] {
-                sendMIDI(to: unit, bytes: [0x90, midiNote, velocity])
+                sendMIDI(to: unit, 0x90, midiNote, velocity)
             } else {
                 samplers[trackID]?.startNote(midiNote, withVelocity: velocity, onChannel: 0)
             }
@@ -1310,7 +1348,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             guard !isSuspended(trackID) else { return }
             activeNotes[trackID]?.remove(midiNote)
             if let unit = auv3Units[trackID] {
-                sendMIDI(to: unit, bytes: [0x80, midiNote, 0])
+                sendMIDI(to: unit, 0x80, midiNote, 0)
             } else {
                 samplers[trackID]?.stopNote(midiNote, onChannel: 0)
             }
@@ -1329,38 +1367,41 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// Delayed delivery for hosted plugins goes through `scheduleQueue` instead, below.
     /// That keeps swing, jitter and chord roll working and costs only the accuracy this
     /// was meant to buy, which is not available to a host built on AVAudioEngine.
-    private func sendMIDI(to unit: AVAudioUnit, bytes: [UInt8]) {
+    ///
+    /// Every message here is three bytes (note on/off, controller), passed as three
+    /// values rather than an array so sending one allocates nothing.
+    private func sendMIDI(to unit: AVAudioUnit, _ status: UInt8, _ data1: UInt8, _ data2: UInt8) {
         let au = unit.auAudioUnit
         let when = AUEventSampleTimeImmediate
         if let legacyBlock = au.scheduleMIDIEventBlock {
-            bytes.withUnsafeBytes { ptr in
+            var bytes = (status, data1, data2)
+            withUnsafeBytes(of: &bytes) { ptr in
                 guard let base = ptr.bindMemory(to: UInt8.self).baseAddress else { return }
-                legacyBlock(when, 0, bytes.count, base)
+                legacyBlock(when, 0, 3, base)
             }
         } else if #available(iOS 15.0, *), let listBlock = au.scheduleMIDIEventListBlock {
-            sendMIDIList(to: listBlock, bytes: bytes, at: when)
+            sendMIDIList(to: listBlock, status, data1, data2, at: when)
         } else {
             print("[FWD] No MIDI block available for \(au.audioUnitName ?? "unknown")")
         }
     }
 
     @available(iOS 15.0, *)
-    private func sendMIDIList(to block: AUMIDIEventListBlock, bytes: [UInt8],
+    private func sendMIDIList(to block: AUMIDIEventListBlock,
+                              _ status: UInt8, _ d1: UInt8, _ d2: UInt8,
                               at when: AUEventSampleTime = AUEventSampleTimeImmediate) {
-        let status = bytes[0]
-        let d1 = bytes.count > 1 ? bytes[1] : 0
-        let d2 = bytes.count > 2 ? bytes[2] : 0
         // Encode as MIDI 1.0 Universal MIDI Packet:
         // bits[31-28] = 0x2 (MIDI 1.0 channel voice), [23-16] = status, [15-8] = data1, [7-0] = data2
         var word = (UInt32(0x2) << 28) | (UInt32(status) << 16) | (UInt32(d1) << 8) | UInt32(d2)
-        // Allocate a raw buffer large enough for MIDIEventList + one packet
+        // Room for a MIDIEventList and one packet, on the stack rather than the heap.
         let bufSize = 256
-        let buf = UnsafeMutableRawPointer.allocate(byteCount: bufSize, alignment: 8)
-        defer { buf.deallocate() }
-        let listPtr = buf.bindMemory(to: MIDIEventList.self, capacity: 1)
-        let pktPtr = MIDIEventListInit(listPtr, MIDIProtocolID._1_0)
-        _ = MIDIEventListAdd(listPtr, bufSize, pktPtr, 0, 1, &word)
-        _ = block(when, 0, listPtr)
+        withUnsafeTemporaryAllocation(byteCount: bufSize, alignment: 8) { buf in
+            guard let base = buf.baseAddress else { return }
+            let listPtr = base.bindMemory(to: MIDIEventList.self, capacity: 1)
+            let pktPtr = MIDIEventListInit(listPtr, MIDIProtocolID._1_0)
+            _ = MIDIEventListAdd(listPtr, bufSize, pktPtr, 0, 1, &word)
+            _ = block(when, 0, listPtr)
+        }
     }
 
     /// The nuclear stop for a hung note, distinct from allNotesOff (which only releases
@@ -1374,9 +1415,9 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         withLock {
             noteGeneration &+= 1   // nothing already in flight may sound after a panic
             for (id, unit) in auv3Units where settledInstruments.contains(id) {
-                sendMIDI(to: unit, bytes: [0xB0, 120, 0])   // All Sound Off
-                sendMIDI(to: unit, bytes: [0xB0, 123, 0])   // All Notes Off
-                for n in 0...127 { sendMIDI(to: unit, bytes: [0x80, UInt8(n), 0]) }
+                sendMIDI(to: unit, 0xB0, 120, 0)   // All Sound Off
+                sendMIDI(to: unit, 0xB0, 123, 0)   // All Notes Off
+                for n in 0...127 { sendMIDI(to: unit, 0x80, UInt8(n), 0) }
             }
             for (_, sampler) in samplers {
                 for n in 0...127 { sampler.stopNote(UInt8(n), onChannel: 0) }
@@ -1394,7 +1435,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                 guard !notes.isEmpty else { continue }
                 if let unit = auv3Units[id] {
                     guard settledInstruments.contains(id) else { continue }
-                    for n in notes { sendMIDI(to: unit, bytes: [0x80, n, 0]) }
+                    for n in notes { sendMIDI(to: unit, 0x80, n, 0) }
                 } else if let sampler = samplers[id] {
                     for n in notes { sampler.stopNote(n, onChannel: 0) }
                 }
@@ -1402,7 +1443,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             activeNotes.removeAll()
             // CC123 as a genuine panic broadcast, to settled units only.
             for (id, unit) in auv3Units where settledInstruments.contains(id) {
-                sendMIDI(to: unit, bytes: [0xB0, 123, 0])
+                sendMIDI(to: unit, 0xB0, 123, 0)
             }
         }
     }

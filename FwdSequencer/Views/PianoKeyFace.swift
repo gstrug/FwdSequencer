@@ -26,9 +26,17 @@ struct PianoKeyFace: View {
     var tint: Tint = .natural
     /// Drawn pushed down. Independent of tint, so a held key can also be coloured.
     var pressed: Bool = false
+    /// The key's size. Every caller already knows it, so it is passed in rather than
+    /// measured: a GeometryReader per key was 88 extra layout passes each time the
+    /// note-pool keyboard redrew during playback.
+    let width: CGFloat
+    let height: CGFloat
 
     var body: some View {
-        if isBlack { blackKey } else { whiteKey }
+        Group {
+            if isBlack { blackKey } else { whiteKey }
+        }
+        .frame(width: width, height: height)
     }
 
     // MARK: Colours
@@ -49,9 +57,8 @@ struct PianoKeyFace: View {
     // MARK: White
 
     private var whiteKey: some View {
-        GeometryReader { geo in
-            let lip = pressed ? 0 : min(6, geo.size.height * 0.045)
-            ZStack(alignment: .bottom) {
+        let lip = pressed ? 0 : min(6, height * 0.045)
+        return ZStack(alignment: .bottom) {
                 // The front edge of the key, seen below the top face: the base colour
                 // in shade. Gone when pressed — the key has travelled down.
                 KeyShape(radius: 4).fill(base)
@@ -75,14 +82,13 @@ struct PianoKeyFace: View {
                     .padding(.bottom, lip + 2)
             }
             .padding(.horizontal, 0.5)   // the gap between keys shows the bed behind
-        }
     }
 
     // MARK: Black
 
     private var blackKey: some View {
-        GeometryReader { geo in
-            let w = geo.size.width, h = geo.size.height
+        let w = width, h = height
+        return Group {
             // The raised top face sits inside the body, narrower and stopping short of
             // the front, which is what makes the key look like a block rather than a
             // tile. Pressed, it sinks: the face nearly fills the body.

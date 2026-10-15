@@ -289,7 +289,7 @@ private struct PlayKey: View {
     var body: some View {
         PianoKeyFace(isBlack: isBlack,
                      tint: pressed ? .colored(.accentColor) : .natural,
-                     pressed: pressed)
+                     pressed: pressed, width: width, height: height)
             .frame(width: width, height: height)
             .accessibilityElement()
             .accessibilityLabel(noteName)

@@ -69,8 +69,10 @@ class SongStore: ObservableObject {
     @Published var song: Song = Song() {
         didSet {
             // Send one coherent snapshot so section order, track state, tempo, meter,
-            // mute/solo, and notes cannot drift into different scheduler revisions.
-            if isPlaying || isPaused { updateLiveSong() }
+            // mute/solo, and notes cannot drift into different scheduler revisions —
+            // but only when something the sequencer plays from changed. Mixing while
+            // playing (volume, pan, effects) used to rebuild the whole song per touch.
+            if isPlaying || isPaused, song.playbackDiffers(from: oldValue) { updateLiveSong() }
             scheduleSave()
         }
     }
@@ -245,6 +247,15 @@ class SongStore: ObservableObject {
 
     let levels = LevelMonitor()
     let playback = PlaybackMonitor()
+
+    /// Meter levels reach the screen as one change 20 times a second, instead of one
+    /// change per track per reading (see LevelBatcher). Created in init, not lazily: they
+    /// are first touched from the audio and sequencer threads, and a lazy property is not
+    /// safe to initialise from two threads at once.
+    private var levelBatcher: LevelBatcher!
+    /// Notes and steps reach the screen as one change per tick, and only if something
+    /// actually changed (see PlaybackBatcher).
+    private var playbackBatcher: PlaybackBatcher!
     let audioEngine = AudioEngineManager.shared
     let sequencer = SequencerEngine()
 
@@ -267,6 +278,32 @@ class SongStore: ObservableObject {
     private var hasActiveSong = false
 
     init() {
+        levelBatcher = LevelBatcher { [weak self] tracks, master in
+            guard let self else { return }
+            if !tracks.isEmpty {
+                var merged = levels.trackLevels
+                for (id, level) in tracks { merged[id] = level }
+                levels.trackLevels = merged
+            }
+            if let master { levels.masterLevel = master }
+        }
+        playbackBatcher = PlaybackBatcher { [weak self] notes, steps in
+            // Only while playing: a batch landing after Stop has cleared the display
+            // must not put notes back.
+            guard let self, isPlaying else { return }
+            if !notes.isEmpty {
+                var merged = playback.playingNotes
+                for (id, played) in notes {
+                    if played.isEmpty { merged.removeValue(forKey: id) } else { merged[id] = played }
+                }
+                if merged != playback.playingNotes { playback.playingNotes = merged }
+            }
+            if !steps.isEmpty {
+                var merged = playback.activeSteps
+                for (id, step) in steps { merged[id] = step }
+                if merged != playback.activeSteps { playback.activeSteps = merged }
+            }
+        }
         sequencer.audioEngine = audioEngine
         audioStatus = audioEngine.currentStatus
 
@@ -292,25 +329,19 @@ class SongStore: ObservableObject {
         // AudioEngineManager.telemetryPaused) so that main-thread/CoreAnimation work
         // does not compete with establishing an out-of-process plugin view.
         sequencer.onNotePlayed = { [weak self] trackID, notes in
-            guard self?.audioEngine.telemetryPaused == false else { return }
-            DispatchQueue.main.async {
-                if notes.isEmpty {
-                    self?.playback.playingNotes.removeValue(forKey: trackID)
-                } else {
-                    self?.playback.playingNotes[trackID] = notes
-                }
-            }
+            guard let self, !audioEngine.telemetrySuppressed else { return }
+            playbackBatcher?.notes(trackID, notes)
         }
         sequencer.onBarChange = { [weak self] bar in
-            guard self?.audioEngine.telemetryPaused == false else { return }
+            guard self?.audioEngine.telemetrySuppressed == false else { return }
             DispatchQueue.main.async { self?.playback.currentBar = bar }
         }
         sequencer.onStepChange = { [weak self] trackID, stepIdx in
-            guard self?.audioEngine.telemetryPaused == false else { return }
-            DispatchQueue.main.async { self?.playback.activeSteps[trackID] = stepIdx }
+            guard let self, !audioEngine.telemetrySuppressed else { return }
+            playbackBatcher?.step(trackID, stepIdx)
         }
         sequencer.onBeat = { [weak self] isDownbeat in
-            guard self?.audioEngine.telemetryPaused == false else { return }
+            guard self?.audioEngine.telemetrySuppressed == false else { return }
             DispatchQueue.main.async { self?.beatSignal.send(isDownbeat) }
         }
         sequencer.onSectionChange = { [weak self] index in
@@ -382,12 +413,10 @@ class SongStore: ObservableObject {
         // didSet does not fire on initialisation, so the saved setting has to be pushed
         // once here or clock output would stay off until the user toggled it.
         audioEngine.midiClockOutputEnabled = midiClockEnabled
-        audioEngine.onLevelUpdate = { [weak self] id, level in
-            DispatchQueue.main.async { self?.levels.trackLevels[id] = level }
-        }
-        audioEngine.onMasterLevelUpdate = { [weak self] level in
-            DispatchQueue.main.async { self?.levels.masterLevel = level }
-        }
+        // Created in init, so always present here.
+        let batcher: LevelBatcher = levelBatcher
+        audioEngine.onLevelUpdate = { id, level in batcher.track(id, level) }
+        audioEngine.onMasterLevelUpdate = { level in batcher.master(level) }
         audioEngine.setMasterVolume(song.masterVolume)
     }
 

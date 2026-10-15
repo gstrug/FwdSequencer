@@ -1759,6 +1759,42 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(MusicalScale.yu.intervals, MusicalScale.minorPentatonic.intervals)
     }
 
+    // MARK: - Live updates
+
+    /// Mixing while playing must not re-send the song to the sequencer; anything it
+    /// plays from must.
+    func testOnlyPlaybackChangesCountAsPlaybackChanges() {
+        let track = SongTrack(name: "A")
+        var song = Song(tracks: [track],
+                        sections: [SongSection(parts: [Part(trackID: track.id,
+                                                            notePool: [NoteEntry(midiNote: 60)],
+                                                            steps: [Step(type: .fwd)])])])
+        let base = song
+
+        song.tracks[0].mixer.volume = 0.3
+        song.tracks[0].mixer.pan = -0.5
+        song.tracks[0].name = "Renamed"
+        song.tracks[0].effectsBypassed = true
+        song.masterVolume = 0.5
+        XCTAssertFalse(song.playbackDiffers(from: base), "mixing is not a playback change")
+
+        for change in [
+            { (s: inout Song) in s.tempo = 99 },
+            { (s: inout Song) in s.timeSignature.numerator = 3 },
+            { (s: inout Song) in s.tracks[0].mixer.isMuted = true },
+            { (s: inout Song) in s.tracks[0].mixer.isSoloed = true },
+            { (s: inout Song) in s.tracks[0].swing = 50 },
+            { (s: inout Song) in s.tracks[0].accent = 20 },
+            { (s: inout Song) in s.sections[0].parts[0].steps.append(Step(type: .back)) },
+            { (s: inout Song) in s.sections[0].numberOfBars = 8 },
+            { (s: inout Song) in s.tracks.append(SongTrack(name: "B")) },
+        ] {
+            var changed = base
+            change(&changed)
+            XCTAssertTrue(changed.playbackDiffers(from: base))
+        }
+    }
+
     // MARK: - Note shaping
 
     private func pool(_ count: Int) -> [NoteEntry] {

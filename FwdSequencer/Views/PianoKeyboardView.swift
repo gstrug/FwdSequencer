@@ -113,7 +113,8 @@ struct PianoKeyboardView: View {
                                 // A sounding note is drawn pressed down as well as lit,
                                 // so playback looks like the keys being played.
                                 PianoKeyFace(isBlack: false, tint: whiteTint(midi),
-                                             pressed: playingNotes.contains(midi))
+                                             pressed: playingNotes.contains(midi),
+                                             width: whiteW, height: keyH)
                                     .frame(width: whiteW, height: keyH)
                                     .contentShape(Rectangle())
                                     .overlay(alignment: .bottom) {
@@ -131,7 +132,8 @@ struct PianoKeyboardView: View {
                         // Black keys — absolutely positioned via offset
                         ForEach(blackKeys, id: \.self) { midi in
                             PianoKeyFace(isBlack: true, tint: blackTint(midi),
-                                         pressed: playingNotes.contains(midi))
+                                         pressed: playingNotes.contains(midi),
+                                         width: blackW, height: blackH)
                                 .frame(width: blackW, height: blackH)
                                 .contentShape(Rectangle())
                                 .offset(x: blackKeyX(midi, whiteW: whiteW))

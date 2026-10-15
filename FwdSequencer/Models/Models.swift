@@ -57,6 +57,40 @@ nonisolated struct Song: Codable, Identifiable, Equatable {
     var performance: SongTrack? = nil
 }
 
+extension Song {
+    /// Whether anything the sequencer plays from differs between two versions of a song.
+    ///
+    /// The store re-sends the whole song to the sequencer on every change while it is
+    /// playing, which rebuilds every section × track. Most changes made while playing are
+    /// mixing — volume, pan, effects, plugin state, names — and the sequencer reads none
+    /// of them: dragging a fader rebuilt the song about 60 times a second for nothing.
+    ///
+    /// Covers everything the store's flattenedSections() and updateLiveSong() read from
+    /// the song: tempo, time signature, sections (notes, steps, division, key, scale,
+    /// bars, order), and per track its id/order, mute, solo and Feel. Anything added to
+    /// what the sequencer plays from must be added here too.
+    ///
+    /// Cheap when sections are untouched: an unmodified array shares its storage with the
+    /// previous version, and Array's == returns at once on shared storage.
+    func playbackDiffers(from other: Song) -> Bool {
+        if tempo != other.tempo || timeSignature != other.timeSignature { return true }
+        if sections != other.sections { return true }
+        guard tracks.count == other.tracks.count else { return true }
+        for (a, b) in zip(tracks, other.tracks) {
+            if a.id != b.id
+                || a.mixer.isMuted != b.mixer.isMuted || a.mixer.isSoloed != b.mixer.isSoloed
+                || a.effectiveChordSpread != b.effectiveChordSpread
+                || a.effectiveAccent != b.effectiveAccent
+                || a.effectiveVariation != b.effectiveVariation
+                || a.effectiveSwing != b.effectiveSwing
+                || a.effectiveTimingJitter != b.effectiveTimingJitter {
+                return true
+            }
+        }
+        return false
+    }
+}
+
 /// One AUv3 effect in a track's chain.
 ///
 /// Modelled as an element of a LIST from the outset even though the UI allows one, so

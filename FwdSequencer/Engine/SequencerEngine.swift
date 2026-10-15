@@ -56,6 +56,10 @@ nonisolated protocol SequencerAudioOutput: AnyObject {
     /// are any. Drives delay compensation; 0 for an output that cannot report it.
     func latency(ofTrack trackID: UUID) -> Double
 
+    /// Several tracks' latencies at once. The sequencer reads every track's on every
+    /// tick; an output guarding them with a lock should answer in one acquisition.
+    func latencySnapshot(forTracks trackIDs: [UUID]) -> [UUID: Double]
+
     /// One 24-PPQN pulse, stamped like every other event so it cannot drift from notes.
     func sendMIDIClockPulse(afterSeconds: Double)
     /// Transport: 0xFA Start, 0xFB Continue, 0xFC Stop.
@@ -78,6 +82,11 @@ extension SequencerAudioOutput {
     func allNotesOff(afterSeconds: Double) { allNotesOff() }
     func discardInFlightNotes() {}
     func latency(ofTrack trackID: UUID) -> Double { 0 }
+    func latencySnapshot(forTracks trackIDs: [UUID]) -> [UUID: Double] {
+        var result: [UUID: Double] = [:]
+        for id in trackIDs { result[id] = latency(ofTrack: id) }
+        return result
+    }
     func sendMIDIClockPulse(afterSeconds: Double) {}
     func sendMIDITransport(_ status: UInt8) {}
 }
@@ -493,11 +502,17 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// The largest latency among the tracks currently playing — the point every track is
     /// aligned to. Recomputed each tick, so a plugin finishing loading is picked up.
     private var latencyBase: Double = 0
+    /// Each track's latency as read for the current tick — once, for every track, so the
+    /// base above and each track's own compensation come from one read.
+    private var tickLatencies: [UUID: Double] = [:]
 
-    private func currentMaxLatency(_ tracks: [PlayTrack]) -> Double {
-        guard let output = audioEngine else { return 0 }
-        let worst = tracks.reduce(0.0) { max($0, output.latency(ofTrack: $1.id)) }
-        return min(worst, Self.maximumLatencyCompensation)
+    private func refreshLatencies(_ tracks: [PlayTrack]) {
+        guard let output = audioEngine else {
+            tickLatencies = [:]; latencyBase = 0; return
+        }
+        tickLatencies = output.latencySnapshot(forTracks: tracks.map(\.id))
+        let worst = tickLatencies.values.max() ?? 0
+        latencyBase = min(worst, Self.maximumLatencyCompensation)
     }
 
     private func nowSeconds() -> Double {
@@ -550,7 +565,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             // Negative when the timer ran late — the moment has passed and the best we
             // can do is "now", which is what the old scheduler always did.
             currentTickLead = max(0, timeline.seconds(atTick: ticksIssued - 1) - nowSeconds())
-            latencyBase = currentMaxLatency(currentFrame().tracks)
+            refreshLatencies(currentFrame().tracks)
             // Clock rides the same tick and the same stamp as the notes, so the two
             // cannot drift. Emitted from here rather than tick() because globalStep
             // restarts at every section boundary while the clock must run continuously.
@@ -847,7 +862,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                 }
                 // Delay compensation: hold this track back by however much less latency
                 // it has than the most latent one, so they are heard together.
-                let compensation = max(0, latencyBase - (audioEngine?.latency(ofTrack: track.id) ?? 0))
+                let compensation = max(0, latencyBase - (tickLatencies[track.id] ?? 0))
 
                 // Clamped at zero: pulling earlier than the lead would ask for a moment
                 // that has already gone, so the whole track would drift late instead.
