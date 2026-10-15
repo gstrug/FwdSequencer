@@ -27,7 +27,12 @@ struct SongView: View {
             Divider()
 
             ScrollView(.vertical, showsIndicators: true) {
-                VStack(spacing: 12) {
+                // Lazy: only the rows on screen are built and laid out. With a plain
+                // VStack every track row — each choosing between two layouts, expanded
+                // ones carrying an 88-key keyboard — was laid out again on a rotation,
+                // all at once, which held up the processor long enough for the
+                // sequencer to stall and plugins to crackle.
+                LazyVStack(spacing: 12) {
                     // Identity-based binding ForEach — safe to delete from (an index-based
                     // ForEach crashes when the array shrinks and a stale index binding is
                     // still evaluated).
@@ -58,7 +63,16 @@ struct SongView: View {
             }
         }
         .ignoresSafeArea(.keyboard)
-        .onAppear { songStore.activate() }
+        .onAppear {
+            songStore.activate()
+            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+        }
+        // The device has turned: the screen is about to be laid out again at the new
+        // size. Hold the meters and note highlights off while that happens so they are
+        // not competing with it; they resume by themselves.
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            songStore.audioEngine.quietTelemetry(forSeconds: 0.8)
+        }
         // Override the environment monitors for this subtree so telemetry routes
         // to the song's monitors, not the pattern store's.
         .environmentObject(songStore.levels)

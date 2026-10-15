@@ -112,11 +112,16 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     // and then the callback as separate properties, so each buffer took the lock twice on
     // the render thread to answer one question: is there anywhere to send this level?
     private func levelSink() -> ((UUID, AudioLevel) -> Void)? {
-        withCallbackLock { (_telemetryPaused || _appInBackground) ? nil : _onLevelUpdate }
+        withCallbackLock { telemetryQuietLocked ? nil : _onLevelUpdate }
     }
 
     private func masterLevelSink() -> ((AudioLevel) -> Void)? {
-        withCallbackLock { (_telemetryPaused || _appInBackground) ? nil : _onMasterLevelUpdate }
+        withCallbackLock { telemetryQuietLocked ? nil : _onMasterLevelUpdate }
+    }
+
+    /// Caller holds callbackLock.
+    private var telemetryQuietLocked: Bool {
+        _telemetryPaused || _appInBackground || CACurrentMediaTime() < _telemetryQuietUntil
     }
     var onLevelUpdate: ((UUID, AudioLevel) -> Void)? {
         get { withCallbackLock { _onLevelUpdate } }
@@ -156,10 +161,21 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// The app is in the background: nothing is on screen, so meters are not measured
     /// and playback telemetry is not sent, while audio plays on exactly as before.
     private var _appInBackground = false
+    /// Telemetry is held off until this moment (CACurrentMediaTime), for a burst of
+    /// screen work such as a rotation. Self-expiring, so it can never be left on.
+    private var _telemetryQuietUntil: CFTimeInterval = 0
+
+    /// Hold meters and playback telemetry off for `seconds` — while the screen is being
+    /// laid out again after a rotation, so the meters are not competing with it for the
+    /// main thread. Audio and MIDI are unaffected.
+    func quietTelemetry(forSeconds seconds: Double) {
+        withCallbackLock { _telemetryQuietUntil = CACurrentMediaTime() + seconds }
+    }
+
     /// Whether on-screen telemetry (meters, notes, steps) should be skipped right now —
-    /// a plugin UI is being built, or nobody can see it.
+    /// a plugin UI is being built, the screen is being laid out again, or nobody can see it.
     var telemetrySuppressed: Bool {
-        withCallbackLock { _telemetryPaused || _appInBackground }
+        withCallbackLock { telemetryQuietLocked }
     }
     private var sessionObservers: [NSObjectProtocol] = []
     private struct PluginLoadRequest {
