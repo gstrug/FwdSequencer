@@ -94,6 +94,13 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   when routing changes. Notes linked with Learn go to their link instead. "Write Notes
   from Keys" (Settings ▸ MIDI, learnable) toggles pressed notes in that track's pool for
   the selected section, obeying its scale, like the on-screen keyboard.
+- **Play keyboard as a channel** (2026-10-16): `song.performance` gets a Mixer strip,
+  M/S/FX on the Play dock, effects (SongStore `channelPath` finds a track or the
+  performance), pan, and MIDI targets `play*`. Mute/solo for it is one rule,
+  `Song.isAudible` / `isPlayKeyboardAudible`: Play solo silences non-soloed tracks (fed
+  to the sequencer as muted, and used by `SongMIDIExporter`, so export parity holds);
+  a soloed track silences Play keys unless Play is soloed. Keys routed to a muted or
+  solo-silenced channel are silent. Also learnable: Show Play Keyboard, Trigger Mode.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI
   (`.github/workflows/validate.yml`) runs `swift test` and a simulator build on every
   push/PR.

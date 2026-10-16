@@ -47,6 +47,9 @@ final class MIDIControlCenter: ObservableObject {
     /// Fires when a controller asks to start or stop recording. Recording's export flow
     /// belongs to the transport bar, so it listens for this rather than it being done here.
     let recordRequests = PassthroughSubject<Void, Never>()
+    /// Fires when a controller asks to show or hide the Play keyboard, which is the song
+    /// screen's to open and close.
+    let playDockRequests = PassthroughSubject<Void, Never>()
 
     /// The song store controls apply to — the song that is open. Nil from the song list.
     weak var songStore: SongStore? {
@@ -150,7 +153,12 @@ final class MIDIControlCenter: ObservableObject {
             // Track list or Play instrument changed, or instruments started or finished
             // restoring: the keys' instruments need working out again.
             store.$song
-                .map { song in song.tracks.map(\.id) + [song.performance?.id].compactMap { $0 } }
+                // Which instruments exist, and whether each can be heard: keys follow
+                // mute and solo, so a muted channel's keys fall silent too.
+                .map { song in
+                    song.tracks.map { "\($0.id)\(song.isAudible($0))" }
+                        + [song.performance.map { "\($0.id)\(song.isPlayKeyboardAudible)" }].compactMap { $0 }
+                }
                 .removeDuplicates()
                 .receive(on: DispatchQueue.main)
                 .sink { [weak self] _ in self?.refreshKeyRouting() }
@@ -183,10 +191,16 @@ final class MIDIControlCenter: ObservableObject {
             case .off:
                 break
             case .playKeyboard:
-                if let id = store.song.performance?.id { instruments[source.name] = id }
-                else { needsPlayInstrument = true }
+                if let performance = store.song.performance {
+                    if store.song.isPlayKeyboardAudible { instruments[source.name] = performance.id }
+                } else {
+                    needsPlayInstrument = true
+                }
             case .track(let i):
-                if store.song.tracks.indices.contains(i) { instruments[source.name] = store.song.tracks[i].id }
+                // Muted (or silenced by a solo elsewhere): its keys are silent too.
+                if store.song.tracks.indices.contains(i), store.song.isAudible(store.song.tracks[i]) {
+                    instruments[source.name] = store.song.tracks[i].id
+                }
             }
         }
         let paused = store.map { $0.isLoading } ?? true
@@ -382,6 +396,16 @@ final class MIDIControlCenter: ObservableObject {
             let current = MIDIControlScaling.fraction(forPan: store.song.tracks[index].mixer.pan)
             guard pickup.shouldApply(mapping, incoming: fraction, current: current) else { return }
             store.song.tracks[index].mixer.pan = MIDIControlScaling.pan(forFraction: fraction)
+        case .playVolume:
+            guard let performance = store.song.performance else { return }
+            let current = MIDIControlScaling.fraction(forGain: performance.mixer.volume)
+            guard pickup.shouldApply(mapping, incoming: fraction, current: current) else { return }
+            store.song.performance?.mixer.volume = MIDIControlScaling.gain(forFraction: fraction)
+        case .playPan:
+            guard let performance = store.song.performance else { return }
+            let current = MIDIControlScaling.fraction(forPan: performance.mixer.pan)
+            guard pickup.shouldApply(mapping, incoming: fraction, current: current) else { return }
+            store.song.performance?.mixer.pan = MIDIControlScaling.pan(forFraction: fraction)
         default:
             // A button target reached through a knob: treat crossing half way as a press.
             applyButton(mapping.target, pressed: fraction >= 0.5)
@@ -427,7 +451,17 @@ final class MIDIControlCenter: ObservableObject {
             store.selectedSection = max(0, min(store.song.sections.count - 1, store.selectedSection + 1))
         case .writeNotes:
             learn.writingNotes.toggle()
-        case .tempo, .masterVolume, .trackVolume, .trackPan:
+        case .playMute:
+            store.song.performance?.mixer.isMuted.toggle()
+        case .playSolo:
+            store.song.performance?.mixer.isSoloed.toggle()
+        case .playEffects:
+            if let id = store.song.performance?.id { store.toggleEffectsChain(for: id) }
+        case .togglePlayDock:
+            playDockRequests.send()
+        case .triggerMode:
+            store.triggerMode.toggle()
+        case .tempo, .masterVolume, .trackVolume, .trackPan, .playVolume, .playPan:
             break   // continuous, handled above
         }
     }

@@ -263,4 +263,63 @@ final class MIDIControlTests: XCTestCase {
         XCTAssertEqual(back, ["a": .off, "b": .playKeyboard, "c": .track(4)])
         XCTAssertEqual(MIDIKeysDestination.track(4).displayName, "Track 5")
     }
+
+    // MARK: Play keyboard as a channel
+
+    private func songWithTwoTracksAndPlay() -> Song {
+        var song = Song()
+        song.tracks = [SongTrack(name: "A"), SongTrack(name: "B")]
+        song.performance = SongTrack(name: "Play Keyboard")
+        return song
+    }
+
+    func testEverythingAudibleWithNoMuteOrSolo() {
+        let song = songWithTwoTracksAndPlay()
+        XCTAssertTrue(song.tracks.allSatisfy { song.isAudible($0) })
+        XCTAssertTrue(song.isPlayKeyboardAudible)
+    }
+
+    func testSoloingPlaySilencesTracksThatAreNotSoloed() {
+        var song = songWithTwoTracksAndPlay()
+        song.performance?.mixer.isSoloed = true
+        XCTAssertFalse(song.isAudible(song.tracks[0]))
+        XCTAssertTrue(song.isPlayKeyboardAudible)
+        song.tracks[1].mixer.isSoloed = true
+        XCTAssertTrue(song.isAudible(song.tracks[1]), "soloed with it, it plays")
+        XCTAssertFalse(song.isAudible(song.tracks[0]))
+    }
+
+    func testSoloingATrackSilencesPlayUnlessPlayIsSoloedToo() {
+        var song = songWithTwoTracksAndPlay()
+        song.tracks[0].mixer.isSoloed = true
+        XCTAssertFalse(song.isPlayKeyboardAudible)
+        song.performance?.mixer.isSoloed = true
+        XCTAssertTrue(song.isPlayKeyboardAudible)
+    }
+
+    func testMutingPlaySilencesIt() {
+        var song = songWithTwoTracksAndPlay()
+        song.performance?.mixer.isMuted = true
+        XCTAssertFalse(song.isPlayKeyboardAudible)
+        XCTAssertTrue(song.isAudible(song.tracks[0]), "tracks are unaffected")
+    }
+
+    func testPlaySoloRestartsWhatTheSequencerPlays() {
+        let song = songWithTwoTracksAndPlay()
+        var soloed = song
+        soloed.performance?.mixer.isSoloed = true
+        XCTAssertTrue(soloed.playbackDiffers(from: song))
+        var louder = song
+        louder.performance?.mixer.volume = 0.2
+        XCTAssertFalse(louder.playbackDiffers(from: song), "volume is the mixer's, not the sequencer's")
+    }
+
+    func testNewTargetsRoundTrip() throws {
+        let targets: [MIDIControlTarget] = [.playVolume, .playPan, .playMute, .playSolo,
+                                            .playEffects, .togglePlayDock, .triggerMode]
+        let back = try JSONDecoder().decode([MIDIControlTarget].self, from: JSONEncoder().encode(targets))
+        XCTAssertEqual(back, targets)
+        XCTAssertTrue(MIDIControlTarget.playVolume.isContinuous)
+        XCTAssertFalse(MIDIControlTarget.playMute.isContinuous)
+    }
 }

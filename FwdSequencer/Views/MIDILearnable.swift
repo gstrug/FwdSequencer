@@ -117,6 +117,8 @@ struct MIDILearnBanner: View {
                 learnChip("◀ Section", .previousSection)
                 learnChip("Section ▶", .nextSection)
                 learnChip("Write Notes", .writeNotes)
+                // In the Settings menu, which can't be tapped in Learn mode.
+                learnChip("Trigger Mode", .triggerMode)
 
                 Button("Done") { learn.isOn = false }
                     .buttonStyle(.borderedProminent)
@@ -187,4 +189,23 @@ struct MIDIWriteNotesBanner: View {
             ? sections[songStore.selectedSection].name : "this section"
         return "Write Notes — keys on \(target.device) add or remove notes in \(track), \(section)."
     }
+}
+
+/// The MIDI targets of one mixer channel: a track's, by position, or the Play keyboard's.
+struct MIDIChannelTargets {
+    let volume: MIDIControlTarget
+    let pan: MIDIControlTarget
+    let mute: MIDIControlTarget
+    let solo: MIDIControlTarget
+    let effects: MIDIControlTarget
+
+    static func track(_ index: Int) -> MIDIChannelTargets {
+        MIDIChannelTargets(volume: .trackVolume(index), pan: .trackPan(index),
+                           mute: .trackMute(index), solo: .trackSolo(index),
+                           effects: .trackEffects(index))
+    }
+
+    static let play = MIDIChannelTargets(volume: .playVolume, pan: .playPan,
+                                         mute: .playMute, solo: .playSolo,
+                                         effects: .playEffects)
 }

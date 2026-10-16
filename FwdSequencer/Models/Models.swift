@@ -74,6 +74,8 @@ extension Song {
     /// previous version, and Array's == returns at once on shared storage.
     func playbackDiffers(from other: Song) -> Bool {
         if tempo != other.tempo || timeSignature != other.timeSignature { return true }
+        // Soloing the Play keyboard silences the tracks that aren't soloed.
+        if isPlayKeyboardSoloed != other.isPlayKeyboardSoloed { return true }
         if sections != other.sections { return true }
         guard tracks.count == other.tracks.count else { return true }
         for (a, b) in zip(tracks, other.tracks) {
@@ -985,5 +987,29 @@ nonisolated enum NoteShaper {
             if gate { note.gateLength = defaultGate }
             return note
         }
+    }
+}
+
+// MARK: - Mute and solo, with the Play keyboard as a channel of its own
+
+extension Song {
+    /// The Play keyboard's own Solo. It silences every track that isn't soloed, as
+    /// soloing a track does.
+    var isPlayKeyboardSoloed: Bool { performance?.mixer.isSoloed ?? false }
+
+    /// Whether a track sounds, by the same rule as mute and solo on the tracks, with the
+    /// Play keyboard counted as one more channel. The sequencer and the MIDI export both
+    /// use this, so what is exported is what is heard.
+    func isAudible(_ track: SongTrack) -> Bool {
+        if track.mixer.isMuted { return false }
+        let soloing = isPlayKeyboardSoloed || tracks.contains { $0.mixer.isSoloed }
+        return !soloing || track.mixer.isSoloed
+    }
+
+    /// Whether keys played on the Play keyboard sound: not muted, and not silenced by a
+    /// soloed track unless it is soloed too.
+    var isPlayKeyboardAudible: Bool {
+        guard let performance else { return true }
+        return isAudible(performance)
     }
 }

@@ -388,7 +388,10 @@ class SongStore: ObservableObject {
         // Push volume/pan to mixer nodes only when a value actually changed.
         $song
             .map { song -> [TrackMix] in
-                song.tracks.map { TrackMix(id: $0.id, volume: $0.mixer.volume, pan: $0.mixer.pan) }
+                // The Play keyboard's instrument is a channel too: its fader and pan on
+                // the mixer (and from a controller) reach its node the same way.
+                (song.tracks + [song.performance].compactMap { $0 })
+                    .map { TrackMix(id: $0.id, volume: $0.mixer.volume, pan: $0.mixer.pan) }
             }
             .removeDuplicates()
             .sink { [weak self] mixes in
@@ -451,7 +454,9 @@ class SongStore: ObservableObject {
                     tempoDivision: part?.tempoDivision ?? .quarter,
                     notePool: part?.notePool ?? [],
                     steps: part?.steps ?? [],
-                    isMuted: st.mixer.isMuted,
+                    // Soloing the Play keyboard silences tracks that aren't soloed
+                    // (Song.isAudible); the sequencer itself only knows the tracks.
+                    isMuted: st.mixer.isMuted || (song.isPlayKeyboardSoloed && !st.mixer.isSoloed),
                     isSoloed: st.mixer.isSoloed,
                     chordSpread: st.effectiveChordSpread,
                     accent: st.effectiveAccent,
@@ -522,6 +527,7 @@ class SongStore: ObservableObject {
             if let plugin = perf.pluginInfo {
                 loadPlugin(plugin, for: perf.id, stateData: perf.pluginStateData)
             }
+            loadEffects(for: perf)
         }
     }
 
@@ -928,6 +934,18 @@ class SongStore: ObservableObject {
     // MARK: - Effects
     //
     // A list throughout, capped only by SongTrack.maximumEffects in the UI.
+    //
+    // A chain belongs to a track or to the Play keyboard's instrument: in the engine
+    // both are the same kind of channel, keyed by id, so only finding its owner in the
+    // song differs (channelPath).
+
+    /// Where in the song a channel's settings live: one of the tracks, or the Play
+    /// keyboard's instrument.
+    private func channelPath(_ id: UUID) -> WritableKeyPath<Song, SongTrack>? {
+        if let i = song.tracks.firstIndex(where: { $0.id == id }) { return \Song.tracks[i] }
+        if song.performance?.id == id { return \Song.performance! }
+        return nil
+    }
 
     /// Load a track's saved effect chain. Called wherever its instrument is loaded, so
     /// the chain is rebuilt with the sound rather than needing the song reopened.
@@ -947,19 +965,19 @@ class SongStore: ObservableObject {
     }
 
     func addEffect(_ info: PluginInfo, to trackID: UUID) {
-        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        guard song.tracks[idx].effectSlots.count < SongTrack.maximumEffects else {
+        guard let path = channelPath(trackID) else { return }
+        guard song[keyPath: path].effectSlots.count < SongTrack.maximumEffects else {
             notice = SongTrack.maximumEffects == 1
                 ? "A track can have one effect for now."
                 : "A track can have up to \(SongTrack.maximumEffects) effects."
             return
         }
         let slot = PluginSlot(pluginInfo: info)
-        let position = song.tracks[idx].effectSlots.count
-        song.tracks[idx].effects = song.tracks[idx].effectSlots + [slot]
+        let position = song[keyPath: path].effectSlots.count
+        song[keyPath: path].effects = song[keyPath: path].effectSlots + [slot]
         // Joins switched out if the chain is switched out.
         audioEngine.loadEffect(info, at: position, for: trackID,
-                               bypassed: song.tracks[idx].chainBypassed) { [weak self] result in
+                               bypassed: song[keyPath: path].chainBypassed) { [weak self] result in
             guard case .failure(let error) = result else { return }
             self?.notice = error.localizedDescription
         }
@@ -968,11 +986,11 @@ class SongStore: ObservableObject {
     /// Order is signal order, so moving a slot rewires the chain. The identical move is
     /// applied to the model and to the units, which keeps them in step by construction.
     func moveEffects(from source: IndexSet, to destination: Int, for trackID: UUID) {
-        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        var slots = song.tracks[idx].effectSlots
+        guard let path = channelPath(trackID) else { return }
+        var slots = song[keyPath: path].effectSlots
         guard !slots.isEmpty else { return }
         slots.move(fromOffsets: source, toOffset: destination)
-        song.tracks[idx].effects = slots
+        song[keyPath: path].effects = slots
         audioEngine.moveEffect(from: source, to: destination, for: trackID)
     }
 
@@ -983,52 +1001,52 @@ class SongStore: ObservableObject {
     /// effect starts fresh: the old one's settings mean nothing to a different plugin,
     /// and it starts in circuit, since you are swapping it in to hear it.
     func replaceEffect(at index: Int, with info: PluginInfo, for trackID: UUID) {
-        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        var slots = song.tracks[idx].effectSlots
+        guard let path = channelPath(trackID) else { return }
+        var slots = song[keyPath: path].effectSlots
         guard slots.indices.contains(index) else { return }
         guard slots[index].pluginInfo != info else { return }   // same effect: nothing to do
         slots[index] = PluginSlot(pluginInfo: info)
-        song.tracks[idx].effects = slots
+        song[keyPath: path].effects = slots
         audioEngine.removeEffect(at: index, for: trackID)
         audioEngine.loadEffect(info, at: index, for: trackID,
-                               bypassed: song.tracks[idx].chainBypassed) { [weak self] result in
+                               bypassed: song[keyPath: path].chainBypassed) { [weak self] result in
             guard case .failure(let error) = result else { return }
             self?.notice = error.localizedDescription
         }
     }
 
     func removeEffect(at index: Int, from trackID: UUID) {
-        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        var slots = song.tracks[idx].effectSlots
+        guard let path = channelPath(trackID) else { return }
+        var slots = song[keyPath: path].effectSlots
         guard slots.indices.contains(index) else { return }
         slots.remove(at: index)
-        song.tracks[idx].effects = slots
+        song[keyPath: path].effects = slots
         audioEngine.removeEffect(at: index, for: trackID)
     }
 
     func setEffectBypassed(_ bypassed: Bool, at index: Int, for trackID: UUID) {
-        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        var slots = song.tracks[idx].effectSlots
+        guard let path = channelPath(trackID) else { return }
+        var slots = song[keyPath: path].effectSlots
         guard slots.indices.contains(index) else { return }
         slots[index].isBypassed = bypassed
-        song.tracks[idx].effects = slots
+        song[keyPath: path].effects = slots
         // While the chain is switched out the effect stays silent; its own setting is
         // still recorded, and takes effect when the chain comes back in.
-        audioEngine.setEffectBypassed(song.tracks[idx].effectIsSilenced(at: index),
+        audioEngine.setEffectBypassed(song[keyPath: path].effectIsSilenced(at: index),
                                       at: index, for: trackID)
     }
 
     /// The FX button's tap: switch the whole chain out, or back in. Each effect's own
     /// Bypass is left untouched, so switching back in restores exactly what was on.
     func toggleEffectsChain(for trackID: UUID) {
-        setEffectsChainBypassed(!(song.tracks.first { $0.id == trackID }?.chainBypassed ?? false),
-                                for: trackID)
+        let bypassed = channelPath(trackID).map { song[keyPath: $0].chainBypassed } ?? false
+        setEffectsChainBypassed(!bypassed, for: trackID)
     }
 
     func setEffectsChainBypassed(_ bypassed: Bool, for trackID: UUID) {
-        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        song.tracks[idx].effectsBypassed = bypassed ? true : nil
-        let track = song.tracks[idx]
+        guard let path = channelPath(trackID) else { return }
+        song[keyPath: path].effectsBypassed = bypassed ? true : nil
+        let track = song[keyPath: path]
         for index in track.effectSlots.indices {
             audioEngine.setEffectBypassed(track.effectIsSilenced(at: index), at: index, for: trackID)
         }
@@ -1037,12 +1055,12 @@ class SongStore: ObservableObject {
     /// Capture an effect's own state, so its settings persist with the song exactly as
     /// an instrument's do.
     func captureEffectState(at index: Int, for trackID: UUID) {
-        guard let idx = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
-        var slots = song.tracks[idx].effectSlots
+        guard let path = channelPath(trackID) else { return }
+        var slots = song[keyPath: path].effectSlots
         guard slots.indices.contains(index) else { return }
         if let state = audioEngine.captureEffectState(at: index, for: trackID) {
             slots[index].stateData = state
-            song.tracks[idx].effects = slots
+            song[keyPath: path].effects = slots
         }
     }
 
@@ -1341,6 +1359,7 @@ class SongStore: ObservableObject {
             if let plugin = perf.pluginInfo {
                 loadPlugin(plugin, for: perf.id, stateData: perf.pluginStateData)
             }
+            loadEffects(for: perf)
         }
     }
 }

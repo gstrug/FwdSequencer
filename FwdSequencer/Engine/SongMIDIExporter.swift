@@ -107,7 +107,8 @@ nonisolated enum SongMIDIExporter {
                 / song.timeSignature.denominator
             let sectionTicks = ticksPerBar * section.numberOfBars
             let beatTicks = max(1, ticksPerQuarter * 4 / song.timeSignature.denominator)
-            let anySoloed = song.tracks.contains { $0.mixer.isSoloed }
+            // Mute and solo, by the same rule the sequencer is given (Song.isAudible).
+            let audible = Set(song.tracks.filter { song.isAudible($0) }.map(\.id))
 
             for localTick in stride(from: 0, to: sectionTicks, by: baseTick) {
                 for (trackIndex, track) in song.tracks.enumerated() {
@@ -147,7 +148,7 @@ nonisolated enum SongMIDIExporter {
                         }
                     }
 
-                    let shouldSound = !track.mixer.isMuted && (!anySoloed || track.mixer.isSoloed)
+                    let shouldSound = audible.contains(track.id)
                     guard shouldSound, !resolved.indices.isEmpty else {
                         states[track.id] = state
                         continue
@@ -304,11 +305,9 @@ nonisolated enum SongMIDIExporter {
         // Only tracks you can actually hear are written. Muted (or, when anything is
         // soloed, non-soloed) tracks already produce no notes, but emitting an empty
         // named track for each of them leaves confusing dead tracks in the DAW.
-        let soloing = song.tracks.contains { $0.mixer.isSoloed }
         var chunks: [Data] = [trackChunk(events: conductor, endTick: absoluteTick)]
         for (index, track) in song.tracks.enumerated() {
-            let audible = !track.mixer.isMuted && (!soloing || track.mixer.isSoloed)
-            guard audible else { continue }
+            guard song.isAudible(track) else { continue }
             var events = trackEvents[index]
             events.append(event(0, -7, metaText(0x03, track.name)))
             chunks.append(trackChunk(events: events, endTick: absoluteTick))

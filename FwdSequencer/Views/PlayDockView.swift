@@ -25,6 +25,9 @@ struct PlayDockView: View {
                 PlayableKeyboard(
                     onNoteOn: { note in
                         activeNotes.insert(note)
+                        // Mute and solo apply here as they do to a track: muted, or
+                        // silenced by a soloed track, and the keys make no sound.
+                        guard songStore.song.isPlayKeyboardAudible else { return }
                         AudioEngineManager.shared.playNote(trackID: p.id, midiNote: note, velocity: 100)
                     },
                     onNoteOff: { note in
@@ -112,8 +115,21 @@ struct PlayDockView: View {
         if perf != nil {
             Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
             StudioSlider.volume(volumeBinding, label: "Manual keyboard volume")
+                .midiLearnable(.playVolume)
                 .frame(minWidth: 80, maxWidth: 160)
-            if let id = perf?.id { SongTrackMeter(trackID: id) }
+            if let p = perf {
+                SongTrackMeter(trackID: p.id)
+                // The same channel buttons as a track's, so the Play keyboard can be
+                // muted, soloed and have its effects switched here as on the mixer.
+                StudioToggleChip(title: "M", isOn: mixerFlag(\.isMuted), tint: .orange,
+                                 accessibilityLabel: "Mute Play keyboard")
+                    .midiLearnable(.playMute)
+                StudioToggleChip(title: "S", isOn: mixerFlag(\.isSoloed), tint: .yellow,
+                                 accessibilityLabel: "Solo Play keyboard")
+                    .midiLearnable(.playSolo)
+                EffectsToggleButton(track: p)
+                    .midiLearnable(.playEffects)
+            }
         }
     }
 
@@ -132,6 +148,11 @@ struct PlayDockView: View {
     private var pluginBinding: Binding<PluginInfo?> {
         Binding(get: { songStore.song.performance?.pluginInfo },
                 set: { newInfo in songStore.setPerformancePlugin(newInfo) })
+    }
+
+    private func mixerFlag(_ flag: WritableKeyPath<MixerState, Bool>) -> Binding<Bool> {
+        Binding(get: { songStore.song.performance?.mixer[keyPath: flag] ?? false },
+                set: { songStore.song.performance?.mixer[keyPath: flag] = $0 })
     }
 
     private var volumeBinding: Binding<Float> {

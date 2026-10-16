@@ -7,6 +7,12 @@ struct SongMixerView: View {
     @EnvironmentObject var songStore: SongStore
     @Environment(\.dismiss) private var dismiss
 
+    /// The Play keyboard's instrument, for its strip. Only shown when it exists.
+    private var performanceBinding: Binding<SongTrack> {
+        Binding(get: { songStore.song.performance ?? SongTrack(name: "Play Keyboard") },
+                set: { songStore.song.performance = $0 })
+    }
+
     var body: some View {
         NavigationStack {
             Group {
@@ -25,10 +31,19 @@ struct SongMixerView: View {
                             Divider().padding(.vertical, 8)
 
                             ForEach(songStore.song.tracks.indices, id: \.self) { idx in
-                                SongChannelStrip(track: $songStore.song.tracks[idx], index: idx)
+                                SongChannelStrip(track: $songStore.song.tracks[idx], midi: .track(idx))
                                 if idx < songStore.song.tracks.count - 1 {
                                     Divider().padding(.vertical, 8)
                                 }
+                            }
+
+                            // The Play keyboard's instrument, once the song has one: a
+                            // channel like the tracks, with its own fader, pan, mute,
+                            // solo and effects.
+                            if songStore.song.performance != nil {
+                                Divider().padding(.vertical, 8)
+                                SongChannelStrip(track: performanceBinding, midi: .play,
+                                                 title: "Play Keyboard")
                             }
                         }
                         .padding(.horizontal, 12)
@@ -53,19 +68,22 @@ struct SongMixerView: View {
 
 struct SongChannelStrip: View {
     @Binding var track: SongTrack
-    /// Position in the song, which is how MIDI links address tracks.
-    let index: Int
+    /// What this strip's controls are called for MIDI Learn: a track's (by position) or
+    /// the Play keyboard's.
+    let midi: MIDIChannelTargets
+    /// Shown instead of the track's name.
+    var title: String? = nil
 
     var body: some View {
         VStack(spacing: 14) {
-            Text(track.name)
+            Text(title ?? track.name)
                 .font(.caption.bold())
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .frame(width: 80)
 
             FaderWithMeter(value: $track.mixer.volume) { TrackVUMeter(trackID: track.id) }
-                .midiLearnable(.trackVolume(index))
+                .midiLearnable(midi.volume)
 
             Text("Vol").font(.caption2).foregroundStyle(.secondary)
 
@@ -73,22 +91,22 @@ struct SongChannelStrip: View {
             // stay about notes.
             // Tap: all effects in/out. Long press: edit them.
             EffectsToggleButton(track: track)
-                .midiLearnable(.trackEffects(index))
+                .midiLearnable(midi.effects)
 
             StudioKnob(value: Binding(get: { Double(track.mixer.pan) },
                                       set: { track.mixer.pan = Float($0) }),
                        range: -1...1, defaultValue: 0, bipolar: true, size: 52,
                        label: "Pan \(panLabel)",
                        format: { _ in panLabel })
-                .midiLearnable(.trackPan(index))
+                .midiLearnable(midi.pan)
 
             HStack(spacing: 6) {
                 StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
                                  accessibilityLabel: "Mute \(track.name)")
-                    .midiLearnable(.trackMute(index))
+                    .midiLearnable(midi.mute)
                 StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
                                  accessibilityLabel: "Solo \(track.name)")
-                    .midiLearnable(.trackSolo(index))
+                    .midiLearnable(midi.solo)
             }
         }
         .frame(width: 104)

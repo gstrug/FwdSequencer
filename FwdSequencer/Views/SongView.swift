@@ -357,6 +357,7 @@ private struct SongTransportBar: View {
                     .joined(separator: "\n"))
         }
         .onReceive(MIDIControlCenter.shared.recordRequests) { toggleRecording() }
+        .onReceive(MIDIControlCenter.shared.playDockRequests) { showPlayDock.toggle() }
         .onReceive(songStore.savedSignal) {
             savedVisible = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedVisible = false }
@@ -381,6 +382,7 @@ private struct SongTransportBar: View {
             }
             .buttonStyle(.bordered)
             .tint(showPlayDock ? .accentColor : nil)
+            .midiLearnable(.togglePlayDock)
 
             Button { showMixer = true } label: {
                 Label("Mixer", systemImage: "slider.vertical.3")

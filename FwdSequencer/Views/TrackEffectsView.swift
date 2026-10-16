@@ -17,7 +17,11 @@ struct TrackEffectsView: View {
     /// The slot whose effect is being swapped for another, if any.
     @State private var replacingIndex: Int?
 
-    private var track: SongTrack? { songStore.song.tracks.first { $0.id == trackID } }
+    /// A track's chain, or the Play keyboard instrument's.
+    private var track: SongTrack? {
+        songStore.song.tracks.first { $0.id == trackID }
+            ?? songStore.song.performance.flatMap { $0.id == trackID ? $0 : nil }
+    }
     private var slots: [PluginSlot] { track?.effectSlots ?? [] }
 
     var body: some View {

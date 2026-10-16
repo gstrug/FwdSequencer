@@ -63,11 +63,17 @@ nonisolated enum MIDIControlTarget: Codable, Hashable {
     case previousSection, nextSection
     // Keys
     case writeNotes
+    // The Play keyboard, as a channel of its own like a track.
+    case playVolume, playPan, playMute, playSolo, playEffects
+    /// Show or hide the Play keyboard.
+    case togglePlayDock
+    /// Pattern Trigger Mode on or off.
+    case triggerMode
 
     /// Continuous targets take the knob or fader's position; the rest act on a press.
     var isContinuous: Bool {
         switch self {
-        case .tempo, .masterVolume, .trackVolume, .trackPan: return true
+        case .tempo, .masterVolume, .trackVolume, .trackPan, .playVolume, .playPan: return true
         default: return false
         }
     }
@@ -93,6 +99,13 @@ nonisolated enum MIDIControlTarget: Codable, Hashable {
         case .previousSection:      return "Previous Section"
         case .nextSection:          return "Next Section"
         case .writeNotes:           return "Write Notes"
+        case .playVolume:           return "Play Keyboard Volume"
+        case .playPan:              return "Play Keyboard Pan"
+        case .playMute:             return "Play Keyboard Mute"
+        case .playSolo:             return "Play Keyboard Solo"
+        case .playEffects:          return "Play Keyboard FX On/Off"
+        case .togglePlayDock:       return "Show Play Keyboard"
+        case .triggerMode:          return "Pattern Trigger Mode"
         }
     }
 }
