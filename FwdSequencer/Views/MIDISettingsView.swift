@@ -42,13 +42,13 @@ struct MIDISettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .alert("Rename Template", isPresented: Binding(
+            .alert("Template Name", isPresented: Binding(
                 get: { renaming != nil },
                 set: { if !$0 { renaming = nil } }
             )) {
                 TextField("Name", text: $newName)
                 Button("Cancel", role: .cancel) { renaming = nil }
-                Button("Rename") {
+                Button("Save") {
                     if let t = renaming { center.rename(t.id, to: newName) }
                     renaming = nil
                 }
@@ -71,7 +71,7 @@ struct MIDISettingsView: View {
         } header: {
             Text("Controllers")
         } footer: {
-            Text("Each controller uses one template. The nanoKONTROL2 is set up automatically; for any other controller, turn on Learn and link the controls you want. Tracks are linked by position, so Track 1 is the top track in every song.")
+            Text("Each controller uses one template. Load switches it to another; Save As keeps its current links under a new name. Links you make with MIDI Learn are saved into the template straight away. The nanoKONTROL2 is set up automatically. Tracks are linked by position, so Track 1 is the top track in every song.")
         }
     }
 
@@ -87,18 +87,56 @@ struct MIDISettingsView: View {
                 ))
                 .labelsHidden()
             }
-            Picker("Template", selection: Binding<UUID?>(
-                get: { center.template(forDevice: source.name)?.id },
-                set: { center.assign($0, toDevice: source.name) }
-            )) {
-                Text("None").tag(UUID?.none)
-                ForEach(center.templates) { t in
-                    Text(t.name).tag(UUID?.some(t.id))
+            HStack(spacing: 10) {
+                Text("Template").foregroundStyle(.secondary)
+                Text(center.template(forDevice: source.name)?.name ?? "None")
+                    .bold().lineLimit(1)
+                Spacer(minLength: 8)
+                Menu {
+                    loadChoices(forDevice: source.name)
+                } label: {
+                    Label("Load", systemImage: "folder")
+                }
+                Button { saveAs(forDevice: source.name) } label: {
+                    Label("Save As…", systemImage: "square.and.arrow.down")
                 }
             }
+            // Bordered so each button takes its own taps; in a Form row plain buttons
+            // would all fire together.
+            .buttonStyle(.bordered)
             .disabled(!center.isEnabled(source.name))
         }
         .padding(.vertical, 2)
+    }
+
+    /// Templates to load onto a controller, the current one ticked.
+    @ViewBuilder
+    private func loadChoices(forDevice name: String) -> some View {
+        let current = center.template(forDevice: name)?.id
+        Button { center.assign(nil, toDevice: name) } label: {
+            if current == nil { Label("None", systemImage: "checkmark") } else { Text("None") }
+        }
+        Divider()
+        ForEach(center.templates) { t in
+            Button { center.assign(t.id, toDevice: name) } label: {
+                if current == t.id { Label(t.name, systemImage: "checkmark") } else { Text(t.name) }
+            }
+        }
+    }
+
+    /// Keep a controller's current links under a new name and switch it to that copy,
+    /// so further Learn changes go into the new template and the old one stays as it was.
+    private func saveAs(forDevice name: String) {
+        let copy: MIDIControllerTemplate
+        if let current = center.template(forDevice: name),
+           let duplicate = center.duplicate(current.id) {
+            copy = duplicate
+        } else {
+            copy = center.newTemplate(named: name, deviceNameHint: name)
+        }
+        center.assign(copy.id, toDevice: name)
+        newName = copy.name
+        renaming = copy
     }
 
     // MARK: Templates
@@ -132,7 +170,7 @@ struct MIDISettingsView: View {
         } header: {
             Text("Templates")
         } footer: {
-            Text("Learning on a factory template makes your own copy first, so the factory one stays as it was. Swipe or long press a template to save a copy, rename or delete it.")
+            Text("Learning on a factory template makes your own copy first, so the factory one stays as it was. Tap a template to see its links; swipe or long press it to save a copy, rename or delete it.")
         }
     }
 

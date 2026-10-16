@@ -117,6 +117,15 @@ final class MIDIControlCenter: ObservableObject {
         return copy
     }
 
+    /// A new, empty template.
+    @discardableResult
+    func newTemplate(named name: String, deviceNameHint: String? = nil) -> MIDIControllerTemplate {
+        let fresh = MIDIControllerTemplate(name: uniqueName(name), deviceNameHint: deviceNameHint)
+        templates.append(fresh)
+        saveSettings()
+        return fresh
+    }
+
     func rename(_ templateID: UUID, to name: String) {
         guard let i = templates.firstIndex(where: { $0.id == templateID }), !templates[i].isBuiltIn else { return }
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)

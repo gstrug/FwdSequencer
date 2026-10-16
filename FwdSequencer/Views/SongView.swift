@@ -170,6 +170,8 @@ private struct SongTransportBar: View {
     @State private var recordingFormat: RecordingFormat = .wav
     @State private var showingOnboarding = false
     @State private var showingMIDISettings = false
+    /// For the MIDI Learn switch in Settings ▸ MIDI.
+    @ObservedObject private var midiLearn = MIDIControlCenter.shared.learn
     /// Typing an exact tempo, from a tap on the tempo display.
     @State private var editingTempo = false
     @State private var tempoText = ""
@@ -384,8 +386,6 @@ private struct SongTransportBar: View {
             }
             .buttonStyle(.bordered)
 
-            MIDILearnButton()
-
             songSettingsMenu
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -505,9 +505,21 @@ private struct SongTransportBar: View {
             }
             .disabled(!songStore.triggerMode)
             Divider()
-            // Controllers, templates and clock output all live on one MIDI page now.
-            Button { showingMIDISettings = true } label: {
-                Label("MIDI Controllers & Clock…", systemImage: "cable.connector")
+            // Everything MIDI in one place: Learn, the controllers and their
+            // templates, and clock output.
+            Menu {
+                Toggle(isOn: $midiLearn.isOn) {
+                    Label("MIDI Learn", systemImage: "dot.radiowaves.left.and.right")
+                }
+                Button { showingMIDISettings = true } label: {
+                    Label("Controllers & Templates…", systemImage: "slider.horizontal.3")
+                }
+                Divider()
+                Toggle(isOn: $songStore.midiClockEnabled) {
+                    Label("MIDI Clock Output", systemImage: "metronome")
+                }
+            } label: {
+                Label("MIDI", systemImage: "cable.connector")
             }
             Divider()
             // Worth rereading once the app has grown past what you took in the first
