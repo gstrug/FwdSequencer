@@ -83,6 +83,15 @@ struct ProjectBrowserView: View {
             songStore.captureAndSave()
         }
         .onOpenURL { url in importSong(at: url) }
+        // MIDI controllers act on the song only while it is open: from the song list, a
+        // Play press must not start a song nobody can see. Tied to this flag rather than
+        // the song screen appearing, because a plugin editor opened full screen over the
+        // song makes it "disappear" — and a controller should keep working while you
+        // tweak a synth.
+        .onChange(of: showingSong) { open in
+            MIDIControlCenter.shared.songStore = open ? songStore : nil
+            if !open { MIDIControlCenter.shared.learn.isOn = false }
+        }
         .fullScreenCover(isPresented: $showingSong, onDismiss: {
             songStore.saveNow()
             reload()

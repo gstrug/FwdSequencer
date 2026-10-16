@@ -20,6 +20,9 @@ struct SongView: View {
                 }
             }, showPlayDock: $showPlayDock)
 
+            // Only there while MIDI Learn is on: what to do next, and Done.
+            MIDILearnBanner()
+
             ArrangementStrip()
 
             SectionSettingsBar()
@@ -166,6 +169,7 @@ private struct SongTransportBar: View {
     @State private var finishedRecordingURL: URL?
     @State private var recordingFormat: RecordingFormat = .wav
     @State private var showingOnboarding = false
+    @State private var showingMIDISettings = false
     /// Typing an exact tempo, from a tap on the tempo display.
     @State private var editingTempo = false
     @State private var tempoText = ""
@@ -208,6 +212,7 @@ private struct SongTransportBar: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Rewind song")
+                .midiLearnable(.rewind)
 
                 Button {
                     if songStore.isPlaying      { songStore.pause() }
@@ -219,6 +224,7 @@ private struct SongTransportBar: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(songStore.isPlaying ? "Pause song" : "Play song")
+                .midiLearnable(.playPause)
 
                 Button { songStore.stop() } label: {
                     Image(systemName: "stop.fill").iconHitTarget()
@@ -226,6 +232,7 @@ private struct SongTransportBar: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Stop song")
+                .midiLearnable(.stop)
 
                 Button { toggleRecording() } label: {
                     Image(systemName: songStore.isRecording ? "stop.circle.fill" : "record.circle")
@@ -234,6 +241,7 @@ private struct SongTransportBar: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(songStore.isRecording ? "Stop and export recording" : "Record master output")
+                .midiLearnable(.record)
 
                 // MIDI panic — needs to be one tap on the transport, not buried in a
                 // menu: it is what you reach for when a note hangs mid-performance.
@@ -244,6 +252,7 @@ private struct SongTransportBar: View {
                 .buttonStyle(.plain)
                 .help("Panic — stop all notes")
                 .accessibilityLabel("Panic, stop all notes")
+                .midiLearnable(.panic)
 
                 Button { songStore.loopEnabled.toggle() } label: {
                     Image(systemName: "repeat").iconHitTarget()
@@ -253,14 +262,17 @@ private struct SongTransportBar: View {
                 .help("Loop song")
                 .accessibilityLabel("Loop song")
                 .accessibilityValue(songStore.loopEnabled ? "On" : "Off")
+                .midiLearnable(.loop)
 
                 // Tempo sits with the transport: it is what you reach for alongside
                 // play. One child, as the row is at SwiftUI's ten-view limit.
                 HStack(spacing: 8) {
                     Divider().frame(height: 26)
                     tempoReadout
+                        .midiLearnable(.tempo)
                     StudioTapButton(title: "TAP") { handleTap() }
                         .accessibilityLabel("Tap tempo")
+                        .midiLearnable(.tapTempo)
                 }
                 }
                 .fixedSize(horizontal: true, vertical: false)
@@ -313,6 +325,10 @@ private struct SongTransportBar: View {
             // there is already a song in front of you, so it simply closes.
             OnboardingView(completed: $didCompleteOnboarding, isFirstRun: false)
         }
+        .sheet(isPresented: $showingMIDISettings) {
+            MIDISettingsView()
+                .environmentObject(songStore)
+        }
         .sheet(isPresented: $showMixer) {
             SongMixerView()
                 .environmentObject(songStore)
@@ -337,6 +353,7 @@ private struct SongTransportBar: View {
             Text(RecordingFormat.allCases.map { "\($0.displayName) — \($0.detail)" }
                     .joined(separator: "\n"))
         }
+        .onReceive(MIDIControlCenter.shared.recordRequests) { toggleRecording() }
         .onReceive(songStore.savedSignal) {
             savedVisible = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedVisible = false }
@@ -366,6 +383,8 @@ private struct SongTransportBar: View {
                 Label("Mixer", systemImage: "slider.vertical.3")
             }
             .buttonStyle(.bordered)
+
+            MIDILearnButton()
 
             songSettingsMenu
         }
@@ -456,6 +475,7 @@ private struct SongTransportBar: View {
                                             set: { songStore.song.masterVolume = Float($0) }),
                              range: 0...1, defaultValue: 1, accessibilityLabel: "Master volume",
                              format: { "\(Int(($0 * 100).rounded()))%" })
+                    .midiLearnable(.masterVolume)
                 MasterLevelBar()
                     .padding(.horizontal, 10)
             }
@@ -485,8 +505,9 @@ private struct SongTransportBar: View {
             }
             .disabled(!songStore.triggerMode)
             Divider()
-            Toggle(isOn: $songStore.midiClockEnabled) {
-                Label("MIDI Clock Output", systemImage: "cable.connector")
+            // Controllers, templates and clock output all live on one MIDI page now.
+            Button { showingMIDISettings = true } label: {
+                Label("MIDI Controllers & Clock…", systemImage: "cable.connector")
             }
             Divider()
             // Worth rereading once the app has grown past what you took in the first
@@ -652,7 +673,9 @@ private struct ArrangementStrip: View {
                     HStack(spacing: 8) {
                         // Identity-based so deleting a section can't crash on a stale index.
                         ForEach(Array(songStore.song.sections.enumerated()), id: \.element.id) { idx, section in
-                            chip(idx, section).id(section.id)
+                            chip(idx, section)
+                                .midiLearnable(.section(idx))
+                                .id(section.id)
                         }
                     }
                     .padding(.horizontal, 12)
@@ -876,6 +899,7 @@ private struct SectionSettingsBar: View {
                     Label("Hold", systemImage: "repeat.1")
                 }
                 .toggleStyle(.button)
+                .midiLearnable(.hold)
                 .help("Repeat the selected section and stop the editor following the playhead, so it can be edited")
 
                 // Transform and Snapshots are gated on Hold, so say so rather than
@@ -1494,6 +1518,7 @@ private struct SongTrackRowView: View {
             // and solo line up down the whole track list regardless of naming.
             Image(systemName: "speaker.wave.1").font(.system(size: 9)).foregroundStyle(.secondary)
             StudioSlider.volume($track.mixer.volume, label: "\(track.name) volume")
+                .midiLearnable(.trackVolume(index))
                 .frame(width: 70)
             // Explicit width: the meter is maxWidth-greedy, which has no intrinsic size
             // to resolve inside a fixed-size row.
@@ -1501,9 +1526,12 @@ private struct SongTrackRowView: View {
 
             StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
                              accessibilityLabel: "Mute \(track.name)")
+                .midiLearnable(.trackMute(index))
             StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
                              accessibilityLabel: "Solo \(track.name)")
+                .midiLearnable(.trackSolo(index))
             TrackEffectsButton(track: track)
+                .midiLearnable(.trackEffects(index))
 
             Divider().frame(height: 16)
 
@@ -1556,9 +1584,12 @@ private struct SongTrackRowView: View {
                 Spacer(minLength: 4)
                 StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
                                  accessibilityLabel: "Mute \(track.name)")
+                    .midiLearnable(.trackMute(index))
                 StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
                                  accessibilityLabel: "Solo \(track.name)")
+                    .midiLearnable(.trackSolo(index))
                 TrackEffectsButton(track: track)
+                    .midiLearnable(.trackEffects(index))
             }
             HStack(spacing: 8) {
                 Text(part.tempoDivision.abbreviation).font(.caption2).foregroundStyle(.secondary)
@@ -1570,6 +1601,7 @@ private struct SongTrackRowView: View {
                 Spacer(minLength: 4)
                 Image(systemName: "speaker.wave.1").font(.caption2).foregroundStyle(.secondary)
                 StudioSlider.volume($track.mixer.volume, label: "\(track.name) volume")
+                    .midiLearnable(.trackVolume(index))
                     .frame(minWidth: 70, maxWidth: 150)
                 SongTrackMeter(trackID: track.id)
             }
@@ -1754,6 +1786,7 @@ private struct SongTrackRowView: View {
                     .font(.caption2).foregroundStyle(.secondary)
                     .frame(width: 28, alignment: .leading)
                 StudioSlider.volume($track.mixer.volume, label: "\(track.name) volume")
+                    .midiLearnable(.trackVolume(index))
             }
 
             HStack(spacing: 6) {
@@ -1767,12 +1800,16 @@ private struct SongTrackRowView: View {
                                abs(p) < 0.05 ? "C" : (p < 0 ? "L\(Int(abs(p) * 100))" : "R\(Int(p * 100))")
                            })
                     .accessibilityLabel("\(track.name) pan")
+                    .midiLearnable(.trackPan(index))
                 Spacer(minLength: 0)
                 StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
                                  accessibilityLabel: "Mute \(track.name)")
+                    .midiLearnable(.trackMute(index))
                 StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
                                  accessibilityLabel: "Solo \(track.name)")
+                    .midiLearnable(.trackSolo(index))
                 TrackEffectsButton(track: track)
+                    .midiLearnable(.trackEffects(index))
             }
 
             // Level meter spans the row beneath the controls, where it has room to read.

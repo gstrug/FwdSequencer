@@ -33,6 +33,7 @@ let package = Package(
                 "Models/Models.swift",
                 "Models/SongValidation.swift",
                 "Models/SongTemplates.swift",
+                "Models/MIDIControl.swift",
                 "Engine/SequencerRandom.swift",
                 "Engine/StepGenerator.swift",
                 "Engine/MusicalTimeline.swift",

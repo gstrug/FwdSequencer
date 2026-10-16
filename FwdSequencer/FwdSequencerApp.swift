@@ -24,6 +24,11 @@ struct FwdSequencerApp: App {
                 .environmentObject(songStore)
                 .environmentObject(songStore.levels)
                 .environmentObject(songStore.playback)
+                .onAppear {
+                    // MIDI controllers: listen from launch, so the MIDI page lists them.
+                    // What they act on is attached by the song screen while it is open.
+                    MIDIControlCenter.shared.start()
+                }
         }
     }
 }

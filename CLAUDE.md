@@ -78,6 +78,15 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   deliberately split into `LevelMonitor`/`PlaybackMonitor` so meters don't re-render
   the whole UI.
 - `Views/` SwiftUI. `Bridge/` is a tiny Objective-C shim needed to open plugin UIs.
+- **MIDI controller input and MIDI Learn** (added 2026-10-16): `Models/MIDIControl.swift`
+  (portable and unit-tested: decoding, links, scaling, pickup, the built-in
+  nanoKONTROL2 template), `Engine/MIDIInputManager.swift` (CoreMIDI, all sources),
+  `Store/MIDIControlCenter.swift` (templates per device, Learn, applying to the song,
+  batched onto the main thread), `Views/MIDILearnable.swift` (`.midiLearnable(target)`,
+  Learn button and banner), `Views/MIDISettingsView.swift` (Settings ▸ MIDI Controllers
+  & Clock). Links are app-wide in UserDefaults and address tracks **by position**.
+  Controllers act only while a song is open (set in `ProjectBrowserView`) and are
+  ignored while instruments restore (`isLoading`). Not yet checked on device.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI
   (`.github/workflows/validate.yml`) runs `swift test` and a simulator build on every
   push/PR.
