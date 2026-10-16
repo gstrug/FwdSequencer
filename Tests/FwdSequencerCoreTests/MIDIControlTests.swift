@@ -174,4 +174,93 @@ final class MIDIControlTests: XCTestCase {
         // The fader on screen was dragged to 0.9; the knob, still at 0.5, must not jump it.
         XCTAssertFalse(pickup.shouldApply(m, incoming: 0.52, current: 0.9))
     }
+
+    // MARK: Keys
+
+    private func note(_ n: Int, _ velocity: Int, channel: Int = 1) -> MIDIControlMessage {
+        MIDIControlMessage(kind: .note, channel: channel, number: n, value: velocity)
+    }
+
+    private func routing(_ device: String, plays id: UUID) -> MIDIKeyRouting {
+        var r = MIDIKeyRouting()
+        _ = r.reconfigure { $0.instruments = [device: id]; $0.paused = false }
+        return r
+    }
+
+    func testKeysPlayTheirInstrumentAndReleaseIt() {
+        let synth = UUID()
+        var r = routing("Keys", plays: synth)
+        let on = r.route(device: "Keys", note(60, 90))
+        XCTAssertEqual(on.actions, [.play(synth, note: 60, velocity: 90)])
+        XCTAssertFalse(on.passOn, "nothing for the main thread to do")
+        XCTAssertEqual(r.route(device: "Keys", note(60, 0)).actions, [.stop(synth, note: 60)])
+        XCTAssertEqual(r.heldCount, 0)
+    }
+
+    func testOtherDevicesAndControlChangesAreLeftAlone() {
+        var r = routing("Keys", plays: UUID())
+        XCTAssertEqual(r.route(device: "nanoKONTROL2", note(60, 90)), .init(passOn: true))
+        XCTAssertEqual(r.route(device: "Keys", .init(kind: .controlChange, channel: 1, number: 7, value: 3)),
+                       .init(passOn: true))
+    }
+
+    func testLinkedNotesBelongToTheirLink() {
+        let synth = UUID()
+        var r = routing("Keys", plays: synth)
+        _ = r.reconfigure { $0.linkedNotes = ["Keys": [MIDIControlSource(kind: .note, channel: 1, number: 36)]] }
+        XCTAssertEqual(r.route(device: "Keys", note(36, 100)), .init(passOn: true))
+        XCTAssertEqual(r.route(device: "Keys", note(37, 100)).actions, [.play(synth, note: 37, velocity: 100)])
+    }
+
+    func testNothingPlaysWhilePausedLearningOrDisabled() {
+        var r = routing("Keys", plays: UUID())
+        _ = r.reconfigure { $0.paused = true }
+        XCTAssertTrue(r.route(device: "Keys", note(60, 90)).actions.isEmpty)
+        _ = r.reconfigure { $0.paused = false; $0.learning = true }
+        XCTAssertEqual(r.route(device: "Keys", note(60, 90)), .init(passOn: true), "Learn gets it")
+        _ = r.reconfigure { $0.learning = false; $0.disabledDevices = ["Keys"] }
+        XCTAssertTrue(r.route(device: "Keys", note(60, 90)).actions.isEmpty)
+    }
+
+    func testWriteNotesPassesPressesOnAsWellAsPlaying() {
+        var r = routing("Keys", plays: UUID())
+        _ = r.reconfigure { $0.writingNotes = true }
+        let on = r.route(device: "Keys", note(64, 80))
+        XCTAssertEqual(on.actions.count, 1)
+        XCTAssertTrue(on.passOn)
+    }
+
+    func testReleaseGoesWhereThePressWentAndRoutingChangesReleaseHeldNotes() {
+        let first = UUID(), second = UUID()
+        var r = routing("Keys", plays: first)
+        _ = r.route(device: "Keys", note(60, 90))
+        _ = r.route(device: "Keys", note(62, 90))
+        // Switching the keys to another track releases what was sounding on the first…
+        let released = r.reconfigure { $0.instruments = ["Keys": second] }
+        XCTAssertEqual(Set(released.map { "\($0)" }),
+                       Set([MIDIKeyRouting.Action.stop(first, note: 60), .stop(first, note: 62)].map { "\($0)" }))
+        // …so a later release has nothing left to stop and does not reach the new one.
+        XCTAssertTrue(r.route(device: "Keys", note(60, 0)).actions.isEmpty)
+        // A setting that doesn't move the keys leaves held notes alone.
+        _ = r.route(device: "Keys", note(65, 90))
+        XCTAssertTrue(r.reconfigure { $0.writingNotes = true }.isEmpty)
+        XCTAssertEqual(r.route(device: "Keys", note(65, 0)).actions, [.stop(second, note: 65)])
+    }
+
+    func testRepeatedNoteOnEndsTheFirstSoNothingHangs() {
+        let synth = UUID()
+        var r = routing("Keys", plays: synth)
+        _ = r.route(device: "Keys", note(60, 90))
+        XCTAssertEqual(r.route(device: "Keys", note(60, 70)).actions,
+                       [.stop(synth, note: 60), .play(synth, note: 60, velocity: 70)])
+        XCTAssertEqual(r.heldCount, 1)
+    }
+
+    func testKeysDestinationRoundTrips() throws {
+        let all: [MIDIKeysDestination] = [.off, .playKeyboard, .track(4)]
+        let data = try JSONEncoder().encode(["a": all[0], "b": all[1], "c": all[2]])
+        let back = try JSONDecoder().decode([String: MIDIKeysDestination].self, from: data)
+        XCTAssertEqual(back, ["a": .off, "b": .playKeyboard, "c": .track(4)])
+        XCTAssertEqual(MIDIKeysDestination.track(4).displayName, "Track 5")
+    }
 }

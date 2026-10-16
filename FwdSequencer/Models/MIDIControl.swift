@@ -61,6 +61,8 @@ nonisolated enum MIDIControlTarget: Codable, Hashable {
     // Sections, by position.
     case section(Int)
     case previousSection, nextSection
+    // Keys
+    case writeNotes
 
     /// Continuous targets take the knob or fader's position; the rest act on a press.
     var isContinuous: Bool {
@@ -90,6 +92,7 @@ nonisolated enum MIDIControlTarget: Codable, Hashable {
         case .section(let i):       return "Section \(i + 1)"
         case .previousSection:      return "Previous Section"
         case .nextSection:          return "Next Section"
+        case .writeNotes:           return "Write Notes"
         }
     }
 }
@@ -200,6 +203,112 @@ nonisolated struct MIDIControllerTemplate: Codable, Identifiable, Hashable {
     func suits(deviceNamed deviceName: String) -> Bool {
         guard let hint = deviceNameHint, !hint.isEmpty else { return false }
         return deviceName.range(of: hint, options: .caseInsensitive) != nil
+    }
+}
+
+// MARK: - Keys
+
+/// Where a controller's keys go when they are not linked to a control.
+nonisolated enum MIDIKeysDestination: Codable, Hashable {
+    /// Keys do nothing (unless linked with Learn).
+    case off
+    /// The Play dock's own instrument.
+    case playKeyboard
+    /// A track's instrument, by position (0-based; shown as 1-based), like links.
+    case track(Int)
+
+    var displayName: String {
+        switch self {
+        case .off:              return "Off"
+        case .playKeyboard:     return "Play Keyboard"
+        case .track(let i):     return "Track \(i + 1)"
+        }
+    }
+}
+
+/// Decides, for each note from a controller, which instrument sounds it.
+///
+/// Runs on CoreMIDI's thread so a key sounds at once rather than waiting for the main
+/// thread; the app keeps `config` up to date from there. Pure, so it is tested.
+nonisolated struct MIDIKeyRouting {
+    struct Config: Equatable {
+        /// Per device: the instrument its keys play. No entry: its keys don't play.
+        var instruments: [String: UUID] = [:]
+        /// Per device: the note messages a Learn link uses. Those belong to the link.
+        var linkedNotes: [String: Set<MIDIControlSource>] = [:]
+        var disabledDevices: Set<String> = []
+        /// MIDI Learn on: the next note is for linking, not for playing.
+        var learning = false
+        /// Write Notes on: a key also sets or clears that note in the track.
+        var writingNotes = false
+        /// No song open, or instruments restoring: keys must not reach a plugin.
+        var paused = true
+    }
+
+    enum Action: Equatable {
+        case play(UUID, note: UInt8, velocity: UInt8)
+        case stop(UUID, note: UInt8)
+    }
+
+    struct Decision: Equatable {
+        var actions: [Action] = []
+        /// Whether the message still goes on to the main thread (links, Learn, Write Notes).
+        var passOn: Bool
+    }
+
+    private struct Held: Equatable { var instrument: UUID; var note: UInt8 }
+
+    private(set) var config = Config()
+    /// Notes sounding, so each release reaches the instrument its press did — even if
+    /// the routing changed while the key was down.
+    private var held: [String: Held] = [:]
+
+    var heldCount: Int { held.count }
+
+    mutating func route(device: String, _ message: MIDIControlMessage) -> Decision {
+        guard message.kind == .note else { return Decision(passOn: true) }
+        let key = "\(device)|\(message.channel)|\(message.number)"
+        let note = UInt8(clamping: message.number)
+
+        if !message.isPress {
+            if let h = held.removeValue(forKey: key) {
+                return Decision(actions: [.stop(h.instrument, note: h.note)], passOn: false)
+            }
+            return Decision(passOn: true)   // a link may want the release (trigger pads)
+        }
+        if config.learning || config.disabledDevices.contains(device) { return Decision(passOn: true) }
+        if config.linkedNotes[device]?.contains(MIDIControlSource(message)) == true {
+            return Decision(passOn: true)
+        }
+        guard !config.paused, let instrument = config.instruments[device] else {
+            return Decision(passOn: true)
+        }
+        var actions: [Action] = []
+        // A second note-on without a release in between: end the first, or it hangs.
+        if let previous = held[key] { actions.append(.stop(previous.instrument, note: previous.note)) }
+        held[key] = Held(instrument: instrument, note: note)
+        actions.append(.play(instrument, note: note, velocity: UInt8(clamping: max(1, message.value))))
+        return Decision(actions: actions, passOn: config.writingNotes)
+    }
+
+    /// Change the configuration. Notes still sounding are released when where keys go
+    /// changes, when playing pauses, or when Learn starts — nothing is left hanging.
+    mutating func reconfigure(_ change: (inout Config) -> Void) -> [Action] {
+        let before = config
+        change(&config)
+        let shouldRelease = config.instruments != before.instruments
+            || config.paused != before.paused
+            || (config.learning && !before.learning)
+            || config.disabledDevices != before.disabledDevices
+        return shouldRelease ? releaseAll() : []
+    }
+
+    mutating func releaseAll() -> [Action] {
+        let actions = held.values
+            .sorted { ($0.instrument.uuidString, $0.note) < ($1.instrument.uuidString, $1.note) }
+            .map { Action.stop($0.instrument, note: $0.note) }
+        held.removeAll()
+        return actions
     }
 }
 

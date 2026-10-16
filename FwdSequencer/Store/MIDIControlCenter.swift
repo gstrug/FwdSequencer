@@ -17,20 +17,24 @@ final class MIDIControlCenter: ObservableObject {
 
     /// Controllers and keyboards currently connected.
     @Published private(set) var sources: [MIDIInputManager.Source] = [] {
-        didSet { learn.linksChanged() }
+        didSet { learn.linksChanged(); refreshKeyRouting() }
     }
     /// Every template: the built-ins, then the user's own.
     @Published private(set) var templates: [MIDIControllerTemplate] = [] {
-        didSet { learn.linksChanged() }
+        didSet { learn.linksChanged(); refreshKeyRouting() }
     }
     /// Device name → template id. A device with no entry uses a built-in that suits it,
     /// if there is one.
     @Published private(set) var assignments: [String: UUID] = [:] {
-        didSet { learn.linksChanged() }
+        didSet { learn.linksChanged(); refreshKeyRouting() }
     }
     /// Devices switched off in MIDI settings, by name.
     @Published private(set) var disabledDevices: Set<String> = [] {
-        didSet { learn.linksChanged() }
+        didSet { learn.linksChanged(); refreshKeyRouting() }
+    }
+    /// Device name → where its keys go. A device with no entry: Off.
+    @Published private(set) var keyDestinations: [String: MIDIKeysDestination] = [:] {
+        didSet { refreshKeyRouting() }
     }
     /// When each device last sent something, for its activity light.
     @Published private(set) var lastActivity: [String: Date] = [:]
@@ -44,8 +48,10 @@ final class MIDIControlCenter: ObservableObject {
     /// belongs to the transport bar, so it listens for this rather than it being done here.
     let recordRequests = PassthroughSubject<Void, Never>()
 
-    /// The song store controls apply to — the song that is open.
-    weak var songStore: SongStore?
+    /// The song store controls apply to — the song that is open. Nil from the song list.
+    weak var songStore: SongStore? {
+        didSet { songStoreChanged() }
+    }
 
     // MARK: Private
 
@@ -53,14 +59,25 @@ final class MIDIControlCenter: ObservableObject {
     private var messageQueue: MIDIMessageQueue!
     private var pickup = MIDIPickup()
     private var tapTimes: [Date] = []
+    /// Plays keys straight from CoreMIDI's thread; kept up to date from here.
+    private let keyRouter = MIDIKeyRouter()
+    private var songObservers: Set<AnyCancellable> = []
+    private var learnObservers: Set<AnyCancellable> = []
 
     private static let templatesKey = "MIDIControllerTemplates.v1"
     private static let assignmentsKey = "MIDIControllerAssignments.v1"
     private static let disabledKey = "MIDIDisabledDevices.v1"
+    private static let keysKey = "MIDIKeyDestinations.v1"
 
     private init() {
         loadSettings()
         messageQueue = MIDIMessageQueue { [weak self] batch in self?.handle(batch) }
+        // Learn and Write Notes change how keys are routed. Received on the next main
+        // turn, because @Published announces a change before the value is stored.
+        learn.$isOn.combineLatest(learn.$writingNotes)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshKeyRouting() }
+            .store(in: &learnObservers)
     }
 
     /// Start listening. Called once the app is up.
@@ -69,7 +86,12 @@ final class MIDIControlCenter: ObservableObject {
             Task { @MainActor in self?.sources = list }
         }
         let queue: MIDIMessageQueue = messageQueue
-        input.onMessage = { source, message in queue.push(source, message) }
+        let router: MIDIKeyRouter = keyRouter
+        input.onMessage = { source, message in
+            // Keys are played here, on the MIDI thread, so they sound at once. Whatever
+            // still needs the app (links, Learn, Write Notes) goes on to the main thread.
+            if router.receive(device: source.name, message) { queue.push(source, message) }
+        }
         input.start()
         sources = input.sources
     }
@@ -102,6 +124,89 @@ final class MIDIControlCenter: ObservableObject {
     }
 
     func isEnabled(_ name: String) -> Bool { !disabledDevices.contains(name) }
+
+    // MARK: Keys
+
+    func keysDestination(forDevice name: String) -> MIDIKeysDestination {
+        keyDestinations[name] ?? .off
+    }
+
+    func setKeysDestination(_ destination: MIDIKeysDestination, forDevice name: String) {
+        keyDestinations[name] = destination
+        saveSettings()
+    }
+
+    /// The first connected controller whose keys play a track, for the Write Notes strip.
+    var noteWritingTarget: (device: String, trackIndex: Int)? {
+        for source in sources where isEnabled(source.name) {
+            if case .track(let i) = keysDestination(forDevice: source.name) { return (source.name, i) }
+        }
+        return nil
+    }
+
+    private func songStoreChanged() {
+        songObservers.removeAll()
+        if let store = songStore {
+            // Track list or Play instrument changed, or instruments started or finished
+            // restoring: the keys' instruments need working out again.
+            store.$song
+                .map { song in song.tracks.map(\.id) + [song.performance?.id].compactMap { $0 } }
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.refreshKeyRouting() }
+                .store(in: &songObservers)
+            store.$isLoading
+                .removeDuplicates()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in self?.refreshKeyRouting() }
+                .store(in: &songObservers)
+        } else {
+            // Song closed: Learn and Write Notes end with it.
+            learn.isOn = false
+            learn.writingNotes = false
+        }
+        refreshKeyRouting()
+    }
+
+    /// Tell the MIDI thread where each controller's keys go now.
+    private func refreshKeyRouting() {
+        let store = songStore
+        var instruments: [String: UUID] = [:]
+        var linked: [String: Set<MIDIControlSource>] = [:]
+        var needsPlayInstrument = false
+        for source in sources where isEnabled(source.name) {
+            if let t = template(forDevice: source.name) {
+                linked[source.name] = Set(t.mappings.map(\.source).filter { $0.kind == .note })
+            }
+            guard let store else { continue }
+            switch keysDestination(forDevice: source.name) {
+            case .off:
+                break
+            case .playKeyboard:
+                if let id = store.song.performance?.id { instruments[source.name] = id }
+                else { needsPlayInstrument = true }
+            case .track(let i):
+                if store.song.tracks.indices.contains(i) { instruments[source.name] = store.song.tracks[i].id }
+            }
+        }
+        let paused = store.map { $0.isLoading } ?? true
+        let learning = learn.isOn
+        let writing = learn.writingNotes
+        let disabled = disabledDevices
+        keyRouter.reconfigure { c in
+            c.instruments = instruments
+            c.linkedNotes = linked
+            c.disabledDevices = disabled
+            c.learning = learning
+            c.writingNotes = writing
+            c.paused = paused
+        }
+        // The Play keyboard's instrument is made the first time it is needed, as the
+        // Play dock does. Later, not now: it changes the song, which may be publishing.
+        if needsPlayInstrument, let store, !store.isLoading {
+            DispatchQueue.main.async { store.ensurePerformanceInstrument() }
+        }
+    }
 
     /// A copy of a template under a new name — "save as" for a learned layout, or a way
     /// to start your own from a built-in.
@@ -193,8 +298,16 @@ final class MIDIControlCenter: ObservableObject {
                 makeLink(target, from: source, message)
                 continue
             }
-            guard let template = template(forDevice: source.name) else { continue }
-            for mapping in template.mappings(matching: message) {
+            let mappings = template(forDevice: source.name)?.mappings(matching: message) ?? []
+            if mappings.isEmpty {
+                // A key nothing is linked to: with Write Notes on, it sets or clears that
+                // note in the track the controller's keys play.
+                if message.kind == .note, message.isPress, learn.writingNotes {
+                    writeNote(message.number, fromDevice: source.name)
+                }
+                continue
+            }
+            for mapping in mappings {
                 if mapping.target.isContinuous {
                     let key = "\(source.name)|\(message.channel)|\(message.number)"
                     guard lastContinuous[key] == i || message.kind == .note else { continue }
@@ -312,8 +425,39 @@ final class MIDIControlCenter: ObservableObject {
             store.selectedSection = max(0, store.selectedSection - 1)
         case .nextSection:
             store.selectedSection = max(0, min(store.song.sections.count - 1, store.selectedSection + 1))
+        case .writeNotes:
+            learn.writingNotes.toggle()
         case .tempo, .masterVolume, .trackVolume, .trackPan:
             break   // continuous, handled above
+        }
+    }
+
+    /// Set or clear a note in the selected section of the track a device's keys play —
+    /// exactly what tapping that key on the track's on-screen keyboard does, including
+    /// leaving out notes the track's scale does not allow.
+    private func writeNote(_ midi: Int, fromDevice name: String) {
+        guard let store = activeStore,
+              case .track(let index) = keysDestination(forDevice: name),
+              store.song.tracks.indices.contains(index) else { return }
+        let trackID = store.song.tracks[index].id
+        let section = store.selectedSection
+        guard store.song.sections.indices.contains(section) else { return }
+
+        let existing = store.song.sections[section].parts.firstIndex { $0.trackID == trackID }
+        var part = existing.map { store.song.sections[section].parts[$0] } ?? Part(trackID: trackID)
+        let semitone = ((midi % 12) - part.key + 12) % 12
+        guard part.scale.intervals.contains(semitone) else { return }
+
+        if let i = part.notePool.firstIndex(where: { $0.midiNote == midi }) {
+            part.notePool.remove(at: i)
+        } else {
+            let insertAt = part.notePool.firstIndex { $0.midiNote > midi } ?? part.notePool.endIndex
+            part.notePool.insert(NoteEntry(midiNote: midi), at: insertAt)
+        }
+        if let existing {
+            store.song.sections[section].parts[existing] = part
+        } else {
+            store.song.sections[section].parts.append(part)
         }
     }
 
@@ -352,6 +496,10 @@ final class MIDIControlCenter: ObservableObject {
             assignments = decoded
         }
         disabledDevices = Set(defaults.stringArray(forKey: Self.disabledKey) ?? [])
+        if let data = defaults.data(forKey: Self.keysKey),
+           let decoded = try? JSONDecoder().decode([String: MIDIKeysDestination].self, from: data) {
+            keyDestinations = decoded
+        }
     }
 
     private func saveSettings() {
@@ -364,6 +512,9 @@ final class MIDIControlCenter: ObservableObject {
             defaults.set(data, forKey: Self.assignmentsKey)
         }
         defaults.set(Array(disabledDevices).sorted(), forKey: Self.disabledKey)
+        if let data = try? JSONEncoder().encode(keyDestinations) {
+            defaults.set(data, forKey: Self.keysKey)
+        }
     }
 }
 
@@ -398,6 +549,41 @@ nonisolated final class MIDIMessageQueue: @unchecked Sendable {
     }
 }
 
+/// Plays controller keys from CoreMIDI's thread. MIDIKeyRouting decides; this holds it
+/// behind a lock and sends the notes to the engine, which is safe from any thread.
+nonisolated final class MIDIKeyRouter: @unchecked Sendable {
+    private let lock = OSAllocatedUnfairLock()
+    private var routing = MIDIKeyRouting()
+
+    /// On the MIDI thread. True when the message still needs the main thread.
+    func receive(device: String, _ message: MIDIControlMessage) -> Bool {
+        lock.lock()
+        let decision = routing.route(device: device, message)
+        lock.unlock()
+        perform(decision.actions)
+        return decision.passOn
+    }
+
+    func reconfigure(_ change: (inout MIDIKeyRouting.Config) -> Void) {
+        lock.lock()
+        let releases = routing.reconfigure(change)
+        lock.unlock()
+        perform(releases)
+    }
+
+    private func perform(_ actions: [MIDIKeyRouting.Action]) {
+        let engine = AudioEngineManager.shared
+        for action in actions {
+            switch action {
+            case .play(let id, let note, let velocity):
+                engine.playNote(trackID: id, midiNote: note, velocity: velocity)
+            case .stop(let id, let note):
+                engine.stopNote(trackID: id, midiNote: note)
+            }
+        }
+    }
+}
+
 /// MIDI Learn's on-screen state. See MIDIControlCenter.learn.
 @MainActor
 final class MIDILearnState: ObservableObject {
@@ -405,6 +591,8 @@ final class MIDILearnState: ObservableObject {
     @Published var isOn = false {
         didSet { if !isOn { target = nil } }
     }
+    /// Keys set or clear notes in the track they play, as well as sounding them.
+    @Published var writingNotes = false
     /// The control waiting to be linked to the next message that arrives.
     @Published var target: MIDIControlTarget?
     /// Bumped whenever links, templates or devices change, so the link labels on

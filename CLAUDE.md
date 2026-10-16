@@ -86,7 +86,14 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   Learn button and banner), `Views/MIDISettingsView.swift` (Settings ▸ MIDI Controllers
   & Clock). Links are app-wide in UserDefaults and address tracks **by position**.
   Controllers act only while a song is open (set in `ProjectBrowserView`) and are
-  ignored while instruments restore (`isLoading`). Not yet checked on device.
+  ignored while instruments restore (`isLoading`). Learn sits in Settings ▸ MIDI.
+- **Keys** (2026-10-16): per controller, "Keys play" Off / Play keyboard / Track N
+  (`MIDIKeysDestination`). Notes are played **on the CoreMIDI thread** by
+  `MIDIKeyRouter` (logic in the tested `MIDIKeyRouting`) straight into
+  `AudioEngineManager.playNote`, so they don't wait on the UI; held notes are released
+  when routing changes. Notes linked with Learn go to their link instead. "Write Notes
+  from Keys" (Settings ▸ MIDI, learnable) toggles pressed notes in that track's pool for
+  the selected section, obeying its scale, like the on-screen keyboard.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI
   (`.github/workflows/validate.yml`) runs `swift test` and a simulator build on every
   push/PR.

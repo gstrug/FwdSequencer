@@ -116,6 +116,7 @@ struct MIDILearnBanner: View {
                 // here, only to be linked.
                 learnChip("◀ Section", .previousSection)
                 learnChip("Section ▶", .nextSection)
+                learnChip("Write Notes", .writeNotes)
 
                 Button("Done") { learn.isOn = false }
                     .buttonStyle(.borderedProminent)
@@ -145,5 +146,45 @@ struct MIDILearnBanner: View {
             .padding(.vertical, 6)
             .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.15)))
             .midiLearnable(target)
+    }
+}
+
+/// Shown under the transport while Write Notes is on, so it is never on by accident:
+/// which track the keys are writing to, and Done.
+struct MIDIWriteNotesBanner: View {
+    @EnvironmentObject var songStore: SongStore
+    @ObservedObject private var learn = MIDIControlCenter.shared.learn
+
+    var body: some View {
+        if learn.writingNotes {
+            HStack(spacing: 12) {
+                Image(systemName: "music.note.list")
+                    .foregroundStyle(.orange)
+                Text(instruction)
+                    .font(.caption)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Done") { learn.writingNotes = false }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.orange)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.orange.opacity(0.12))
+            .overlay(alignment: .bottom) { Divider() }
+        }
+    }
+
+    private var instruction: String {
+        guard let target = MIDIControlCenter.shared.noteWritingTarget else {
+            return "Write Notes — first choose a track under Settings ▸ MIDI ▸ Controllers & Templates ▸ Keys play."
+        }
+        let tracks = songStore.song.tracks
+        let sections = songStore.song.sections
+        let track = tracks.indices.contains(target.trackIndex) ? tracks[target.trackIndex].name
+                                                              : "Track \(target.trackIndex + 1)"
+        let section = sections.indices.contains(songStore.selectedSection)
+            ? sections[songStore.selectedSection].name : "this section"
+        return "Write Notes — keys on \(target.device) add or remove notes in \(track), \(section)."
     }
 }

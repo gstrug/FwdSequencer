@@ -22,6 +22,7 @@ struct SongView: View {
 
             // Only there while MIDI Learn is on: what to do next, and Done.
             MIDILearnBanner()
+            MIDIWriteNotesBanner()
 
             ArrangementStrip()
 
@@ -510,6 +511,9 @@ private struct SongTransportBar: View {
             Menu {
                 Toggle(isOn: $midiLearn.isOn) {
                     Label("MIDI Learn", systemImage: "dot.radiowaves.left.and.right")
+                }
+                Toggle(isOn: $midiLearn.writingNotes) {
+                    Label("Write Notes from Keys", systemImage: "music.note.list")
                 }
                 Button { showingMIDISettings = true } label: {
                     Label("Controllers & Templates…", systemImage: "slider.horizontal.3")

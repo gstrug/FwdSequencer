@@ -71,7 +71,7 @@ struct MIDISettingsView: View {
         } header: {
             Text("Controllers")
         } footer: {
-            Text("Each controller uses one template. Load switches it to another; Save As keeps its current links under a new name. Links you make with MIDI Learn are saved into the template straight away. The nanoKONTROL2 is set up automatically. Tracks are linked by position, so Track 1 is the top track in every song.")
+            Text("Each controller uses one template. Load switches it to another; Save As keeps its current links under a new name. Links you make with MIDI Learn are saved into the template straight away. The nanoKONTROL2 is set up automatically. Keys play sends a keyboard's notes to the Play keyboard's instrument or a track's; keys linked with Learn keep doing what they are linked to. Tracks are chosen by position, so Track 1 is the top track in every song.")
         }
     }
 
@@ -105,8 +105,39 @@ struct MIDISettingsView: View {
             // would all fire together.
             .buttonStyle(.bordered)
             .disabled(!center.isEnabled(source.name))
+
+            Picker(selection: Binding(
+                get: { center.keysDestination(forDevice: source.name) },
+                set: { center.setKeysDestination($0, forDevice: source.name) }
+            )) {
+                ForEach(keyChoices(forDevice: source.name), id: \.self) { choice in
+                    Text(keyChoiceName(choice)).tag(choice)
+                }
+            } label: {
+                Label("Keys play", systemImage: "pianokeys")
+            }
+            .pickerStyle(.menu)
+            .disabled(!center.isEnabled(source.name))
         }
         .padding(.vertical, 2)
+    }
+
+    /// Off, the Play keyboard, and every track in the open song — plus the device's
+    /// current choice, if it points past the last track of this song.
+    private func keyChoices(forDevice name: String) -> [MIDIKeysDestination] {
+        var choices: [MIDIKeysDestination] = [.off, .playKeyboard]
+        choices += songStore.song.tracks.indices.map { .track($0) }
+        let current = center.keysDestination(forDevice: name)
+        if !choices.contains(current) { choices.append(current) }
+        return choices
+    }
+
+    /// "Track 2 · Bass" when the open song has that track.
+    private func keyChoiceName(_ choice: MIDIKeysDestination) -> String {
+        if case .track(let i) = choice, songStore.song.tracks.indices.contains(i) {
+            return "\(choice.displayName) · \(songStore.song.tracks[i].name)"
+        }
+        return choice.displayName
     }
 
     /// Templates to load onto a controller, the current one ticked.
