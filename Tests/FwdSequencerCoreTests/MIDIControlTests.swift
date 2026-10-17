@@ -353,6 +353,13 @@ final class MIDIControlTests: XCTestCase {
                        [.control(synth, status: 0xB0, data1: 64, data2: 127)])
         XCTAssertEqual(r.routeControl(device: "Keys", status: 0xE0, data1: 0, data2: 96),
                        [.control(synth, status: 0xE0, data1: 0, data2: 96)])
+        // Aftertouch, per note and for the whole keyboard.
+        XCTAssertEqual(r.routeControl(device: "Keys", status: 0xA1, data1: 60, data2: 70),
+                       [.control(synth, status: 0xA0, data1: 60, data2: 70)])
+        XCTAssertEqual(r.routeControl(device: "Keys", status: 0xD0, data1: 80, data2: 0),
+                       [.control(synth, status: 0xD0, data1: 80, data2: 0)])
+        // Program change is not passed on: it would switch the plugin's preset.
+        XCTAssertTrue(r.routeControl(device: "Keys", status: 0xC0, data1: 5, data2: 0).isEmpty)
         // Another device whose keys play nothing: nothing to send to.
         XCTAssertTrue(r.routeControl(device: "Other", status: 0xB0, data1: 1, data2: 50).isEmpty)
     }
@@ -385,7 +392,8 @@ final class MIDIControlTests: XCTestCase {
         let released = r.reconfigure { $0.instruments = ["Keys": other] }
         XCTAssertEqual(released, [.control(synth, status: 0xB0, data1: 64, data2: 0),
                                   .control(synth, status: 0xE0, data1: 0, data2: 64),
-                                  .control(synth, status: 0xB0, data1: 1, data2: 0)])
+                                  .control(synth, status: 0xB0, data1: 1, data2: 0),
+                                  .control(synth, status: 0xD0, data1: 0, data2: 0)])
         XCTAssertTrue(r.reconfigure { $0.instruments = ["Keys": synth] }.isEmpty,
                       "nothing was moved on the other one")
     }

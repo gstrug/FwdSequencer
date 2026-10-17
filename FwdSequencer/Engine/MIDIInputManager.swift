@@ -30,7 +30,7 @@ nonisolated final class MIDIInputManager: @unchecked Sendable {
     /// Called on the main thread whenever the set of sources changes.
     var onSourcesChanged: (([Source]) -> Void)?
 
-    /// Called on the CoreMIDI receive thread for pitch bend and per-note pressure, which
+    /// Called on the CoreMIDI receive thread for pitch bend and aftertouch, which
     /// cannot be linked to controls but are played through to instruments.
     var onPerformanceMessage: (@Sendable (Source, UInt8, UInt8, UInt8) -> Void)? {
         get { lock.lock(); defer { lock.unlock() }; return _onPerformanceMessage }
@@ -136,7 +136,7 @@ nonisolated final class MIDIInputManager: @unchecked Sendable {
                         let data2 = UInt8(word & 0x7F)
                         if let message = MIDIControlMessage(status: status, data1: data1, data2: data2) {
                             handler(source, message)
-                        } else if status & 0xF0 == 0xE0 || status & 0xF0 == 0xA0 {
+                        } else if [0xE0, 0xA0, 0xD0].contains(status & 0xF0) {
                             performance?(source, status, data1, data2)
                         }
                     }

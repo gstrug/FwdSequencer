@@ -323,13 +323,13 @@ nonisolated struct MIDIKeyRouting {
         return Decision(actions: actions, passOn: config.writingNotes)
     }
 
-    /// A controller (CC), pitch bend or per-note pressure from a device: played through
+    /// A controller (CC), pitch bend or aftertouch from a device: played through
     /// to the instrument its keys go to, unless a Learn link uses it, Learn is on, or
     /// nothing is listening. Channel-mode controllers (120 and up: all notes off and
     /// the like) are the app's to send, not a keyboard's.
     mutating func routeControl(device: String, status: UInt8, data1: UInt8, data2: UInt8) -> [Action] {
         let type = status & 0xF0
-        guard type == 0xB0 || type == 0xE0 || type == 0xA0 else { return [] }
+        guard type == 0xB0 || type == 0xE0 || type == 0xA0 || type == 0xD0 else { return [] }
         if config.learning || config.paused || config.disabledDevices.contains(device) { return [] }
         if type == 0xB0 {
             guard data1 < 120 else { return [] }
@@ -363,12 +363,13 @@ nonisolated struct MIDIKeyRouting {
             .map { Action.stop($0.instrument, note: $0.note) }
         held.removeAll()
         // Then put back anything a keyboard moved: pedal up, bend centred, mod wheel
-        // down. A sustain pedal held as the keys move elsewhere would otherwise leave
+        // and pressure down. A sustain pedal held as the keys move elsewhere would otherwise leave
         // the old instrument ringing for good.
         for id in touched.sorted(by: { $0.uuidString < $1.uuidString }) {
             actions.append(.control(id, status: 0xB0, data1: 64, data2: 0))
             actions.append(.control(id, status: 0xE0, data1: 0, data2: 64))
             actions.append(.control(id, status: 0xB0, data1: 1, data2: 0))
+            actions.append(.control(id, status: 0xD0, data1: 0, data2: 0))
         }
         touched.removeAll()
         return actions

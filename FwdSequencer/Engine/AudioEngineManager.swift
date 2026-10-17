@@ -1371,17 +1371,20 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
-    /// A sustain pedal, mod wheel or other controller, pitch bend or per-note pressure
-    /// from a MIDI keyboard, to the instrument its keys are playing. Sent on channel 1,
-    /// like the notes, and gated by suspension exactly as notes are: a plugin that is
-    /// still loading must not receive any MIDI at all. Only three-byte messages.
+    /// A sustain pedal, mod wheel or other controller, pitch bend, or aftertouch (per
+    /// note or whole keyboard) from a MIDI keyboard, to the instrument its keys are
+    /// playing. Sent on channel 1, like the notes, and gated by suspension exactly as
+    /// notes are: a plugin that is still loading must not receive any MIDI at all.
     func sendPerformanceMessage(trackID: UUID, status: UInt8, data1: UInt8, data2: UInt8) {
         let type = status & 0xF0
-        guard type == 0xB0 || type == 0xE0 || type == 0xA0 else { return }
+        guard type == 0xB0 || type == 0xE0 || type == 0xA0 || type == 0xD0 else { return }
         withLock {
             guard !isSuspended(trackID) else { return }
             if let unit = auv3Units[trackID] {
-                sendMIDI(to: unit, type, data1 & 0x7F, data2 & 0x7F)
+                // Channel pressure is the one two-byte message here.
+                sendMIDI(to: unit, type, data1 & 0x7F, data2 & 0x7F, length: type == 0xD0 ? 2 : 3)
+            } else if type == 0xD0 {
+                samplers[trackID]?.sendPressure(data1 & 0x7F, onChannel: 0)
             } else {
                 samplers[trackID]?.sendMIDIEvent(type, data1: data1 & 0x7F, data2: data2 & 0x7F)
             }
@@ -1403,17 +1406,21 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     ///
     /// Every message here is three bytes (note on/off, controller), passed as three
     /// values rather than an array so sending one allocates nothing.
-    private func sendMIDI(to unit: AVAudioUnit, _ status: UInt8, _ data1: UInt8, _ data2: UInt8) {
+    ///
+    /// `length` 2 is for the two-byte messages (channel pressure); data2 is then unused
+    /// and sent as 0 in the MIDI 1.0 packet, as the format requires.
+    private func sendMIDI(to unit: AVAudioUnit, _ status: UInt8, _ data1: UInt8, _ data2: UInt8,
+                          length: Int = 3) {
         let au = unit.auAudioUnit
         let when = AUEventSampleTimeImmediate
         if let legacyBlock = au.scheduleMIDIEventBlock {
-            var bytes = (status, data1, data2)
+            var bytes = (status, data1, length == 2 ? 0 : data2)
             withUnsafeBytes(of: &bytes) { ptr in
                 guard let base = ptr.bindMemory(to: UInt8.self).baseAddress else { return }
-                legacyBlock(when, 0, 3, base)
+                legacyBlock(when, 0, length, base)
             }
         } else if #available(iOS 15.0, *), let listBlock = au.scheduleMIDIEventListBlock {
-            sendMIDIList(to: listBlock, status, data1, data2, at: when)
+            sendMIDIList(to: listBlock, status, data1, length == 2 ? 0 : data2, at: when)
         } else {
             print("[FWD] No MIDI block available for \(au.audioUnitName ?? "unknown")")
         }

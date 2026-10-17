@@ -396,7 +396,7 @@ enum HelpTopic: String {
         case .midiSaveAs:
             return "Keeps this controller's current links under a new name and switches to the copy."
         case .midiKeysPlay:
-            return "Where this controller's keys go: Off, the Play keyboard, or a track. Sustain pedal, pitch bend and mod wheel go with them, unless linked with Learn."
+            return "Where this controller's keys go: Off, the Play keyboard, or a track. Sustain pedal, pitch bend, mod wheel and aftertouch go with them, unless linked with Learn."
         case .midiTemplates:
             return "Every saved template. Tap one to see its links; swipe or long press to copy, rename or delete. Factory ones can be copied, not changed."
         case .midiWriteNotes:
