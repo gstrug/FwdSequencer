@@ -151,43 +151,57 @@ struct MIDILearnBanner: View {
     }
 }
 
-/// Shown under the transport while Write Notes is on, so it is never on by accident:
-/// which track the keys are writing to, and Done.
+/// Shown under the transport while a track is armed for Write Notes, so it is never on
+/// by accident: which track and section notes are going into, and Done.
 struct MIDIWriteNotesBanner: View {
     @EnvironmentObject var songStore: SongStore
     @ObservedObject private var learn = MIDIControlCenter.shared.learn
 
     var body: some View {
-        if learn.writingNotes {
+        if let armed = learn.writingTrackID,
+           let track = songStore.song.tracks.first(where: { $0.id == armed }) {
             HStack(spacing: 12) {
                 Image(systemName: "music.note.list")
-                    .foregroundStyle(.orange)
-                Text(instruction)
+                    .foregroundStyle(.red)
+                Text(instruction(track))
                     .font(.caption)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                Button("Done") { learn.writingNotes = false }
+                Button("Done") { learn.writingTrackID = nil }
                     .buttonStyle(.borderedProminent)
-                    .tint(.orange)
+                    .tint(.red)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(Color.orange.opacity(0.12))
+            .background(Color.red.opacity(0.12))
             .overlay(alignment: .bottom) { Divider() }
         }
     }
 
-    private var instruction: String {
-        guard let target = MIDIControlCenter.shared.noteWritingTarget else {
-            return "Write Notes — first choose a track under Settings ▸ MIDI ▸ Controllers & Templates ▸ Keys play."
-        }
-        let tracks = songStore.song.tracks
+    private func instruction(_ track: SongTrack) -> String {
         let sections = songStore.song.sections
-        let track = tracks.indices.contains(target.trackIndex) ? tracks[target.trackIndex].name
-                                                              : "Track \(target.trackIndex + 1)"
         let section = sections.indices.contains(songStore.selectedSection)
             ? sections[songStore.selectedSection].name : "this section"
-        return "Write Notes — keys on \(target.device) add or remove notes in \(track), \(section)."
+        return "Writing notes into \(track.name), \(section). Keys on your controller add or remove notes and play \(track.name)."
+    }
+}
+
+/// A track's W button: arm it for Write Notes from Keys, one track at a time. Only
+/// shown while Write Notes from Keys is switched on in Settings ▸ MIDI.
+struct TrackWriteNotesButton: View {
+    let track: SongTrack
+    let index: Int
+    @ObservedObject private var learn = MIDIControlCenter.shared.learn
+
+    var body: some View {
+        if learn.writeNotesEnabled {
+            StudioToggleChip(title: "W",
+                             isOn: Binding(get: { learn.writingTrackID == track.id },
+                                           set: { _ in MIDIControlCenter.shared.toggleWriting(track.id) }),
+                             tint: .red,
+                             accessibilityLabel: "Write notes from keys into \(track.name)")
+                .midiLearnable(.trackWriteNotes(index))
+        }
     }
 }
 

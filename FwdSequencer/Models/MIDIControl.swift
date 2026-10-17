@@ -62,7 +62,10 @@ nonisolated enum MIDIControlTarget: Codable, Hashable {
     case section(Int)
     case previousSection, nextSection
     // Keys
+    /// Punch in and out: arm the last armed track for Write Notes, or disarm.
     case writeNotes
+    /// Arm this track for Write Notes (or disarm it), by position.
+    case trackWriteNotes(Int)
     // The Play keyboard, as a channel of its own like a track.
     case playVolume, playPan, playMute, playSolo, playEffects
     /// Show or hide the Play keyboard.
@@ -98,7 +101,8 @@ nonisolated enum MIDIControlTarget: Codable, Hashable {
         case .section(let i):       return "Section \(i + 1)"
         case .previousSection:      return "Previous Section"
         case .nextSection:          return "Next Section"
-        case .writeNotes:           return "Write Notes"
+        case .writeNotes:           return "Write Notes Punch In/Out"
+        case .trackWriteNotes(let i): return "Track \(i + 1) Write Notes"
         case .playVolume:           return "Play Keyboard Volume"
         case .playPan:              return "Play Keyboard Pan"
         case .playMute:             return "Play Keyboard Mute"
@@ -252,8 +256,12 @@ nonisolated struct MIDIKeyRouting {
         var disabledDevices: Set<String> = []
         /// MIDI Learn on: the next note is for linking, not for playing.
         var learning = false
-        /// Write Notes on: a key also sets or clears that note in the track.
+        /// Write Notes armed on a track: every device's keys (other than linked ones) play
+        /// that track and also go on to set or clear the note in it.
         var writingNotes = false
+        /// The armed track's instrument, or nil if it can't be heard (muted, or silenced
+        /// by a solo) — the notes are still written, just not sounded.
+        var armedInstrument: UUID? = nil
         /// No song open, or instruments restoring: keys must not reach a plugin.
         var paused = true
     }
@@ -293,7 +301,8 @@ nonisolated struct MIDIKeyRouting {
         if config.linkedNotes[device]?.contains(MIDIControlSource(message)) == true {
             return Decision(passOn: true)
         }
-        guard !config.paused, let instrument = config.instruments[device] else {
+        let destination = config.writingNotes ? config.armedInstrument : config.instruments[device]
+        guard !config.paused, let instrument = destination else {
             return Decision(passOn: true)
         }
         var actions: [Action] = []
@@ -313,6 +322,8 @@ nonisolated struct MIDIKeyRouting {
             || config.paused != before.paused
             || (config.learning && !before.learning)
             || config.disabledDevices != before.disabledDevices
+            || config.writingNotes != before.writingNotes
+            || config.armedInstrument != before.armedInstrument
         return shouldRelease ? releaseAll() : []
     }
 

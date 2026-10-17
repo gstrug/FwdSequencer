@@ -844,6 +844,8 @@ class SongStore: ObservableObject {
             }
         }
         audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
+        // With Write Notes from Keys on, a new track is armed straight away.
+        MIDIControlCenter.shared.trackAdded(track.id)
     }
 
     func deleteTrack(_ trackID: UUID) {

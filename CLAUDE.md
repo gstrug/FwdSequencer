@@ -91,9 +91,14 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   (`MIDIKeysDestination`). Notes are played **on the CoreMIDI thread** by
   `MIDIKeyRouter` (logic in the tested `MIDIKeyRouting`) straight into
   `AudioEngineManager.playNote`, so they don't wait on the UI; held notes are released
-  when routing changes. Notes linked with Learn go to their link instead. "Write Notes
-  from Keys" (Settings ▸ MIDI, learnable) toggles pressed notes in that track's pool for
-  the selected section, obeying its scale, like the on-screen keyboard.
+  when routing changes. Notes linked with Learn go to their link instead.
+- **Write Notes from Keys** (2026-10-17): a global switch (Settings ▸ MIDI, and on the
+  MIDI page; `learn.writeNotesEnabled`, UserDefaults) shows a red **W** on each track.
+  W arms one track at a time (`learn.writingTrackID`, not saved). While armed, every
+  enabled controller's unlinked keys play the armed track (overriding Keys play;
+  silent if it can't be heard) and toggle that note in its pool for the selected
+  section, obeying its scale. New tracks are armed on add. Targets `trackWriteNotes(N)`
+  and `writeNotes` (punch in/out, re-arming the last armed track).
 - **Play keyboard as a channel** (2026-10-16): `song.performance` gets a Mixer strip,
   M/S/FX on the Play dock, effects (SongStore `channelPath` finds a track or the
   performance), pan, and MIDI targets `play*`. Mute/solo for it is one rule,

@@ -77,7 +77,7 @@ final class MIDIControlCenter: ObservableObject {
         messageQueue = MIDIMessageQueue { [weak self] batch in self?.handle(batch) }
         // Learn and Write Notes change how keys are routed. Received on the next main
         // turn, because @Published announces a change before the value is stored.
-        learn.$isOn.combineLatest(learn.$writingNotes)
+        learn.$isOn.combineLatest(learn.$writingTrackID)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.refreshKeyRouting() }
             .store(in: &learnObservers)
@@ -139,12 +139,36 @@ final class MIDIControlCenter: ObservableObject {
         saveSettings()
     }
 
-    /// The first connected controller whose keys play a track, for the Write Notes strip.
-    var noteWritingTarget: (device: String, trackIndex: Int)? {
-        for source in sources where isEnabled(source.name) {
-            if case .track(let i) = keysDestination(forDevice: source.name) { return (source.name, i) }
+    // MARK: Write Notes
+
+    /// The W button on a track: arm it for Write Notes, or disarm it if it is the one
+    /// armed. One track at a time, so arming another moves it there.
+    func toggleWriting(_ trackID: UUID) {
+        if learn.writingTrackID == trackID {
+            learn.writingTrackID = nil
+        } else {
+            learn.writeNotesEnabled = true
+            learn.writingTrackID = trackID
+            learn.lastWritingTrackID = trackID
         }
-        return nil
+    }
+
+    /// A track was just added. With Write Notes switched on it is armed at once, so a
+    /// new track can be played straight in.
+    func trackAdded(_ trackID: UUID) {
+        guard learn.writeNotesEnabled else { return }
+        learn.writingTrackID = trackID
+        learn.lastWritingTrackID = trackID
+    }
+
+    /// Punch in and out from a controller button: disarm, or re-arm the track armed
+    /// last (the first track if none has been).
+    private func punchWriting(_ store: SongStore) {
+        if learn.writingTrackID != nil { learn.writingTrackID = nil; return }
+        let tracks = store.song.tracks
+        guard let id = tracks.first(where: { $0.id == learn.lastWritingTrackID })?.id ?? tracks.first?.id
+        else { return }
+        toggleWriting(id)
     }
 
     private func songStoreChanged() {
@@ -171,7 +195,7 @@ final class MIDIControlCenter: ObservableObject {
         } else {
             // Song closed: Learn and Write Notes end with it.
             learn.isOn = false
-            learn.writingNotes = false
+            learn.writingTrackID = nil
         }
         refreshKeyRouting()
     }
@@ -203,9 +227,22 @@ final class MIDIControlCenter: ObservableObject {
                 }
             }
         }
+        // The track armed for Write Notes: its keys sound only if it can be heard, but
+        // notes are written either way. Gone (deleted, or another song): disarm.
+        var writing = false
+        var armedInstrument: UUID?
+        if let armedID = learn.writingTrackID {
+            if let store, let armed = store.song.tracks.first(where: { $0.id == armedID }) {
+                writing = true
+                if store.song.isAudible(armed) { armedInstrument = armed.id }
+            } else if store != nil {
+                DispatchQueue.main.async { [weak self] in
+                    if self?.learn.writingTrackID == armedID { self?.learn.writingTrackID = nil }
+                }
+            }
+        }
         let paused = store.map { $0.isLoading } ?? true
         let learning = learn.isOn
-        let writing = learn.writingNotes
         let disabled = disabledDevices
         keyRouter.reconfigure { c in
             c.instruments = instruments
@@ -213,6 +250,7 @@ final class MIDIControlCenter: ObservableObject {
             c.disabledDevices = disabled
             c.learning = learning
             c.writingNotes = writing
+            c.armedInstrument = armedInstrument
             c.paused = paused
         }
         // The Play keyboard's instrument is made the first time it is needed, as the
@@ -314,10 +352,10 @@ final class MIDIControlCenter: ObservableObject {
             }
             let mappings = template(forDevice: source.name)?.mappings(matching: message) ?? []
             if mappings.isEmpty {
-                // A key nothing is linked to: with Write Notes on, it sets or clears that
-                // note in the track the controller's keys play.
-                if message.kind == .note, message.isPress, learn.writingNotes {
-                    writeNote(message.number, fromDevice: source.name)
+                // A key nothing is linked to: with a track armed for Write Notes, it sets
+                // or clears that note in the armed track.
+                if message.kind == .note, message.isPress, let armed = learn.writingTrackID {
+                    writeNote(message.number, into: armed)
                 }
                 continue
             }
@@ -450,7 +488,10 @@ final class MIDIControlCenter: ObservableObject {
         case .nextSection:
             store.selectedSection = max(0, min(store.song.sections.count - 1, store.selectedSection + 1))
         case .writeNotes:
-            learn.writingNotes.toggle()
+            punchWriting(store)
+        case .trackWriteNotes(let i):
+            guard store.song.tracks.indices.contains(i) else { return }
+            toggleWriting(store.song.tracks[i].id)
         case .playMute:
             store.song.performance?.mixer.isMuted.toggle()
         case .playSolo:
@@ -466,14 +507,16 @@ final class MIDIControlCenter: ObservableObject {
         }
     }
 
-    /// Set or clear a note in the selected section of the track a device's keys play —
-    /// exactly what tapping that key on the track's on-screen keyboard does, including
-    /// leaving out notes the track's scale does not allow.
-    private func writeNote(_ midi: Int, fromDevice name: String) {
+    /// Set or clear a note in the selected section of the armed track — exactly what
+    /// tapping that key on the track's on-screen keyboard does, including leaving out
+    /// notes the track's scale does not allow.
+    ///
+    /// It used to write to the track a controller's "Keys play" pointed at, and did
+    /// nothing at all when that was Off or the Play keyboard. Arming the track itself
+    /// makes where notes go visible and independent of that setting.
+    private func writeNote(_ midi: Int, into trackID: UUID) {
         guard let store = activeStore,
-              case .track(let index) = keysDestination(forDevice: name),
-              store.song.tracks.indices.contains(index) else { return }
-        let trackID = store.song.tracks[index].id
+              store.song.tracks.contains(where: { $0.id == trackID }) else { return }
         let section = store.selectedSection
         guard store.song.sections.indices.contains(section) else { return }
 
@@ -625,8 +668,20 @@ final class MIDILearnState: ObservableObject {
     @Published var isOn = false {
         didSet { if !isOn { target = nil } }
     }
-    /// Keys set or clear notes in the track they play, as well as sounding them.
-    @Published var writingNotes = false
+    /// Write Notes from Keys, switched on in Settings ▸ MIDI: tracks show their W
+    /// button. Remembered between launches. Switching it off disarms.
+    @Published var writeNotesEnabled = UserDefaults.standard.bool(forKey: "MIDIWriteNotesEnabled") {
+        didSet {
+            UserDefaults.standard.set(writeNotesEnabled, forKey: "MIDIWriteNotesEnabled")
+            if !writeNotesEnabled { writingTrackID = nil }
+        }
+    }
+    /// The one track armed for Write Notes: controller keys play it and set or clear
+    /// notes in it. Not saved: arming is for now, like a punch-in.
+    @Published var writingTrackID: UUID?
+    /// The track armed last, for punching back in from a controller button.
+    var lastWritingTrackID: UUID?
+    var writingNotes: Bool { writingTrackID != nil }
     /// The control waiting to be linked to the next message that arrives.
     @Published var target: MIDIControlTarget?
     /// Bumped whenever links, templates or devices change, so the link labels on

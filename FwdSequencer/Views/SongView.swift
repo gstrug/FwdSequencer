@@ -514,7 +514,7 @@ private struct SongTransportBar: View {
                 Toggle(isOn: $midiLearn.isOn) {
                     Label("MIDI Learn", systemImage: "dot.radiowaves.left.and.right")
                 }
-                Toggle(isOn: $midiLearn.writingNotes) {
+                Toggle(isOn: $midiLearn.writeNotesEnabled) {
                     Label("Write Notes from Keys", systemImage: "music.note.list")
                 }
                 Button { showingMIDISettings = true } label: {
@@ -1550,6 +1550,8 @@ private struct SongTrackRowView: View {
                 .midiLearnable(.trackSolo(index))
             TrackEffectsButton(track: track)
                 .midiLearnable(.trackEffects(index))
+            // Only there while Write Notes from Keys is on.
+            TrackWriteNotesButton(track: track, index: index)
 
             Divider().frame(height: 16)
 
@@ -1605,6 +1607,8 @@ private struct SongTrackRowView: View {
                     .midiLearnable(.trackSolo(index))
                 TrackEffectsButton(track: track)
                     .midiLearnable(.trackEffects(index))
+                // Only there while Write Notes from Keys is on.
+                TrackWriteNotesButton(track: track, index: index)
             }
             HStack(spacing: 8) {
                 Text(part.tempoDivision.abbreviation).font(.caption2).foregroundStyle(.secondary)
@@ -1822,6 +1826,8 @@ private struct SongTrackRowView: View {
                     .midiLearnable(.trackSolo(index))
                 TrackEffectsButton(track: track)
                     .midiLearnable(.trackEffects(index))
+                // Only there while Write Notes from Keys is on.
+                TrackWriteNotesButton(track: track, index: index)
             }
 
             // Level meter spans the row beneath the controls, where it has room to read.

@@ -5,6 +5,7 @@ import SwiftUI
 struct MIDISettingsView: View {
     @EnvironmentObject var songStore: SongStore
     @ObservedObject private var center = MIDIControlCenter.shared
+    @ObservedObject private var learn = MIDIControlCenter.shared.learn
     @Environment(\.dismiss) private var dismiss
 
     /// The template being renamed, and the name being typed.
@@ -16,6 +17,15 @@ struct MIDISettingsView: View {
             Form {
                 controllersSection
                 templatesSection
+                Section {
+                    Toggle(isOn: $learn.writeNotesEnabled) {
+                        Label("Write Notes from Keys", systemImage: "music.note.list")
+                    }
+                } header: {
+                    Text("Write Notes")
+                } footer: {
+                    Text("Adds a W button to every track. Tap W on a track to arm it — one track at a time: keys on any controller then play that track and add or remove notes in the section you are on, as tapping its keyboard does. A new track is armed as soon as you add it. Keys linked with Learn keep doing what they are linked to.")
+                }
                 Section {
                     Toggle(isOn: $songStore.midiClockEnabled) {
                         Label("MIDI Clock Output", systemImage: "cable.connector")

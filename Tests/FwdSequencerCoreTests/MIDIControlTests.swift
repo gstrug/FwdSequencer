@@ -222,12 +222,31 @@ final class MIDIControlTests: XCTestCase {
         XCTAssertTrue(r.route(device: "Keys", note(60, 90)).actions.isEmpty)
     }
 
-    func testWriteNotesPassesPressesOnAsWellAsPlaying() {
-        var r = routing("Keys", plays: UUID())
-        _ = r.reconfigure { $0.writingNotes = true }
+    func testArmedTrackTakesEveryDevicesKeysAndPassesThemOnToBeWritten() {
+        let own = UUID(), armed = UUID()
+        var r = routing("Keys", plays: own)
+        _ = r.reconfigure { $0.writingNotes = true; $0.armedInstrument = armed }
         let on = r.route(device: "Keys", note(64, 80))
-        XCTAssertEqual(on.actions.count, 1)
-        XCTAssertTrue(on.passOn)
+        XCTAssertEqual(on.actions, [.play(armed, note: 64, velocity: 80)], "plays the armed track, not Keys play's")
+        XCTAssertTrue(on.passOn, "and goes on to be written")
+        // A device whose keys play nothing (Keys play Off) still plays and writes it.
+        XCTAssertEqual(r.route(device: "Other", note(65, 70)).actions, [.play(armed, note: 65, velocity: 70)])
+    }
+
+    func testAnArmedTrackThatCannotBeHeardIsStillWritten() {
+        var r = routing("Keys", plays: UUID())
+        _ = r.reconfigure { $0.writingNotes = true; $0.armedInstrument = nil }   // muted
+        XCTAssertEqual(r.route(device: "Keys", note(64, 80)), .init(passOn: true))
+    }
+
+    func testArmingReleasesHeldNotesAndLinkedKeysStayWithTheirLink() {
+        let own = UUID(), armed = UUID()
+        var r = routing("Keys", plays: own)
+        _ = r.route(device: "Keys", note(60, 90))
+        XCTAssertEqual(r.reconfigure { $0.writingNotes = true; $0.armedInstrument = armed },
+                       [.stop(own, note: 60)])
+        _ = r.reconfigure { $0.linkedNotes = ["Keys": [MIDIControlSource(kind: .note, channel: 1, number: 36)]] }
+        XCTAssertEqual(r.route(device: "Keys", note(36, 100)), .init(passOn: true), "a pad, not a note")
     }
 
     func testReleaseGoesWhereThePressWentAndRoutingChangesReleaseHeldNotes() {
@@ -243,7 +262,7 @@ final class MIDIControlTests: XCTestCase {
         XCTAssertTrue(r.route(device: "Keys", note(60, 0)).actions.isEmpty)
         // A setting that doesn't move the keys leaves held notes alone.
         _ = r.route(device: "Keys", note(65, 90))
-        XCTAssertTrue(r.reconfigure { $0.writingNotes = true }.isEmpty)
+        XCTAssertTrue(r.reconfigure { $0.learning = false }.isEmpty)
         XCTAssertEqual(r.route(device: "Keys", note(65, 0)).actions, [.stop(second, note: 65)])
     }
 
@@ -316,7 +335,8 @@ final class MIDIControlTests: XCTestCase {
 
     func testNewTargetsRoundTrip() throws {
         let targets: [MIDIControlTarget] = [.playVolume, .playPan, .playMute, .playSolo,
-                                            .playEffects, .togglePlayDock, .triggerMode]
+                                            .playEffects, .togglePlayDock, .triggerMode,
+                                            .writeNotes, .trackWriteNotes(2)]
         let back = try JSONDecoder().decode([MIDIControlTarget].self, from: JSONEncoder().encode(targets))
         XCTAssertEqual(back, targets)
         XCTAssertTrue(MIDIControlTarget.playVolume.isContinuous)
