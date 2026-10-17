@@ -30,8 +30,16 @@ nonisolated final class MIDIInputManager: @unchecked Sendable {
     /// Called on the main thread whenever the set of sources changes.
     var onSourcesChanged: (([Source]) -> Void)?
 
+    /// Called on the CoreMIDI receive thread for pitch bend and per-note pressure, which
+    /// cannot be linked to controls but are played through to instruments.
+    var onPerformanceMessage: (@Sendable (Source, UInt8, UInt8, UInt8) -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return _onPerformanceMessage }
+        set { lock.lock(); _onPerformanceMessage = newValue; lock.unlock() }
+    }
+
     private let lock = OSAllocatedUnfairLock()
     private var _onMessage: (@Sendable (Source, MIDIControlMessage) -> Void)?
+    private var _onPerformanceMessage: (@Sendable (Source, UInt8, UInt8, UInt8) -> Void)?
     private var client = MIDIClientRef()
     private var port = MIDIPortRef()
     /// Connection token → source. The token rides along with every packet as the
@@ -108,6 +116,7 @@ nonisolated final class MIDIInputManager: @unchecked Sendable {
         lock.lock()
         let source = sourcesByToken[token]
         let handler = _onMessage
+        let performance = _onPerformanceMessage
         lock.unlock()
         guard let source, let handler else { return }
 
@@ -127,6 +136,8 @@ nonisolated final class MIDIInputManager: @unchecked Sendable {
                         let data2 = UInt8(word & 0x7F)
                         if let message = MIDIControlMessage(status: status, data1: data1, data2: data2) {
                             handler(source, message)
+                        } else if status & 0xF0 == 0xE0 || status & 0xF0 == 0xA0 {
+                            performance?(source, status, data1, data2)
                         }
                     }
                     i += Self.wordsInMessage(ofType: type)

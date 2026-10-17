@@ -342,4 +342,58 @@ final class MIDIControlTests: XCTestCase {
         XCTAssertTrue(MIDIControlTarget.playVolume.isContinuous)
         XCTAssertFalse(MIDIControlTarget.playMute.isContinuous)
     }
+
+    // MARK: Sustain, pitch bend, mod wheel
+
+    func testUnlinkedControllersAndBendPlayThroughOnChannelOne() {
+        let synth = UUID()
+        var r = routing("Keys", plays: synth)
+        // Sustain pedal down on channel 3: sent to the instrument with the channel stripped.
+        XCTAssertEqual(r.routeControl(device: "Keys", status: 0xB2, data1: 64, data2: 127),
+                       [.control(synth, status: 0xB0, data1: 64, data2: 127)])
+        XCTAssertEqual(r.routeControl(device: "Keys", status: 0xE0, data1: 0, data2: 96),
+                       [.control(synth, status: 0xE0, data1: 0, data2: 96)])
+        // Another device whose keys play nothing: nothing to send to.
+        XCTAssertTrue(r.routeControl(device: "Other", status: 0xB0, data1: 1, data2: 50).isEmpty)
+    }
+
+    func testLinkedControllersModeMessagesAndLearnAreNotPlayedThrough() {
+        var r = routing("Keys", plays: UUID())
+        _ = r.reconfigure {
+            $0.linkedControls = ["Keys": [MIDIControlSource(kind: .controlChange, channel: 1, number: 7)]]
+        }
+        XCTAssertTrue(r.routeControl(device: "Keys", status: 0xB0, data1: 7, data2: 100).isEmpty,
+                      "CC 7 is linked to a control")
+        XCTAssertTrue(r.routeControl(device: "Keys", status: 0xB0, data1: 123, data2: 0).isEmpty,
+                      "all notes off is the app's to send")
+        _ = r.reconfigure { $0.learning = true }
+        XCTAssertTrue(r.routeControl(device: "Keys", status: 0xB0, data1: 64, data2: 127).isEmpty)
+    }
+
+    func testControllersFollowTheArmedTrack() {
+        let armed = UUID()
+        var r = routing("Keys", plays: UUID())
+        _ = r.reconfigure { $0.writingNotes = true; $0.armedInstrument = armed }
+        XCTAssertEqual(r.routeControl(device: "Keys", status: 0xB0, data1: 64, data2: 127),
+                       [.control(armed, status: 0xB0, data1: 64, data2: 127)])
+    }
+
+    func testMovingTheKeysPutsPedalBendAndWheelBack() {
+        let synth = UUID(), other = UUID()
+        var r = routing("Keys", plays: synth)
+        _ = r.routeControl(device: "Keys", status: 0xB0, data1: 64, data2: 127)
+        let released = r.reconfigure { $0.instruments = ["Keys": other] }
+        XCTAssertEqual(released, [.control(synth, status: 0xB0, data1: 64, data2: 0),
+                                  .control(synth, status: 0xE0, data1: 0, data2: 64),
+                                  .control(synth, status: 0xB0, data1: 1, data2: 0)])
+        XCTAssertTrue(r.reconfigure { $0.instruments = ["Keys": synth] }.isEmpty,
+                      "nothing was moved on the other one")
+    }
+
+    func testWritingNotesPassesReleasesOnForChords() {
+        var r = routing("Keys", plays: UUID())
+        _ = r.reconfigure { $0.writingNotes = true; $0.armedInstrument = UUID() }
+        _ = r.route(device: "Keys", note(60, 90))
+        XCTAssertTrue(r.route(device: "Keys", note(60, 0)).passOn)
+    }
 }

@@ -66,6 +66,11 @@ final class MIDIControlCenter: ObservableObject {
     private let keyRouter = MIDIKeyRouter()
     private var songObservers: Set<AnyCancellable> = []
     private var learnObservers: Set<AnyCancellable> = []
+    /// Write Notes: the keys held down right now, and the first key of the current
+    /// press with whether it took a note out — so that a chord adds its notes rather
+    /// than toggling each one, and a note already in the track is left in.
+    private var writeKeysDown: Set<String> = []
+    private var chordStart: (note: Int, removed: Bool)?
 
     private static let templatesKey = "MIDIControllerTemplates.v1"
     private static let assignmentsKey = "MIDIControllerAssignments.v1"
@@ -79,7 +84,12 @@ final class MIDIControlCenter: ObservableObject {
         // turn, because @Published announces a change before the value is stored.
         learn.$isOn.combineLatest(learn.$writingTrackID)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.refreshKeyRouting() }
+            .sink { [weak self] _ in
+                // Armed elsewhere, or disarmed: any keys still down belong to before.
+                self?.writeKeysDown.removeAll()
+                self?.chordStart = nil
+                self?.refreshKeyRouting()
+            }
             .store(in: &learnObservers)
     }
 
@@ -94,6 +104,10 @@ final class MIDIControlCenter: ObservableObject {
             // Keys are played here, on the MIDI thread, so they sound at once. Whatever
             // still needs the app (links, Learn, Write Notes) goes on to the main thread.
             if router.receive(device: source.name, message) { queue.push(source, message) }
+        }
+        // Pitch bend and per-note pressure: only ever played through, never linked.
+        input.onPerformanceMessage = { source, status, data1, data2 in
+            router.receivePerformance(device: source.name, status: status, data1: data1, data2: data2)
         }
         input.start()
         sources = input.sources
@@ -205,10 +219,12 @@ final class MIDIControlCenter: ObservableObject {
         let store = songStore
         var instruments: [String: UUID] = [:]
         var linked: [String: Set<MIDIControlSource>] = [:]
+        var linkedControls: [String: Set<MIDIControlSource>] = [:]
         var needsPlayInstrument = false
         for source in sources where isEnabled(source.name) {
             if let t = template(forDevice: source.name) {
                 linked[source.name] = Set(t.mappings.map(\.source).filter { $0.kind == .note })
+                linkedControls[source.name] = Set(t.mappings.map(\.source).filter { $0.kind == .controlChange })
             }
             guard let store else { continue }
             switch keysDestination(forDevice: source.name) {
@@ -247,6 +263,7 @@ final class MIDIControlCenter: ObservableObject {
         keyRouter.reconfigure { c in
             c.instruments = instruments
             c.linkedNotes = linked
+            c.linkedControls = linkedControls
             c.disabledDevices = disabled
             c.learning = learning
             c.writingNotes = writing
@@ -353,9 +370,15 @@ final class MIDIControlCenter: ObservableObject {
             let mappings = template(forDevice: source.name)?.mappings(matching: message) ?? []
             if mappings.isEmpty {
                 // A key nothing is linked to: with a track armed for Write Notes, it sets
-                // or clears that note in the armed track.
-                if message.kind == .note, message.isPress, let armed = learn.writingTrackID {
-                    writeNote(message.number, into: armed)
+                // or clears that note in the armed track (a chord only adds).
+                if message.kind == .note, let armed = learn.writingTrackID {
+                    let key = "\(source.name)|\(message.channel)|\(message.number)"
+                    if message.isPress {
+                        writePress(message.number, key: key, into: armed)
+                    } else {
+                        writeKeysDown.remove(key)
+                        if writeKeysDown.isEmpty { chordStart = nil }
+                    }
                 }
                 continue
             }
@@ -514,19 +537,26 @@ final class MIDIControlCenter: ObservableObject {
     /// It used to write to the track a controller's "Keys play" pointed at, and did
     /// nothing at all when that was Off or the Play keyboard. Arming the track itself
     /// makes where notes go visible and independent of that setting.
-    private func writeNote(_ midi: Int, into trackID: UUID) {
+    ///
+    /// `adding` (a key in a chord): only ever adds — a note already there stays.
+    /// Returns true when a note was taken out.
+    @discardableResult
+    private func writeNote(_ midi: Int, into trackID: UUID, adding: Bool = false) -> Bool {
         guard let store = activeStore,
-              store.song.tracks.contains(where: { $0.id == trackID }) else { return }
+              store.song.tracks.contains(where: { $0.id == trackID }) else { return false }
         let section = store.selectedSection
-        guard store.song.sections.indices.contains(section) else { return }
+        guard store.song.sections.indices.contains(section) else { return false }
 
         let existing = store.song.sections[section].parts.firstIndex { $0.trackID == trackID }
         var part = existing.map { store.song.sections[section].parts[$0] } ?? Part(trackID: trackID)
         let semitone = ((midi % 12) - part.key + 12) % 12
-        guard part.scale.intervals.contains(semitone) else { return }
+        guard part.scale.intervals.contains(semitone) else { return false }
 
+        var removed = false
         if let i = part.notePool.firstIndex(where: { $0.midiNote == midi }) {
+            guard !adding else { return false }
             part.notePool.remove(at: i)
+            removed = true
         } else {
             let insertAt = part.notePool.firstIndex { $0.midiNote > midi } ?? part.notePool.endIndex
             part.notePool.insert(NoteEntry(midiNote: midi), at: insertAt)
@@ -536,6 +566,25 @@ final class MIDIControlCenter: ObservableObject {
         } else {
             store.song.sections[section].parts.append(part)
         }
+        return removed
+    }
+
+    /// A key pressed with Write Notes on. A single key toggles its note, as on screen.
+    /// A key pressed while another is still down is part of a chord: its note is only
+    /// ever added, and if the chord's first key took its note out, that is put back —
+    /// the first key could not know a chord was coming.
+    private func writePress(_ midi: Int, key: String, into trackID: UUID) {
+        writeKeysDown.remove(key)   // the same key again, without a release between
+        if writeKeysDown.isEmpty {
+            chordStart = (midi, writeNote(midi, into: trackID))
+        } else {
+            writeNote(midi, into: trackID, adding: true)
+            if let start = chordStart, start.removed {
+                writeNote(start.note, into: trackID, adding: true)
+                chordStart = (start.note, false)
+            }
+        }
+        writeKeysDown.insert(key)
     }
 
     /// The same averaging as the on-screen Tap button.
@@ -635,10 +684,24 @@ nonisolated final class MIDIKeyRouter: @unchecked Sendable {
     /// On the MIDI thread. True when the message still needs the main thread.
     func receive(device: String, _ message: MIDIControlMessage) -> Bool {
         lock.lock()
-        let decision = routing.route(device: device, message)
+        var decision = routing.route(device: device, message)
+        // A controller nothing is linked to — sustain, mod wheel — is played through too.
+        if message.kind == .controlChange {
+            decision.actions += routing.routeControl(
+                device: device, status: 0xB0 | UInt8((message.channel - 1) & 0x0F),
+                data1: UInt8(message.number), data2: UInt8(message.value))
+        }
         lock.unlock()
         perform(decision.actions)
         return decision.passOn
+    }
+
+    /// On the MIDI thread: pitch bend or per-note pressure, played through.
+    func receivePerformance(device: String, status: UInt8, data1: UInt8, data2: UInt8) {
+        lock.lock()
+        let actions = routing.routeControl(device: device, status: status, data1: data1, data2: data2)
+        lock.unlock()
+        perform(actions)
     }
 
     func reconfigure(_ change: (inout MIDIKeyRouting.Config) -> Void) {
@@ -656,6 +719,8 @@ nonisolated final class MIDIKeyRouter: @unchecked Sendable {
                 engine.playNote(trackID: id, midiNote: note, velocity: velocity)
             case .stop(let id, let note):
                 engine.stopNote(trackID: id, midiNote: note)
+            case .control(let id, let status, let data1, let data2):
+                engine.sendPerformanceMessage(trackID: id, status: status, data1: data1, data2: data2)
             }
         }
     }

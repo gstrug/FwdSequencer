@@ -1371,6 +1371,23 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
+    /// A sustain pedal, mod wheel or other controller, pitch bend or per-note pressure
+    /// from a MIDI keyboard, to the instrument its keys are playing. Sent on channel 1,
+    /// like the notes, and gated by suspension exactly as notes are: a plugin that is
+    /// still loading must not receive any MIDI at all. Only three-byte messages.
+    func sendPerformanceMessage(trackID: UUID, status: UInt8, data1: UInt8, data2: UInt8) {
+        let type = status & 0xF0
+        guard type == 0xB0 || type == 0xE0 || type == 0xA0 else { return }
+        withLock {
+            guard !isSuspended(trackID) else { return }
+            if let unit = auv3Units[trackID] {
+                sendMIDI(to: unit, type, data1 & 0x7F, data2 & 0x7F)
+            } else {
+                samplers[trackID]?.sendMIDIEvent(type, data1: data1 & 0x7F, data2: data2 & 0x7F)
+            }
+        }
+    }
+
     /// Always IMMEDIATE.
     ///
     /// Stamping a future `AUEventSampleTime` was tried and reverted. `scheduleMIDIEventBlock`

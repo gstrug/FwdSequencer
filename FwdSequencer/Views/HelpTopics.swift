@@ -264,7 +264,7 @@ enum HelpTopic: String {
         case .trackEffects:
             return "Tap to switch all the track's effects on or off; long press to add or edit them. Green: on. Orange: off or bypassed. With none, a tap opens the list."
         case .trackWrite:
-            return "Arms the track for Write Notes: keys on your MIDI controller play it and add or remove notes in this section. One track at a time."
+            return "Arms the track for Write Notes: keys on your MIDI controller play it and add or remove notes in this section. Play a chord to add notes without taking any out. One track at a time."
         case .trackTime:
             return "How long each step lasts, from four whole notes (4/1) down to a 32nd note. T means triplet."
         case .trackKeyScale:
@@ -396,7 +396,7 @@ enum HelpTopic: String {
         case .midiSaveAs:
             return "Keeps this controller's current links under a new name and switches to the copy."
         case .midiKeysPlay:
-            return "Where this controller's keys go: Off, the Play keyboard, or a track."
+            return "Where this controller's keys go: Off, the Play keyboard, or a track. Sustain pedal, pitch bend and mod wheel go with them, unless linked with Learn."
         case .midiTemplates:
             return "Every saved template. Tap one to see its links; swipe or long press to copy, rename or delete. Factory ones can be copied, not changed."
         case .midiWriteNotes:

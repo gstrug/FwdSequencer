@@ -99,6 +99,14 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   silent if it can't be heard) and toggle that note in its pool for the selected
   section, obeying its scale. New tracks are armed on add. Targets `trackWriteNotes(N)`
   and `writeNotes` (punch in/out, re-arming the last armed track).
+  Chords (a key pressed while another is down) only add notes; the chord's first key
+  is put back if it had toggled off (`writePress`). Releases reach the main thread
+  while writing for this.
+- **Performance controllers** (2026-10-17): unlinked CCs (not 120+), pitch bend and
+  poly pressure from a controller go to the same instrument as its keys
+  (`MIDIKeyRouting.routeControl` → `AudioEngineManager.sendPerformanceMessage`, channel
+  1, suspension-gated). Pedal up / bend centre / mod 0 are sent when the keys move away.
+  Channel pressure (2-byte) is not passed yet.
 - **Play keyboard as a channel** (2026-10-16): `song.performance` gets a Mixer strip,
   M/S/FX on the Play dock, effects (SongStore `channelPath` finds a track or the
   performance), pan, and MIDI targets `play*`. Mute/solo for it is one rule,
