@@ -1569,13 +1569,10 @@ private struct SongTrackRowView: View {
             // The strip takes ALL the remaining width — no trailing Spacer competing
             // with it for the slack — so it shows as many steps as the row can hold and
             // only scrolls once they overflow that.
-            if !indicatorSteps.isEmpty {
-                SongMiniSteps(trackID: track.id, steps: indicatorSteps)
-            } else {
-                Text("\(part.notePool.count) notes")
-                    .font(.caption2).foregroundStyle(.secondary)
-                Spacer()
-            }
+            // Always there, so the row keeps its height when the steps come and go —
+            // see SongMiniSteps.emptyLabel.
+            SongMiniSteps(trackID: track.id, steps: indicatorSteps,
+                          emptyLabel: "\(part.notePool.count) notes")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -1611,11 +1608,8 @@ private struct SongTrackRowView: View {
             }
             HStack(spacing: 8) {
                 Text(part.tempoDivision.abbreviation).font(.caption2).foregroundStyle(.secondary)
-                if !indicatorSteps.isEmpty {
-                    SongMiniSteps(trackID: track.id, steps: indicatorSteps)
-                } else {
-                    Text("\(part.notePool.count) notes").font(.caption2).foregroundStyle(.secondary)
-                }
+                SongMiniSteps(trackID: track.id, steps: indicatorSteps,
+                              emptyLabel: "\(part.notePool.count) notes")
                 Spacer(minLength: 4)
                 Image(systemName: "speaker.wave.1").font(.caption2).foregroundStyle(.secondary)
                 StudioSlider.volume($track.mixer.volume, label: "\(track.name) volume")
@@ -1868,9 +1862,8 @@ private struct SongTrackRowView: View {
                 .fixedSize(horizontal: true, vertical: false)
             }
 
-            if !indicatorSteps.isEmpty {
-                SongMiniSteps(trackID: track.id, steps: indicatorSteps, compact: false)
-            }
+            SongMiniSteps(trackID: track.id, steps: indicatorSteps, compact: false,
+                          emptyLabel: "No steps")
 
             SongKeyboard(
                 trackID: track.id,
@@ -1940,6 +1933,15 @@ private struct SongMiniSteps: View {
     let trackID: UUID
     let steps: [Step]
     var compact: Bool = true
+    /// Shown in place of the steps when there are none, in the same font and padding as
+    /// a step chip, so the strip is exactly as tall either way.
+    ///
+    /// The strip used to be left out when a part had no steps. While playing it shows
+    /// the section that is SOUNDING and when stopped the one SELECTED, so whenever one of
+    /// those had steps and the other did not — and Stop returns playback to the first
+    /// section — starting or stopping made the strip vanish or reappear, and every track
+    /// below jumped by its height.
+    var emptyLabel: String = ""
     @EnvironmentObject var playback: PlaybackMonitor
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -1969,6 +1971,13 @@ private struct SongMiniSteps: View {
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: chipSpacing) {
+                    if steps.isEmpty {
+                        Text(emptyLabel.isEmpty ? " " : emptyLabel)
+                            .font(.system(size: size, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 4).padding(.vertical, 2)
+                            .lineLimit(1)
+                    }
                     ForEach(Array(steps.enumerated()), id: \.element.id) { idx, step in
                         let isActive = activeStep == idx
                         Text(step.label)
