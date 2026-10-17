@@ -862,6 +862,8 @@ private struct SectionSettingsBar: View {
     @EnvironmentObject var songStore: SongStore
     @State private var showSnapshots = false
     @State private var showShape = false
+    /// The selected section's length, being set from the bars button.
+    @State private var editingBars: SectionTarget?
 
     /// Pulled out of the view body: inline, the string building pushed the SwiftUI
     /// type-checker past its limit for the whole bar.
@@ -876,15 +878,20 @@ private struct SectionSettingsBar: View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
                 if songStore.song.sections.indices.contains(sel) {
-                // Name and length are not here any more: they are set once per section
-                // and then permanently in the way. They live in the section menu and on
-                // a long press of a section, which leaves this bar for the tools that
-                // are used over and over. Shown read-only so you still know where you are.
+                // The name is shown read-only so you know where you are; it is set in the
+                // section menu. The length is a button: it is changed often enough that
+                // the menu was too far away. Drawn like M / S / FX, and opening the same
+                // Number of Bars sheet as the menu item.
                 Image(systemName: "square.stack").foregroundStyle(.secondary)
                 Text(songStore.song.sections[sel].name)
                     .font(.caption.bold()).lineLimit(1)
-                Text(barsLabel(sel))
-                    .font(.caption2).foregroundStyle(.secondary)
+                StudioChipLabel(title: barsLabel(sel), tint: .accentColor, look: .status)
+                    .onTapGesture { editingBars = SectionTarget(index: sel, field: .bars) }
+                    .accessibilityElement()
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Number of bars")
+                    .accessibilityValue(barsLabel(sel))
+                    .help("Change how many bars this section lasts")
 
                 Divider().frame(height: 20)
 
@@ -937,6 +944,9 @@ private struct SectionSettingsBar: View {
         .background(.regularMaterial)
         .sheet(isPresented: $showSnapshots) { SectionSnapshotsSheet() }
         .sheet(isPresented: $showShape) { ShapeSectionView() }
+        .sheet(item: $editingBars) { target in
+            SectionEditorSheet(sectionIndex: target.index, field: target.field)
+        }
     }
 }
 
