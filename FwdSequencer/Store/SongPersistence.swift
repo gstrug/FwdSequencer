@@ -394,12 +394,14 @@ enum SongStorage {
         }
     }
 
-    static func importSong(_ imported: Song) -> Result<Song, SongStorageError> {
+    /// `existingNames`: the songs already in the library, so an import whose name is
+    /// taken gets a number rather than a second song of the same name.
+    static func importSong(_ imported: Song, existingNames: [String] = []) -> Result<Song, SongStorageError> {
         do {
             var copy = try SongValidator.validateAndNormalize(imported)
             copy.id = UUID()
             copy.formatVersion = SongValidator.currentFormatVersion
-            copy.name = imported.name + " (Imported)"
+            copy.name = SongNaming.uniqueName(imported.name, among: existingNames)
             switch saveResult(copy) {
             case .success: return .success(copy)
             case .failure(let error): return .failure(error)

@@ -268,3 +268,55 @@ nonisolated enum SongValidator {
         }
     }
 }
+
+// MARK: - Song names
+
+/// Keeps song names distinct in the song list. A new, duplicated or imported song whose
+/// name is already taken gets a number: "Bass Pulse", "Bass Pulse 2", "Bass Pulse 3".
+/// Case and surrounding spaces are ignored when comparing, as people read them.
+nonisolated enum SongNaming {
+    /// `base` if no song has it, otherwise `base` with the lowest free number. An empty
+    /// base becomes "Untitled Song". Always within SongValidator's length limit.
+    static func uniqueName(_ base: String, among existing: [String]) -> String {
+        var trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { trimmed = "Untitled Song" }
+        let taken = Set(existing.map(key))
+        let limit = SongValidator.maximumNameLength
+        func fitted(_ suffix: String) -> String {
+            String(trimmed.prefix(limit - suffix.count)) + suffix
+        }
+        let plain = fitted("")
+        if !taken.contains(key(plain)) { return plain }
+        // A name that already ends in a number ("Take 2") counts up from it rather than
+        // becoming "Take 2 2".
+        var stem = trimmed
+        var n = 2
+        if let space = trimmed.lastIndex(of: " "),
+           let number = Int(trimmed[trimmed.index(after: space)...]), number >= 1 {
+            stem = String(trimmed[..<space])
+            n = number + 1
+        }
+        trimmed = stem
+        while taken.contains(key(fitted(" \(n)"))) { n += 1 }
+        return fitted(" \(n)")
+    }
+
+    /// The name for a duplicate: "Name copy", then "Name copy 2", and so on.
+    static func copyName(of name: String, among existing: [String]) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Duplicating a copy makes another numbered copy, not "Name copy copy".
+        let base = trimmed.lowercased().hasSuffix(" copy") || isNumberedCopy(trimmed)
+            ? trimmed : trimmed + " copy"
+        return uniqueName(base, among: existing)
+    }
+
+    private static func isNumberedCopy(_ name: String) -> Bool {
+        guard let space = name.lastIndex(of: " "), Int(name[name.index(after: space)...]) != nil
+        else { return false }
+        return name[..<space].lowercased().hasSuffix(" copy")
+    }
+
+    private static func key(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+}

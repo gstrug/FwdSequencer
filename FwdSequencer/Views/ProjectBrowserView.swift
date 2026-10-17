@@ -15,6 +15,10 @@ struct ProjectBrowserView: View {
     @State private var songDeleteTarget: Song? = nil
     @State private var songRenameTarget: Song? = nil
     @State private var renameText = ""
+    /// A template chosen from New Song, waiting for its name. Nothing is created until
+    /// the name is confirmed, so cancelling leaves no stray "New FWD Song" behind.
+    @State private var newSongTemplate: SongTemplate? = nil
+    @State private var newSongName = ""
     @State private var failedFiles: [FailedSongFile] = []
     @State private var trashedSongs: [TrashedSong] = []
     @State private var trashPurgeTarget: TrashedSong? = nil
@@ -135,6 +139,19 @@ struct ProjectBrowserView: View {
             }
             Button("Cancel", role: .cancel) { songRenameTarget = nil }
         }
+        .alert("New Song", isPresented: Binding(
+            get: { newSongTemplate != nil },
+            set: { if !$0 { newSongTemplate = nil } }
+        )) {
+            TextField("Song Name", text: $newSongName)
+            Button("Create") {
+                if let template = newSongTemplate { createSongAndOpen(template, named: newSongName) }
+                newSongTemplate = nil
+            }
+            Button("Cancel", role: .cancel) { newSongTemplate = nil }
+        } message: {
+            Text("A name already in use gets a number added.")
+        }
         .alert("FWD Sequencer", isPresented: Binding(
             get: { notice != nil },
             set: { if !$0 { notice = nil } }
@@ -232,7 +249,7 @@ struct ProjectBrowserView: View {
         var copy = song
         copy.id = UUID()
         copy.formatVersion = 2
-        copy.name += " copy"
+        copy.name = SongNaming.copyName(of: song.name, among: songs.map(\.name))
         if case .failure(let error) = SongStorage.saveResult(copy) {
             notice = error.localizedDescription
         }
@@ -465,8 +482,17 @@ struct ProjectBrowserView: View {
         showingSong = true
     }
 
+    /// New Song: ask for the name first. The suggestion is the template's own name, with
+    /// a number if a song already has it.
     private func createSongAndOpen(_ template: SongTemplate = .starter) {
-        let s = template.makeSong()
+        newSongName = SongNaming.uniqueName(template.makeSong().name, among: songs.map(\.name))
+        newSongTemplate = template
+    }
+
+    private func createSongAndOpen(_ template: SongTemplate, named name: String) {
+        var s = template.makeSong()
+        // Kept distinct even if the suggestion was edited back to a name in use.
+        s.name = SongNaming.uniqueName(name, among: songs.map(\.name))
         songStore.open(s)
         songStore.saveNow()
         showingSong = true
@@ -485,7 +511,7 @@ struct ProjectBrowserView: View {
         defer { if accessed { url.stopAccessingSecurityScopedResource() } }
         do {
             let imported = try SongStorage.decodeDocument(Data(contentsOf: url))
-            switch SongStorage.importSong(imported) {
+            switch SongStorage.importSong(imported, existingNames: songs.map(\.name)) {
             case .success: reload()
             case .failure(let error): notice = error.localizedDescription
             }
