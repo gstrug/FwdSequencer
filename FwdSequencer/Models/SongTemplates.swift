@@ -65,7 +65,9 @@ enum SongTemplate: String, CaseIterable, Identifiable {
         // A single Fwd step: the plainest possible starting point, which walks the pool
         // in order. It used to come with Fwd, Fwd, Back already set, which is a pattern
         // someone has to clear out before starting their own.
-        let part = Part(trackID: track.id, notePool: notes([60, 64, 67]),
+        // One note, middle C: a clean slate to add your own to, rather than a chord
+        // to clear out first.
+        let part = Part(trackID: track.id, notePool: notes([60]),
                         steps: [Step(type: .fwd)])
         return Song(name: "New FWD Song", tracks: [track],
                     sections: [SongSection(name: "Section 1", numberOfBars: 4, parts: [part])],
