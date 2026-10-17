@@ -93,6 +93,7 @@ struct MIDILearnButton: View {
         .help("MIDI Learn: link the controls on screen to a MIDI controller")
         .accessibilityLabel("MIDI Learn")
         .accessibilityValue(learn.isOn ? "On" : "Off")
+        .helpTag(.midiLearn)
     }
 }
 
@@ -201,6 +202,7 @@ struct TrackWriteNotesButton: View {
                              tint: .red,
                              accessibilityLabel: "Write notes from keys into \(track.name)")
                 .midiLearnable(.trackWriteNotes(index))
+                .helpTag(.trackWrite, instance: track.id.uuidString)
         }
     }
 }

@@ -57,12 +57,14 @@ struct StepsView: View {
                             Label("Add Step", systemImage: "plus")
                         }
                         .buttonStyle(.bordered)
+                        .helpTag(.addStep)
                         Spacer()
                         if !steps.isEmpty {
                             Button("Clear All", role: .destructive) {
                                 steps.removeAll()
                             }
                             .font(.caption)
+                            .helpTag(.clearSteps)
                         }
                     }
                     .padding()
@@ -70,7 +72,9 @@ struct StepsView: View {
             }
             .navigationTitle("Step Sequence")
             .navigationBarTitleDisplayMode(.inline)
+            .helpHost()
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { HelpButton() }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }

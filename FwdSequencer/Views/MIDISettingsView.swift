@@ -21,6 +21,7 @@ struct MIDISettingsView: View {
                     Toggle(isOn: $learn.writeNotesEnabled) {
                         Label("Write Notes from Keys", systemImage: "music.note.list")
                     }
+                    .helpTag(.midiWriteNotes)
                 } header: {
                     Text("Write Notes")
                 } footer: {
@@ -30,6 +31,7 @@ struct MIDISettingsView: View {
                     Toggle(isOn: $songStore.midiClockEnabled) {
                         Label("MIDI Clock Output", systemImage: "cable.connector")
                     }
+                    .helpTag(.midiClock)
                 } header: {
                     Text("Clock")
                 } footer: {
@@ -38,6 +40,7 @@ struct MIDISettingsView: View {
             }
             .navigationTitle("MIDI")
             .navigationBarTitleDisplayMode(.inline)
+            .helpHost()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button {
@@ -47,7 +50,9 @@ struct MIDISettingsView: View {
                     } label: {
                         Label("Learn", systemImage: "dot.radiowaves.left.and.right")
                     }
+                    .helpTag(.midiLearn)
                 }
+                ToolbarItem(placement: .navigationBarLeading) { HelpButton() }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
@@ -88,28 +93,37 @@ struct MIDISettingsView: View {
     private func controllerRow(_ source: MIDIInputManager.Source) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                ActivityLight(lastActivity: center.lastActivity[source.name])
-                Text(source.name).font(.body.bold()).lineLimit(1)
+                HStack(spacing: 10) {
+                    ActivityLight(lastActivity: center.lastActivity[source.name])
+                    Text(source.name).font(.body.bold()).lineLimit(1)
+                }
+                .helpTag(.midiController, instance: source.name)
                 Spacer()
                 Toggle("Use", isOn: Binding(
                     get: { center.isEnabled(source.name) },
                     set: { center.setDevice(source.name, enabled: $0) }
                 ))
                 .labelsHidden()
+                .helpTag(.midiUse, instance: source.name)
             }
             HStack(spacing: 10) {
-                Text("Template").foregroundStyle(.secondary)
-                Text(center.template(forDevice: source.name)?.name ?? "None")
-                    .bold().lineLimit(1)
+                HStack(spacing: 10) {
+                    Text("Template").foregroundStyle(.secondary)
+                    Text(center.template(forDevice: source.name)?.name ?? "None")
+                        .bold().lineLimit(1)
+                }
+                .helpTag(.midiTemplate, instance: source.name)
                 Spacer(minLength: 8)
                 Menu {
                     loadChoices(forDevice: source.name)
                 } label: {
                     Label("Load", systemImage: "folder")
                 }
+                .helpTag(.midiLoad, instance: source.name)
                 Button { saveAs(forDevice: source.name) } label: {
                     Label("Save As…", systemImage: "square.and.arrow.down")
                 }
+                .helpTag(.midiSaveAs, instance: source.name)
             }
             // Bordered so each button takes its own taps; in a Form row plain buttons
             // would all fire together.
@@ -128,6 +142,7 @@ struct MIDISettingsView: View {
             }
             .pickerStyle(.menu)
             .disabled(!center.isEnabled(source.name))
+            .helpTag(.midiKeysPlay, instance: source.name)
         }
         .padding(.vertical, 2)
     }
@@ -196,6 +211,7 @@ struct MIDISettingsView: View {
                     }
                 }
                 .contextMenu { actions(for: template) }
+                .helpTag(.midiTemplates, instance: template.id.uuidString)
                 .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                     if !template.isBuiltIn {
                         Button(role: .destructive) { center.delete(template.id) } label: {

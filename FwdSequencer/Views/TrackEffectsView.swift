@@ -36,6 +36,7 @@ struct TrackEffectsView: View {
                             set: { songStore.setEffectsChainBypassed(!$0, for: trackID) }
                         ))
                         .tint(.green)
+                        .helpTag(.effectsOn)
                     } footer: {
                         Text("Switches the whole chain in or out. Effects bypassed "
                              + "individually stay bypassed when it comes back on.")
@@ -73,6 +74,7 @@ struct TrackEffectsView: View {
                         Label("Add Effect", systemImage: "plus")
                     }
                     .disabled(slots.count >= SongTrack.maximumEffects)
+                    .helpTag(.effectAdd)
                 } footer: {
                     if slots.count >= SongTrack.maximumEffects {
                         // Say why, rather than leaving a disabled button unexplained.
@@ -90,7 +92,9 @@ struct TrackEffectsView: View {
             .environment(\.editMode, .constant(slots.count > 1 ? .active : .inactive))
             .navigationTitle(track?.name ?? "Effects")
             .navigationBarTitleDisplayMode(.inline)
+            .helpHost()
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { HelpButton() }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
@@ -130,6 +134,7 @@ struct TrackEffectsView: View {
     private func row(index: Int, slot: PluginSlot) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(slot.pluginInfo.name).font(.body).lineLimit(1)
+                .helpTag(.effectOrder, instance: slot.id.uuidString)
             Text(slot.pluginInfo.manufacturerName).font(.caption).foregroundStyle(.secondary)
 
             HStack(spacing: 10) {
@@ -137,12 +142,14 @@ struct TrackEffectsView: View {
                     Label("Edit", systemImage: "slider.horizontal.3")
                 }
                 .buttonStyle(.bordered).controlSize(.small)
+                .helpTag(.effectEdit, instance: slot.id.uuidString)
 
                 Toggle("Bypass", isOn: Binding(
                     get: { slot.bypassed },
                     set: { songStore.setEffectBypassed($0, at: index, for: trackID) }
                 ))
                 .toggleStyle(.button).controlSize(.small).tint(.orange)
+                .helpTag(.effectBypass, instance: slot.id.uuidString)
 
                 Spacer(minLength: 0)
 
@@ -152,6 +159,7 @@ struct TrackEffectsView: View {
                     Label("Replace", systemImage: "arrow.triangle.2.circlepath")
                 }
                 .buttonStyle(.bordered).controlSize(.small)
+                .helpTag(.effectReplace, instance: slot.id.uuidString)
 
                 Button(role: .destructive) {
                     songStore.removeEffect(at: index, from: trackID)
@@ -159,6 +167,7 @@ struct TrackEffectsView: View {
                     Label("Remove", systemImage: "trash")
                 }
                 .buttonStyle(.bordered).controlSize(.small)
+                .helpTag(.effectRemove, instance: slot.id.uuidString)
             }
         }
         .padding(.vertical, 2)

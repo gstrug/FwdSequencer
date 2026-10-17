@@ -35,6 +35,7 @@ struct PlayDockView: View {
                         AudioEngineManager.shared.stopNote(trackID: p.id, midiNote: note)
                     }
                 )
+                .helpTag(.playKeys)
             }
         }
         .padding(10)
@@ -98,6 +99,7 @@ struct PlayDockView: View {
         }
         .buttonStyle(.bordered)
         .tint(perf?.pluginInfo == nil ? nil : .accentColor)
+        .helpTag(.playInstrument)
     }
 
     @ViewBuilder
@@ -107,6 +109,7 @@ struct PlayDockView: View {
                 Label("Edit Instrument", systemImage: "slider.horizontal.3").font(.caption)
             }
             .buttonStyle(.bordered).tint(.purple)
+            .helpTag(.playEditInstrument)
         }
     }
 
@@ -116,6 +119,7 @@ struct PlayDockView: View {
             Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
             StudioSlider.volume(volumeBinding, label: "Manual keyboard volume")
                 .midiLearnable(.playVolume)
+                .helpTag(.playVolume)
                 .frame(minWidth: 80, maxWidth: 160)
             if let p = perf {
                 SongTrackMeter(trackID: p.id)
@@ -124,11 +128,14 @@ struct PlayDockView: View {
                 StudioToggleChip(title: "M", isOn: mixerFlag(\.isMuted), tint: .orange,
                                  accessibilityLabel: "Mute Play keyboard")
                     .midiLearnable(.playMute)
+                    .helpTag(.playMute)
                 StudioToggleChip(title: "S", isOn: mixerFlag(\.isSoloed), tint: .yellow,
                                  accessibilityLabel: "Solo Play keyboard")
                     .midiLearnable(.playSolo)
+                    .helpTag(.playSolo)
                 EffectsToggleButton(track: p)
                     .midiLearnable(.playEffects)
+                    .helpTag(.playEffects)
             }
         }
     }
@@ -143,6 +150,7 @@ struct PlayDockView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Close manual keyboard")
+        .helpTag(.playClose)
     }
 
     private var pluginBinding: Binding<PluginInfo?> {

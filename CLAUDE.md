@@ -106,6 +106,13 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   to the sequencer as muted, and used by `SongMIDIExporter`, so export parity holds);
   a soloed track silences Play keys unless Play is soloed. Keys routed to a muted or
   solo-silenced channel are silent. Also learnable: Show Play Keyboard, Trigger Mode.
+- **Help mode** (2026-10-17): a ? button on each screen (`HelpButton`) turns on
+  `HelpCenter`; controls tagged `.helpTag(.topic, instance:)` are outlined and a tap
+  shows that topic in a card at the bottom (`.helpHost()` once per screen/sheet), using
+  nothing else while on. All wording is in `Views/HelpTopics.swift`, also used as
+  VoiceOver hints. Learn and help mode switch each other off. Not covered: plugin
+  windows, Key & Scale, Number of Bars/Rename, step type and plugin pickers. The
+  tutorial (`OnboardingView`) is now four pages explaining help mode, with Exit on each.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI
   (`.github/workflows/validate.yml`) runs `swift test` and a simulator build on every
   push/PR.

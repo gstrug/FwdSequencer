@@ -55,7 +55,9 @@ struct NoteParametersView: View {
             }
             .navigationTitle("Note Parameters")
             .navigationBarTitleDisplayMode(.inline)
+            .helpHost()
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { HelpButton() }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
@@ -76,6 +78,7 @@ extension NoteParametersView {
                 ForEach(NoteShape.allCases) { Text($0.rawValue).tag($0.rawValue) }
             }
             .pickerStyle(.segmented)
+            .helpTag(.notePattern)
 
             limitsRow(title: "Velocity", isOn: $shapeVelocity,
                       low: $velocityMin, high: $velocityMax,
@@ -102,6 +105,7 @@ extension NoteParametersView {
                 }
                 .buttonStyle(.bordered)
                 .disabled(!shapeVelocity && !shapeGate)
+                .helpTag(.noteReset)
 
                 Button(action: applyShape) {
                     // Random shapes roll again on every press, and the label says so.
@@ -110,6 +114,7 @@ extension NoteParametersView {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(!shapeVelocity && !shapeGate)
+                .helpTag(.noteApply)
             }
             .controlSize(.small)
         }
@@ -151,6 +156,7 @@ extension NoteParametersView {
             Toggle(title, isOn: isOn)
                 .toggleStyle(.button)
                 .frame(width: 92, alignment: .leading)
+                .helpTag(title == "Velocity" ? .noteShapeVelocity : .noteShapeGate)
 
             Text("Min").font(.caption).foregroundStyle(.secondary)
             StudioSlider(value: Binding(
@@ -214,6 +220,7 @@ struct NoteStrip: View {
                             range: 1...127, defaultValue: 100, height: 130,
                             accessibilityLabel: "Velocity",
                             format: { "\(Int($0.rounded()))" })
+                    .helpTag(.noteVelocity, instance: entry.id.uuidString)
                 Text("Vel")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
@@ -226,6 +233,7 @@ struct NoteStrip: View {
                 StudioFader(value: $entry.gateLength, range: 0.05...1.0, defaultValue: 0.5,
                             height: 130, accessibilityLabel: "Gate",
                             format: { "\(Int(($0 * 100).rounded()))%" })
+                    .helpTag(.noteGate, instance: entry.id.uuidString)
                 Text("Gate")
                     .font(.caption2)
                     .foregroundStyle(.secondary)

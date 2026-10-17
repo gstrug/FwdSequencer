@@ -91,6 +91,8 @@ struct SongView: View {
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: showPlayDock)
+        // The help card, when help mode is on. Above the Play keyboard.
+        .helpHost()
         // BLOCKING while instruments load/restore — this must capture touches.
         // Engine-side track suspension only gates sequencer MIDI; it does not stop the
         // user opening a plugin's UI, swapping the plugin again, or playing keys during
@@ -196,6 +198,7 @@ private struct SongTransportBar: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Back to songs")
+                .helpTag(.backToSongs)
 
                 // Which song this is sits with the way back to the song list, and the
                 // "Saved" confirmation beside the name it refers to.
@@ -216,6 +219,7 @@ private struct SongTransportBar: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Rewind song")
                 .midiLearnable(.rewind)
+                .helpTag(.rewind)
 
                 Button {
                     if songStore.isPlaying      { songStore.pause() }
@@ -228,6 +232,7 @@ private struct SongTransportBar: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(songStore.isPlaying ? "Pause song" : "Play song")
                 .midiLearnable(.playPause)
+                .helpTag(.playPause)
 
                 Button { songStore.stop() } label: {
                     Image(systemName: "stop.fill").iconHitTarget()
@@ -236,6 +241,7 @@ private struct SongTransportBar: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Stop song")
                 .midiLearnable(.stop)
+                .helpTag(.stop)
 
                 Button { toggleRecording() } label: {
                     Image(systemName: songStore.isRecording ? "stop.circle.fill" : "record.circle")
@@ -245,6 +251,7 @@ private struct SongTransportBar: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(songStore.isRecording ? "Stop and export recording" : "Record master output")
                 .midiLearnable(.record)
+                .helpTag(.record)
 
                 // MIDI panic — needs to be one tap on the transport, not buried in a
                 // menu: it is what you reach for when a note hangs mid-performance.
@@ -256,6 +263,7 @@ private struct SongTransportBar: View {
                 .help("Panic — stop all notes")
                 .accessibilityLabel("Panic, stop all notes")
                 .midiLearnable(.panic)
+                .helpTag(.panic)
 
                 Button { songStore.loopEnabled.toggle() } label: {
                     Image(systemName: "repeat").iconHitTarget()
@@ -266,6 +274,7 @@ private struct SongTransportBar: View {
                 .accessibilityLabel("Loop song")
                 .accessibilityValue(songStore.loopEnabled ? "On" : "Off")
                 .midiLearnable(.loop)
+                .helpTag(.loop)
 
                 // Tempo sits with the transport: it is what you reach for alongside
                 // play. One child, as the row is at SwiftUI's ten-view limit.
@@ -273,9 +282,11 @@ private struct SongTransportBar: View {
                     Divider().frame(height: 26)
                     tempoReadout
                         .midiLearnable(.tempo)
+                        .helpTag(.tempo)
                     StudioTapButton(title: "TAP") { handleTap() }
                         .accessibilityLabel("Tap tempo")
                         .midiLearnable(.tapTempo)
+                        .helpTag(.tapTempo)
                 }
                 }
                 .fixedSize(horizontal: true, vertical: false)
@@ -305,7 +316,7 @@ private struct SongTransportBar: View {
                     positionIndicator
                     timeSignatureMenu
                     masterOutputControl
-                    CPUReadout()
+                    CPUReadout().helpTag(.cpu)
                     Spacer(minLength: 20)
                     panelButtons
                 }
@@ -313,7 +324,7 @@ private struct SongTransportBar: View {
                     positionIndicator
                     timeSignatureMenu
                     masterOutputControl
-                    CPUReadout()
+                    CPUReadout().helpTag(.cpu)
                     panelButtons
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -383,13 +394,18 @@ private struct SongTransportBar: View {
             .buttonStyle(.bordered)
             .tint(showPlayDock ? .accentColor : nil)
             .midiLearnable(.togglePlayDock)
+            .helpTag(.playButton)
 
             Button { showMixer = true } label: {
                 Label("Mixer", systemImage: "slider.vertical.3")
             }
             .buttonStyle(.bordered)
+            .helpTag(.mixerButton)
 
             songSettingsMenu
+
+            // Help mode: tap any control to see what it does.
+            HelpButton()
         }
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -442,6 +458,7 @@ private struct SongTransportBar: View {
         }
         .accessibilityLabel("Time signature")
         .accessibilityValue("\(songStore.song.timeSignature.numerator) \(songStore.song.timeSignature.denominator)")
+        .helpTag(.timeSignature)
     }
 
     /// Beat dots and bar counter together: both say where the song is.
@@ -451,6 +468,7 @@ private struct SongTransportBar: View {
             SongBarCounter(totalBars: currentSectionBars)
         }
         .fixedSize(horizontal: true, vertical: false)
+        .helpTag(.beatAndBar)
     }
 
     private var beatIndicator: some View {
@@ -479,6 +497,7 @@ private struct SongTransportBar: View {
                              range: 0...1, defaultValue: 1, accessibilityLabel: "Master volume",
                              format: { "\(Int(($0 * 100).rounded()))%" })
                     .midiLearnable(.masterVolume)
+                    .helpTag(.masterVolume)
                 MasterLevelBar()
                     .padding(.horizontal, 10)
             }
@@ -496,6 +515,7 @@ private struct SongTransportBar: View {
         )
         .frame(width: 200)
         .onLongPressGesture { selectAllSongName = true }
+        .helpTag(.songName)
     }
 
     private var songSettingsMenu: some View {
@@ -540,6 +560,7 @@ private struct SongTransportBar: View {
         }
         .buttonStyle(.bordered)
         .tint(songStore.triggerMode ? .accentColor : nil)
+        .helpTag(.settingsMenu)
     }
 
     private func handleTap() {
@@ -693,6 +714,7 @@ private struct ArrangementStrip: View {
                         ForEach(Array(songStore.song.sections.enumerated()), id: \.element.id) { idx, section in
                             chip(idx, section)
                                 .midiLearnable(.section(idx))
+                                .helpTag(.sectionChip, instance: section.id.uuidString)
                                 .id(section.id)
                         }
                     }
@@ -717,6 +739,7 @@ private struct ArrangementStrip: View {
                     .frame(minHeight: 44)
             }
             .buttonStyle(.bordered)
+            .helpTag(.sectionMenu)
             .padding(.trailing, 8)
         }
         .background(.regularMaterial)
@@ -892,6 +915,7 @@ private struct SectionSettingsBar: View {
                     .accessibilityLabel("Number of bars")
                     .accessibilityValue(barsLabel(sel))
                     .help("Change how many bars this section lasts")
+                    .helpTag(.sectionBars)
 
                 Divider().frame(height: 20)
 
@@ -903,6 +927,7 @@ private struct SectionSettingsBar: View {
                 .help(songStore.canAlterSelectedSection
                       ? "Reshape this section's notes and steps, on the tracks you choose"
                       : "Turn on Hold first — reshaping is only worth doing while you can hear it.")
+                          .helpTag(.shape)
 
                 // A sheet rather than a Menu: snapshots are renameable now, and a menu
                 // cannot host an editable text field.
@@ -919,12 +944,14 @@ private struct SectionSettingsBar: View {
                 .help(songStore.canAlterSelectedSection
                       ? "Save and restore versions of this section's notes and steps"
                       : "Turn on Hold first — Hold repeats this section so you can hear each version as you restore it.")
+                          .helpTag(.snapshots)
 
                 Toggle(isOn: $songStore.holdsSection) {
                     Label("Hold", systemImage: "repeat.1")
                 }
                 .toggleStyle(.button)
                 .midiLearnable(.hold)
+                .helpTag(.hold)
                 .help("Repeat the selected section and stop the editor following the playhead, so it can be edited")
 
                 // Transform and Snapshots are gated on Hold, so say so rather than
@@ -1001,6 +1028,7 @@ private struct SectionSnapshotsSheet: View {
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .helpTag(.snapshotTracks, instance: track.id.uuidString)
                     }
 
                     Button {
@@ -1011,6 +1039,7 @@ private struct SectionSnapshotsSheet: View {
                         Label("Save snapshot…", systemImage: "camera")
                     }
                     .disabled(songStore.shapeTrackSelection.isEmpty)
+                    .helpTag(.snapshotSave)
                 } header: {
                     Text("Save")
                 } footer: {
@@ -1048,7 +1077,9 @@ private struct SectionSnapshotsSheet: View {
             }
             .navigationTitle("Snapshots")
             .navigationBarTitleDisplayMode(.inline)
+            .helpHost()
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { HelpButton() }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
@@ -1105,6 +1136,7 @@ private struct SectionSnapshotsSheet: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 .tint(isAuditioning ? .orange : nil)
+                .helpTag(.snapshotAudition, instance: snapshot.id.uuidString)
 
                 // The Original is never consumed, so a separate "keep" button for it
                 // would offer a choice that does not exist.
@@ -1112,14 +1144,17 @@ private struct SectionSnapshotsSheet: View {
                     Button("Restore") { songStore.applyVariation(snapshot.id, keeping: true) }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
+                        .helpTag(.snapshotRestore, instance: snapshot.id.uuidString)
                 } else {
                     Button("Restore") { songStore.applyVariation(snapshot.id) }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
+                        .helpTag(.snapshotRestore, instance: snapshot.id.uuidString)
 
                     Button("Restore & Keep") { songStore.applyVariation(snapshot.id, keeping: true) }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                        .helpTag(.snapshotRestoreKeep, instance: snapshot.id.uuidString)
                 }
 
                 Button {
@@ -1131,6 +1166,7 @@ private struct SectionSnapshotsSheet: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .helpTag(.snapshotRename, instance: snapshot.id.uuidString)
 
                 Spacer(minLength: 0)
             }
@@ -1536,6 +1572,7 @@ private struct SongTrackRowView: View {
             }
             .buttonStyle(.plain).foregroundStyle(.secondary)
             .accessibilityLabel("Expand \(track.name)")
+            .helpTag(.trackExpand, instance: track.id.uuidString)
 
             // Mixer controls lead the row, ahead of the variable-width text.
             //
@@ -1547,19 +1584,24 @@ private struct SongTrackRowView: View {
             Image(systemName: "speaker.wave.1").font(.system(size: 9)).foregroundStyle(.secondary)
             StudioSlider.volume($track.mixer.volume, label: "\(track.name) volume")
                 .midiLearnable(.trackVolume(index))
+                .helpTag(.trackVolume, instance: track.id.uuidString)
                 .frame(width: 70)
             // Explicit width: the meter is maxWidth-greedy, which has no intrinsic size
             // to resolve inside a fixed-size row.
             SongTrackMeter(trackID: track.id).frame(width: 44)
+                .helpTag(.trackMeter, instance: track.id.uuidString)
 
             StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
                              accessibilityLabel: "Mute \(track.name)")
                 .midiLearnable(.trackMute(index))
+                .helpTag(.trackMute, instance: track.id.uuidString)
             StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
                              accessibilityLabel: "Solo \(track.name)")
                 .midiLearnable(.trackSolo(index))
+                .helpTag(.trackSolo, instance: track.id.uuidString)
             TrackEffectsButton(track: track)
                 .midiLearnable(.trackEffects(index))
+                .helpTag(.trackEffects, instance: track.id.uuidString)
             // Only there while Write Notes from Keys is on.
             TrackWriteNotesButton(track: track, index: index)
 
@@ -1585,6 +1627,7 @@ private struct SongTrackRowView: View {
             // see SongMiniSteps.emptyLabel.
             SongMiniSteps(trackID: track.id, steps: indicatorSteps,
                           emptyLabel: "\(part.notePool.count) notes")
+                .helpTag(.trackSteps, instance: track.id.uuidString)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -1602,6 +1645,7 @@ private struct SongTrackRowView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .accessibilityLabel("Expand \(track.name)")
+                .helpTag(.trackExpand, instance: track.id.uuidString)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.name).font(.subheadline.bold()).lineLimit(1)
@@ -1612,11 +1656,14 @@ private struct SongTrackRowView: View {
                 StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
                                  accessibilityLabel: "Mute \(track.name)")
                     .midiLearnable(.trackMute(index))
+                    .helpTag(.trackMute, instance: track.id.uuidString)
                 StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
                                  accessibilityLabel: "Solo \(track.name)")
                     .midiLearnable(.trackSolo(index))
+                    .helpTag(.trackSolo, instance: track.id.uuidString)
                 TrackEffectsButton(track: track)
                     .midiLearnable(.trackEffects(index))
+                    .helpTag(.trackEffects, instance: track.id.uuidString)
                 // Only there while Write Notes from Keys is on.
                 TrackWriteNotesButton(track: track, index: index)
             }
@@ -1624,12 +1671,15 @@ private struct SongTrackRowView: View {
                 Text(part.tempoDivision.abbreviation).font(.caption2).foregroundStyle(.secondary)
                 SongMiniSteps(trackID: track.id, steps: indicatorSteps,
                               emptyLabel: "\(part.notePool.count) notes")
+                    .helpTag(.trackSteps, instance: track.id.uuidString)
                 Spacer(minLength: 4)
                 Image(systemName: "speaker.wave.1").font(.caption2).foregroundStyle(.secondary)
                 StudioSlider.volume($track.mixer.volume, label: "\(track.name) volume")
                     .midiLearnable(.trackVolume(index))
+                    .helpTag(.trackVolume, instance: track.id.uuidString)
                     .frame(minWidth: 70, maxWidth: 150)
                 SongTrackMeter(trackID: track.id)
+                    .helpTag(.trackMeter, instance: track.id.uuidString)
             }
         }
         .padding(.horizontal, 12)
@@ -1647,6 +1697,7 @@ private struct SongTrackRowView: View {
                     Image(systemName: "chevron.down").iconHitTarget(34)
                 }
                 .buttonStyle(.plain).foregroundStyle(.secondary)
+                .helpTag(.trackExpand, instance: track.id.uuidString)
 
                 SelectAllTextField(
                     text: $track.name,
@@ -1658,6 +1709,7 @@ private struct SongTrackRowView: View {
                 .layoutPriority(1)
                 // Long-press the name to highlight it and type over the default.
                 .onLongPressGesture { selectAllName = true }
+                .helpTag(.trackName, instance: track.id.uuidString)
 
                 Menu {
                     arrangeActions
@@ -1761,6 +1813,7 @@ private struct SongTrackRowView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Actions for \(track.name)")
+                .helpTag(.trackMenu, instance: track.id.uuidString)
             }
 
             Button { showPluginPicker = true } label: {
@@ -1770,6 +1823,7 @@ private struct SongTrackRowView: View {
             }
             .buttonStyle(.bordered)
             .tint(track.pluginInfo == nil ? nil : .accentColor)
+            .helpTag(.trackInstrument, instance: track.id.uuidString)
 
             if let status = songStore.pluginStatuses[track.id] {
                 switch status {
@@ -1803,6 +1857,7 @@ private struct SongTrackRowView: View {
                 }
                 .buttonStyle(.bordered).tint(.purple)
                 .disabled(!isReady)
+                .helpTag(.trackEditInstrument, instance: track.id.uuidString)
             }
 
             // Volume gets its own line; the meter sits beside pan, matching its size,
@@ -1813,6 +1868,7 @@ private struct SongTrackRowView: View {
                     .frame(width: 28, alignment: .leading)
                 StudioSlider.volume($track.mixer.volume, label: "\(track.name) volume")
                     .midiLearnable(.trackVolume(index))
+                    .helpTag(.trackVolume, instance: track.id.uuidString)
             }
 
             HStack(spacing: 6) {
@@ -1827,21 +1883,26 @@ private struct SongTrackRowView: View {
                            })
                     .accessibilityLabel("\(track.name) pan")
                     .midiLearnable(.trackPan(index))
+                    .helpTag(.trackPan, instance: track.id.uuidString)
                 Spacer(minLength: 0)
                 StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
                                  accessibilityLabel: "Mute \(track.name)")
                     .midiLearnable(.trackMute(index))
+                    .helpTag(.trackMute, instance: track.id.uuidString)
                 StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
                                  accessibilityLabel: "Solo \(track.name)")
                     .midiLearnable(.trackSolo(index))
+                    .helpTag(.trackSolo, instance: track.id.uuidString)
                 TrackEffectsButton(track: track)
                     .midiLearnable(.trackEffects(index))
+                    .helpTag(.trackEffects, instance: track.id.uuidString)
                 // Only there while Write Notes from Keys is on.
                 TrackWriteNotesButton(track: track, index: index)
             }
 
             // Level meter spans the row beneath the controls, where it has room to read.
             SongTrackMeter(trackID: track.id)
+                .helpTag(.trackMeter, instance: track.id.uuidString)
         }
     }
 
@@ -1857,6 +1918,7 @@ private struct SongTrackRowView: View {
                         ForEach(TempoDivision.allCases, id: \.self) { Text($0.abbreviation).tag($0) }
                     }
                     .pickerStyle(.menu).fixedSize()
+                    .helpTag(.trackTime, instance: track.id.uuidString)
 
                     Divider().frame(height: 16)
 
@@ -1872,6 +1934,7 @@ private struct SongTrackRowView: View {
                             .font(.caption2).lineLimit(1)
                     }
                     .buttonStyle(.bordered).controlSize(.small)
+                    .helpTag(.trackKeyScale, instance: track.id.uuidString)
 
                     Text("\(part.notePool.count) notes").font(.caption2).foregroundStyle(.secondary)
                 }
@@ -1880,6 +1943,7 @@ private struct SongTrackRowView: View {
 
             SongMiniSteps(trackID: track.id, steps: indicatorSteps, compact: false,
                           emptyLabel: "No steps")
+                .helpTag(.trackSteps, instance: track.id.uuidString)
 
             SongKeyboard(
                 trackID: track.id,
@@ -1905,6 +1969,7 @@ private struct SongTrackRowView: View {
                     Label("Note Params", systemImage: "slider.vertical.3").font(.caption)
                 }
                 .buttonStyle(.bordered).disabled(part.notePool.isEmpty)
+                .helpTag(.trackNoteParams, instance: track.id.uuidString)
 
                 Button {
                     guard let sectionID = selectedSectionID else { return }
@@ -1915,6 +1980,7 @@ private struct SongTrackRowView: View {
                           systemImage: "list.number").font(.caption)
                 }
                 .buttonStyle(.bordered)
+                .helpTag(.trackStepsButton, instance: track.id.uuidString)
                 }
                 .fixedSize(horizontal: true, vertical: false)
             }
@@ -1941,6 +2007,7 @@ private struct SongKeyboard: View {
             key: key,
             onPreview: onPreview
         )
+        .helpTag(.trackKeyboard, instance: trackID.uuidString)
     }
 }
 

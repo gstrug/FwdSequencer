@@ -46,6 +46,7 @@ struct ProjectBrowserView: View {
     var body: some View {
         NavigationStack {
             songList
+                .helpHost()
                 .navigationTitle("FWD Sequencer")
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
@@ -65,11 +66,16 @@ struct ProjectBrowserView: View {
                         } label: {
                             Label("New Song", systemImage: "plus")
                         }
+                        .helpTag(.newSong)
                     }
                     ToolbarItem(placement: .secondaryAction) {
                         Button { importingSong = true } label: {
                             Label("Import Song", systemImage: "square.and.arrow.down")
                         }
+                        .helpTag(.importSong)
+                    }
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        HelpButton()
                     }
                     // "Show Tutorial" is not here any more: it lives in Song Settings, on
                     // the transport, where it is beside the song it describes. This screen
@@ -337,6 +343,7 @@ struct ProjectBrowserView: View {
                                     if failure.canRestoreBackup {
                                         Button("Restore Backup") { restoreBackup(failure) }
                                             .buttonStyle(.borderedProminent)
+                                            .helpTag(.needsAttention, instance: failure.id)
                                     }
                                     Menu {
                                         Button { exportOriginal(failure) } label: {
@@ -364,6 +371,7 @@ struct ProjectBrowserView: View {
                         .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                         .contentShape(Rectangle())
                         .onTapGesture { openSong(song) }
+                        .helpTag(.songRow, instance: song.id.uuidString)
                         .swipeActions(edge: .trailing) {
                             Button(role: .destructive) { songDeleteTarget = song } label: {
                                 Label("Delete", systemImage: "trash")
@@ -400,6 +408,7 @@ struct ProjectBrowserView: View {
                                     Spacer(minLength: 0)
                                     Button("Restore") { restore(item) }
                                         .buttonStyle(.bordered)
+                                        .helpTag(.recentlyDeleted, instance: item.id.uuidString)
                                     Button(role: .destructive) { trashPurgeTarget = item } label: {
                                         Image(systemName: "trash")
                                     }

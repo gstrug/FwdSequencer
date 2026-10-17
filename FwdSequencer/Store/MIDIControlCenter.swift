@@ -666,7 +666,11 @@ nonisolated final class MIDIKeyRouter: @unchecked Sendable {
 final class MIDILearnState: ObservableObject {
     /// Learnable controls are outlined and a tap selects one instead of using it.
     @Published var isOn = false {
-        didSet { if !isOn { target = nil } }
+        didSet {
+            if !isOn { target = nil }
+            // Learn and help mode both take over taps; only one at a time.
+            if isOn { HelpCenter.shared.isOn = false }
+        }
     }
     /// Write Notes from Keys, switched on in Settings ▸ MIDI: tracks show their W
     /// button. Remembered between launches. Switching it off disarms.

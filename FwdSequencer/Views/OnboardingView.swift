@@ -1,12 +1,11 @@
 import SwiftUI
 
-/// The tutorial, shown on first launch and on demand from the song list.
+/// The tutorial, shown on first launch and from Settings ▸ Show Tutorial.
 ///
-/// Kept deliberately short. It explains the ideas the app is built on — a pool of notes
-/// traversed by rules, sections over a shared instrument set, Hold as the way to work on
-/// one part — rather than listing controls, which go stale the moment anything is
-/// renamed. Page three previously described "Transform", a name that had since changed,
-/// which is the failure mode this ordering is meant to avoid.
+/// A few pages that get you going and show you where help lives, nothing more. It used
+/// to explain the ideas behind the app at length; testers found that too wordy and not
+/// specific enough. What each control does is now answered on the screen itself by help
+/// mode (the ? button, HelpMode.swift), so this only has to point there.
 struct OnboardingView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -17,72 +16,36 @@ struct OnboardingView: View {
     @State private var page = 0
 
     private let pages: [(icon: String, title: String, body: String)] = [
-        ("point.3.filled.connected.trianglepath.dotted",
-         "Notes become movement",
-         "Pick a small pool of notes. Steps decide how a track travels through it — "
-         + "Fwd and Back walk, Play jumps to a position, Repeat holds the place, Random "
-         + "leaps, Hold sustains and Pause rests. A short pool and a few steps go a "
-         + "long way."),
+        ("music.note.list",
+         "Welcome to FWD",
+         "Each track plays from a small pool of notes you pick on its keyboard. Steps "
+         + "decide which note comes next. Sections are the parts of your song."),
 
-        ("dial.medium",
-         "Every step can breathe",
-         "Probability lets a step play only sometimes, and Divide splits it into "
-         + "repeats. Neither changes the sequence, so a pattern keeps its shape while "
-         + "never repeating exactly."),
-
-        ("square.stack.3d.up",
-         "Sections become a song",
-         "Each section holds its own notes and steps. Instruments and the mixer stay "
-         + "constant across the arrangement, so swapping a sound changes the whole song "
-         + "and never disturbs the notes."),
-
-        ("repeat.1",
-         "Hold is how you work",
-         "Hold repeats the selected section so you can hear what you are changing. It is "
-         + "required before shaping a section or saving snapshots — there is no point "
-         + "judging either without listening."),
+        ("questionmark.circle",
+         "Help is on every screen",
+         "Tap the ? button at the top of any screen. Every control gets an outline."),
 
         ("hand.tap",
-         "Try a section on its own",
-         "Turn on Pattern Trigger Mode in Settings and the section chips become "
-         + "pads — press one to hear just that section. It plays through once, or round "
-         + "and round if Loop is on, and you can set it to sound only while held. Press "
-         + "another while one is playing and it is queued: the pad pulses, then takes "
-         + "over cleanly at the end of the bar rather than cutting in."),
+         "Tap anything to see what it does",
+         "With help on, tap an outlined control and a card at the bottom explains it. "
+         + "Nothing you tap does anything while help is on, so you can't change your song "
+         + "by accident."),
 
-        ("wand.and.stars",
-         "Shape a section",
-         "Shape rotates, reverses or transposes the note pool, and generates whole step "
-         + "sequences from a character — Flowing, Sparse or Jumpy. It applies to the "
-         + "tracks you tick, so you can rework one and leave the rest. Keep pressing "
-         + "Generate until something catches."),
-
-        ("camera",
-         "Snapshots are your way back",
-         "Holding a section saves a protected Original you can always return to. Save "
-         + "your own snapshots as you go — they cover just the ticked tracks, so you can "
-         + "keep one part while experimenting on another."),
-
-        ("slider.horizontal.3",
-         "Make it sound played",
-         "Each track has Feel: roll chords instead of striking them, accent the beat, "
-         + "vary velocity and length, and add swing or loose timing. Small amounts go "
-         + "a long way toward not sounding like a machine."),
-
-        ("fx",
-         "Instruments and effects",
-         "Load an AUv3 instrument on any track and up to four effects after it. Watch "
-         + "the CPU readout on the transport — hosted plugins are where the processing "
-         + "goes, and dropouts start when it runs out."),
-
-        ("square.and.arrow.up",
-         "Play first, finish anywhere",
-         "Templates work straight away with built-in sound. Record the mix, or export "
-         + "MIDI that matches what you heard, note for note.")
+        ("checkmark.circle",
+         "Done when you are",
+         "Tap Done on the card, or the ? again, and the controls work normally. You can "
+         + "see this guide again from Settings ▸ Show Tutorial.")
     ]
 
     var body: some View {
         VStack(spacing: 24) {
+            // Leave at any point, from any page.
+            HStack {
+                Spacer()
+                Button("Exit") { finish() }
+                    .buttonStyle(.bordered)
+                    .accessibilityHint("Closes the tutorial")
+            }
             Spacer()
             Image(systemName: pages[page].icon)
                 .font(.system(size: 64, weight: .medium))
@@ -98,12 +61,14 @@ struct OnboardingView: View {
                 .frame(maxWidth: 560)
             Spacer()
             HStack {
-                Button(page == 0 ? (isFirstRun ? "Skip" : "Close") : "Back") {
-                    if page == 0 { finish() }
-                    else if reduceMotion { page -= 1 }
+                // Back only: Exit, at the top, leaves from any page.
+                Button("Back") {
+                    if reduceMotion { page -= 1 }
                     else { withAnimation { page -= 1 } }
                 }
                 .buttonStyle(.bordered)
+                .opacity(page == 0 ? 0 : 1)
+                .disabled(page == 0)
                 Spacer()
                 Text("\(page + 1) of \(pages.count)")
                     .font(.subheadline).foregroundStyle(.secondary)

@@ -154,6 +154,7 @@ struct StepRow: View {
             StepTypePickerSheet(selectedType: $step.type)
         }
         .accessibilityLabel("Step \(index + 1) type, \(step.type.rawValue)")
+        .helpTag(.stepType, instance: step.id.uuidString)
     }
 
     @ViewBuilder
@@ -169,9 +170,11 @@ struct StepRow: View {
                     step.n = parsed.first ?? step.n
                 }
                 .accessibilityLabel("Pool note positions")
+                .helpTag(.stepChord, instance: step.id.uuidString)
         } else if let label = stepperLabel {
             Stepper(label, value: $step.n, in: stepperRange)
                 .frame(minWidth: 120, maxWidth: 190)
+                .helpTag(.stepAmount, instance: step.id.uuidString)
         }
     }
 
@@ -206,6 +209,7 @@ struct StepRow: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Delete step \(index + 1)")
+        .helpTag(.stepDelete, instance: step.id.uuidString)
     }
 
     var body: some View {
@@ -246,6 +250,7 @@ struct StepRow: View {
                                    size: 44, tint: .accentColor,
                                    label: "Gate \(Int((step.gate * 100).rounded()))%",
                                    format: { "\(Int(($0 * 100).rounded()))%" })
+                            .helpTag(.stepGate, instance: step.id.uuidString)
                         // Snapped to 5% steps as before, so the label reads cleanly.
                         StudioKnob(value: Binding(get: { step.probability },
                                                   set: { step.probability = ($0 * 20).rounded() / 20 }),
@@ -253,6 +258,7 @@ struct StepRow: View {
                                    size: 44, tint: .green,
                                    label: "Probability \(Int((step.probability * 100).rounded()))%",
                                    format: { "\(Int(($0 * 100).rounded()))%" })
+                            .helpTag(.stepProbability, instance: step.id.uuidString)
                         VStack(spacing: 4) {
                             Stepper(value: $step.ratchets, in: 1...8) {
                                 Text("\(step.ratchets)")
@@ -262,6 +268,7 @@ struct StepRow: View {
                             Text("Divide").font(.caption2).foregroundStyle(Color(white: 0.78))
                         }
                         .accessibilityElement(children: .combine)
+                        .helpTag(.stepDivide, instance: step.id.uuidString)
                         Spacer(minLength: 0)
                     }
                     Text(articulationHelp)

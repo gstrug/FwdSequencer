@@ -48,7 +48,9 @@ struct ShapeSectionView: View {
             }
             .navigationTitle("Shape Section")
             .navigationBarTitleDisplayMode(.inline)
+            .helpHost()
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { HelpButton() }
                 ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
             }
             .onAppear(perform: seedSelection)
@@ -77,6 +79,7 @@ struct ShapeSectionView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .helpTag(.shapeTracks, instance: track.id.uuidString)
             }
         } header: {
             Text("Tracks")
@@ -116,6 +119,7 @@ struct ShapeSectionView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .helpTag(.shapeNotes, instance: option.rawValue)
 
                     Text(option.detail).font(.caption).foregroundStyle(.secondary)
 
@@ -136,6 +140,7 @@ struct ShapeSectionView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(!canShape)
+            .helpTag(.shapeApply)
         } header: {
             Text("Notes")
         } footer: {
@@ -265,6 +270,7 @@ struct ShapeSectionView: View {
                 accessibilityLabel: "Length",
                 format: { "\(Int($0.rounded())) steps" }
             )
+            .helpTag(.shapeLength)
 
             ForEach(StepCharacter.allCases) { option in
                 Button {
@@ -286,6 +292,7 @@ struct ShapeSectionView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(option == songStore.generatorCharacter ? [.isSelected] : [])
+                .helpTag(.shapeCharacter, instance: option.rawValue)
             }
 
             Button {
@@ -302,6 +309,7 @@ struct ShapeSectionView: View {
             }
             .buttonStyle(.borderedProminent)
             .disabled(!canShape)
+            .helpTag(.shapeGenerate)
         } header: {
             Text("Steps")
         } footer: {

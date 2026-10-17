@@ -28,6 +28,7 @@ struct SongMixerView: View {
                         HStack(alignment: .top, spacing: 0) {
                             MasterStrip(masterVolume: $songStore.song.masterVolume)
                                 .midiLearnable(.masterVolume)
+                                .helpTag(.mixerMaster)
                             Divider().padding(.vertical, 8)
 
                             ForEach(songStore.song.tracks.indices, id: \.self) { idx in
@@ -51,12 +52,14 @@ struct SongMixerView: View {
                     }
                 }
             }
+            .helpHost()
             .navigationTitle("Mixer")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 // Learn works here too, so the strips can be linked to a controller's
                 // faders without leaving the mixer.
                 ToolbarItem(placement: .navigationBarLeading) { MIDILearnButton() }
+                ToolbarItem(placement: .navigationBarLeading) { HelpButton() }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
                 }
@@ -84,6 +87,7 @@ struct SongChannelStrip: View {
 
             FaderWithMeter(value: $track.mixer.volume) { TrackVUMeter(trackID: track.id) }
                 .midiLearnable(midi.volume)
+                .helpTag(.mixerFader, instance: track.id.uuidString)
 
             Text("Vol").font(.caption2).foregroundStyle(.secondary)
 
@@ -92,6 +96,7 @@ struct SongChannelStrip: View {
             // Tap: all effects in/out. Long press: edit them.
             EffectsToggleButton(track: track)
                 .midiLearnable(midi.effects)
+                .helpTag(.trackEffects, instance: track.id.uuidString)
 
             StudioKnob(value: Binding(get: { Double(track.mixer.pan) },
                                       set: { track.mixer.pan = Float($0) }),
@@ -99,14 +104,17 @@ struct SongChannelStrip: View {
                        label: "Pan \(panLabel)",
                        format: { _ in panLabel })
                 .midiLearnable(midi.pan)
+                .helpTag(.mixerPan, instance: track.id.uuidString)
 
             HStack(spacing: 6) {
                 StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
                                  accessibilityLabel: "Mute \(track.name)")
                     .midiLearnable(midi.mute)
+                    .helpTag(.trackMute, instance: track.id.uuidString)
                 StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
                                  accessibilityLabel: "Solo \(track.name)")
                     .midiLearnable(midi.solo)
+                    .helpTag(.trackSolo, instance: track.id.uuidString)
             }
         }
         .frame(width: 104)
