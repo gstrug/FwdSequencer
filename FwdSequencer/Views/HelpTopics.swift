@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 
 /// Every piece of help text in the app, in one place so it can be read through and
 /// corrected together. Shown by help mode (HelpMode.swift) when a control is tapped,
