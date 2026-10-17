@@ -145,6 +145,20 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
 
 ## Open items and ideas
 
+- **NEXT, reported 2026-10-17 — plugin screen (Graham is testing the 17 Oct changes
+  first; do not start until he says):**
+  1. Some plugins' editor windows do not size to the screen (`PluginEditorView`).
+     Remember lesson 2: resize with Auto Layout, never transform the view.
+  2. **GeoShred no longer loads.** It had been made to work after a lot of effort, so
+     this is a regression, not the old "not hostable" verdict (lesson 7 may be out of
+     date). Find which build it last loaded in, then look at what changed since.
+     Candidates touching plugin load and MIDI delivery since build 83: `a0227ab`
+     performance pass, `e82b5cb` rotation, `6c62689` Play keyboard effects
+     (`loadEffects` for the performance channel, `channelPath`), and the MIDI input
+     work (keys sent straight to `AudioEngineManager.playNote` from the CoreMIDI
+     thread; it honours `isSuspended`, but check). Ask Graham: on a track or the Play
+     keyboard, new song or existing, and what he sees (error, blank, hang, crash).
+
 - Decide whether a hosted-plugin build (FWD as an AUv3 MIDI generator) is wanted; it
   affects where the scheduler seam goes (see `TIMING.md` section 6).
 - Groove templates (per-position offset tables) not built; swing covers the common case.
