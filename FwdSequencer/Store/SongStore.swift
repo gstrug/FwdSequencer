@@ -484,6 +484,7 @@ class SongStore: ObservableObject {
     /// Open a song: tear down any previously loaded instruments and load this
     /// song's instruments once (concurrently — open time ≈ one plugin's load).
     func open(_ song: Song) {
+        LoadDiagnostics.shared.songOpening(song.name)
         let safeSong: Song
         do {
             safeSong = try SongValidator.validateAndNormalize(song)
@@ -535,10 +536,15 @@ class SongStore: ObservableObject {
         let token = pendingPluginLoads.begin(for: trackID)
         pluginStatuses[trackID] = .loading(info?.name ?? "Built-in Sound")
         isLoading = true
+        let trackName = song.tracks.first { $0.id == trackID }?.name
+            ?? (song.performance?.id == trackID ? "Play Keyboard" : "Track")
+        LoadDiagnostics.shared.loadStarted(trackID, label: "\(trackName) [\(info?.name ?? "Built-in")]",
+                                           hasSavedSound: stateData != nil)
         audioEngine.loadPlugin(info, for: trackID, stateData: stateData) { [weak self] result in
             guard let self else { return }
             guard pendingPluginLoads.finish(for: trackID, token: token) else { return }
             isLoading = !pendingPluginLoads.isEmpty
+            if !isLoading { LoadDiagnostics.shared.note("all instruments loaded: Restoring instruments overlay closes") }
             switch result {
             case .success:
                 pluginStatuses[trackID] = .ready
