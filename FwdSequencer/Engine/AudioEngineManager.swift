@@ -249,12 +249,8 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     func resumeTrack(_ id: UUID) {
         withLock {
             guard let count = suspendCounts[id] else { return }   // ignore unbalanced resume
-            if count <= 1 {
-                suspendCounts.removeValue(forKey: id)
-                LoadDiagnostics.shared.gateOpened(id)
-            } else {
-                suspendCounts[id] = count - 1
-            }
+            if count <= 1 { suspendCounts.removeValue(forKey: id) }
+            else { suspendCounts[id] = count - 1 }
         }
     }
 
@@ -927,11 +923,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             AVAudioUnit.instantiate(with: desc, options: []) { [weak self] avAudioUnit, error in
                 guard let self else { return }
                 DispatchQueue.main.async {
-                    guard self.isCurrentLoad(requestID, for: trackID) else {
-                        LoadDiagnostics.shared.event("plugin created, but too late: load was replaced or timed out", track: trackID)
-                        return
-                    }
-                    LoadDiagnostics.shared.event(avAudioUnit == nil ? "plugin failed to create" : "plugin created", track: trackID)
+                    guard self.isCurrentLoad(requestID, for: trackID) else { return }
                     if let unit = avAudioUnit {
                         self.swapInstrument(unit, for: trackID, mixer: mixer)
                         if let data = stateData {
@@ -939,11 +931,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                             // will not accept fullState immediately after being attached.
                             DispatchQueue.main.asyncAfter(deadline: .now() + Self.instrumentSettleDelay) {
                                 guard self.isCurrentLoad(requestID, for: trackID) else { return }
-                                LoadDiagnostics.shared.event("restoring saved sound", track: trackID)
-                                let restoreStart = CACurrentMediaTime()
                                 self.applyPluginState(data, for: trackID)
-                                LoadDiagnostics.shared.event(String(format: "saved sound restored (took %.2fs)",
-                                                                    CACurrentMediaTime() - restoreStart), track: trackID)
                                 self.finishPluginLoad(requestID, for: trackID, result: .success(()))
                             }
                         } else {
@@ -969,7 +957,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
             DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
                 guard let self, isCurrentLoad(requestID, for: trackID) else { return }
-                LoadDiagnostics.shared.event("TIMED OUT after 15 s: switching to the built-in sound", track: trackID)
                 attachSampler(for: trackID, mixer: mixer)
                 finishPluginLoad(requestID, for: trackID,
                                  result: .failure(.timedOut(pluginInfo.name)))
@@ -994,10 +981,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             return loadRequests.removeValue(forKey: trackID)?.completion
         }
         guard let completion else { return }
-        LoadDiagnostics.shared.event({
-            if case .failure(let error) = result { return "load finished: failed (\(error.localizedDescription))" }
-            return "load finished: ready"
-        }(), track: trackID)
         resumeTrack(trackID)
         deliver(result, to: completion)
     }
@@ -1266,11 +1249,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             let now = CACurrentMediaTime()
             guard now - lastLevelTimestamp > 0.05 else { return }
             lastLevelTimestamp = now
-            // Diagnostics: the first moment this track actually makes a sound.
-            if LoadDiagnostics.shared.wantsFirstSound(id) {
-                let level = self.levels(buffer)
-                if level.peak > 0.0005 { LoadDiagnostics.shared.soundHeard(id, peak: level.peak) }
-            }
             guard let sink = self.levelSink() else { return }
             sink(id, self.levels(buffer))
         }
@@ -1312,11 +1290,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
 
     func playNote(trackID: UUID, midiNote: UInt8, velocity: UInt8) {
         withLock {
-            guard !isSuspended(trackID) else {
-                LoadDiagnostics.shared.noteHeldBack(trackID)
-                return
-            }
-            LoadDiagnostics.shared.noteSent(trackID)
+            guard !isSuspended(trackID) else { return }
             activeNotes[trackID, default: []].insert(midiNote)
             if let unit = auv3Units[trackID] {
                 sendMIDI(to: unit, 0x90, midiNote, velocity)

@@ -158,22 +158,13 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   first; do not start until he says):**
   1. Some plugins' editor windows do not size to the screen (`PluginEditorView`).
      Remember lesson 2: resize with Auto Layout, never transform the view.
-  2. **GeoShred: corrected 2026-10-20 — the only problem is that it is slow.** It
-     loads, its preset restores, and two instances work; but loading takes 12–13 s
-     (window and preset), much slower than it used to and close to the 15 s timeout
-     that falls back to the GM sampler. Graham is restarting the iPad to see whether
-     it is device state (see the GeoShred note in PLUGIN_HOSTING.md). If it stays
-     slow: time each stage (instantiate, settle + state restore, view controller),
-     consider a longer timeout for slow plugins, and show progress while loading.
-     Originally reported as "no longer loads". It had been made to work after a lot of effort, so
-     this is a regression, not the old "not hostable" verdict (lesson 7 may be out of
-     date). Find which build it last loaded in, then look at what changed since.
-     Candidates touching plugin load and MIDI delivery since build 83: `a0227ab`
-     performance pass, `e82b5cb` rotation, `6c62689` Play keyboard effects
-     (`loadEffects` for the performance channel, `channelPath`), and the MIDI input
-     work (keys sent straight to `AudioEngineManager.playNote` from the CoreMIDI
-     thread; it honours `isSuspended`, but check). Ask Graham: on a track or the Play
-     keyboard, new song or existing, and what he sees (error, blank, hang, crash).
+  2. **GeoShred slowness — SOLVED 2026-10-20, not our bug.** Timing showed the app had
+     both instances created, restored and receiving notes within 4 s, but GeoShred was
+     silent until 30 s. Cause: the GeoShred standalone app was loading a promotional
+     video in the background; dismissing it ("don't show again") in the GeoShred app
+     brought loading back to normal. If a plugin is ever slow again, check its own app
+     first. (The timing messages used to find this were removed afterwards; commit
+     a5b7444 has them if they are needed again.)
 
 - Decide whether a hosted-plugin build (FWD as an AUv3 MIDI generator) is wanted; it
   affects where the scheduler seam goes (see `TIMING.md` section 6).
