@@ -158,7 +158,13 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   first; do not start until he says):**
   1. Some plugins' editor windows do not size to the screen (`PluginEditorView`).
      Remember lesson 2: resize with Auto Layout, never transform the view.
-  2. **GeoShred no longer loads.** It had been made to work after a lot of effort, so
+  2. **GeoShred: update 2026-10-20 — it does load, but very slowly.** An existing song
+     with GeoShred still works. Loading it onto a track in another song looked like a
+     failure, but its window appeared after well over 5 seconds. So first find where
+     the time goes (instantiation, state restore, or the editor's view-controller
+     request), check it stays under the 15 s load timeout, and consider showing
+     progress so a slow plugin doesn't look broken. Earlier notes follow.
+     Originally reported as "no longer loads". It had been made to work after a lot of effort, so
      this is a regression, not the old "not hostable" verdict (lesson 7 may be out of
      date). Find which build it last loaded in, then look at what changed since.
      Candidates touching plugin load and MIDI delivery since build 83: `a0227ab`
