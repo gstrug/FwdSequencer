@@ -154,10 +154,9 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
 
 ## Open items and ideas
 
-- **NEXT, reported 2026-10-17 — plugin screen (Graham is testing the 17 Oct changes
-  first; do not start until he says):**
+- **Plugin screen, reported 2026-10-17 — both items DONE 2026-10-20 (build 87):**
   1. Some plugins' editor windows do not size to the screen (`PluginEditorView`).
-     **Changed 2026-10-20, to test:** mid-sized plugins (KAGARIBI) were put in a scroll
+     **Fixed 2026-10-20, tested OK by Graham:** mid-sized plugins (KAGARIBI) were put in a scroll
      view zoomed to aspect-FILL, so they came up zoomed in with controls off screen,
      and the scroll view stole knob drags. Now no scroll view or zoom at all: large /
      undeclared-size plugins fill; others show at their declared size, centred, shrunk
