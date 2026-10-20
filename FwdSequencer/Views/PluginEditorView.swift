@@ -31,14 +31,11 @@ private struct AUPluginView: UIViewControllerRepresentable {
     }
 }
 
-final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
+final class AUPluginHostController: UIViewController {
     private let audioUnit: AUAudioUnit
     private var onNoUI: (() -> Void)?
     private var onWillDisappear: (() -> Void)?
     private var onViewReady: (() -> Void)?
-    private var pluginView: UIView?
-    private let scrollView = UIScrollView()
-    private var userHasZoomed = false
 
     init(audioUnit: AUAudioUnit, onNoUI: (() -> Void)?, onWillDisappear: (() -> Void)?,
          onViewReady: (() -> Void)? = nil) {
@@ -80,20 +77,6 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
-
-        scrollView.delegate = self
-        scrollView.minimumZoomScale = 0.25
-        scrollView.maximumZoomScale = 3.0
-        scrollView.bouncesZoom = true
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(scrollView)
-        NSLayoutConstraint.activate([
-            scrollView.topAnchor.constraint(equalTo: view.topAnchor),
-            scrollView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-        ])
-
     }
 
     private var hasRequestedView = false
@@ -117,45 +100,52 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         }
     }
 
+    /// Every plugin view is placed by Auto Layout — sized, never transformed (see
+    /// CLAUDE.md lesson 2: a transform on an out-of-process view can blank its scene).
+    ///
+    /// - Large plugins, or ones that declare no usable size, fill the whole area.
+    /// - The rest are shown at their own declared size, centred — and shrunk to fit,
+    ///   by resizing, if that is bigger than the space available.
+    ///
+    /// Mid-sized plugins used to go in a scroll view zoomed to FILL the area in both
+    /// directions, so a wide plugin in a tall space was blown up until its sides were
+    /// off screen (KAGARIBI: "zoomed in, can't reach the controls"). The scroll view
+    /// also took drags meant for the plugin's knobs and faders, and the zoom was a
+    /// transform on the plugin's view. Both are gone.
     private func embed(_ vc: UIViewController) {
         addChild(vc)
         let pv = vc.view!
         let declared = vc.preferredContentSize
-
-        // Large full-UI plugins (or ones with a degenerate declared size) are fitted by
-        // RESIZING via Auto Layout — never by a zoom transform. Out-of-process/hosted
-        // plugin views (e.g. GeoShred) get their scene invalidated when a CGAffineTransform
-        // is applied to them ("Invalid frame dimension"); resizing their bounds is safe.
         let wantsFill = declared.width < 100 || declared.height < 100
                      || declared.width >= 900 || declared.height >= 700
+        pv.translatesAutoresizingMaskIntoConstraints = false
+        vc.beginAppearanceTransition(true, animated: false)
+        view.addSubview(pv)
         if wantsFill {
-            scrollView.isHidden = true
-            pv.translatesAutoresizingMaskIntoConstraints = false
-            vc.beginAppearanceTransition(true, animated: false)
-            view.addSubview(pv)
             NSLayoutConstraint.activate([
                 pv.topAnchor.constraint(equalTo: view.topAnchor),
                 pv.leadingAnchor.constraint(equalTo: view.leadingAnchor),
                 pv.trailingAnchor.constraint(equalTo: view.trailingAnchor),
                 pv.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             ])
-            vc.didMove(toParent: self)
-            vc.endAppearanceTransition()
-            signalViewReady()
-            return
+        } else {
+            // Its own size where it fits (high priority, so it gives way), never larger
+            // than the area (required), centred in it.
+            let width = pv.widthAnchor.constraint(equalToConstant: declared.width)
+            let height = pv.heightAnchor.constraint(equalToConstant: declared.height)
+            width.priority = .defaultHigh
+            height.priority = .defaultHigh
+            NSLayoutConstraint.activate([
+                width, height,
+                pv.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor),
+                pv.heightAnchor.constraint(lessThanOrEqualTo: view.heightAnchor),
+                pv.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+                pv.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+            ])
         }
-
-        // Small fixed-size plugin: scroll + zoom to fit so its controls stay reachable.
-        pv.translatesAutoresizingMaskIntoConstraints = true
-        pv.frame = CGRect(origin: .zero, size: declared)
-        vc.beginAppearanceTransition(true, animated: false)
-        scrollView.addSubview(pv)
-        scrollView.contentSize = declared
-        pluginView = pv
         vc.didMove(toParent: self)
         vc.endAppearanceTransition()
         signalViewReady()
-        view.setNeedsLayout()
     }
 
     /// The counterpart to `embed`: Apple's documented teardown for a child view
@@ -167,46 +157,8 @@ final class AUPluginHostController: UIViewController, UIScrollViewDelegate {
         child.view.removeFromSuperview()
         child.removeFromParent()
         child.endAppearanceTransition()
-        pluginView = nil
     }
 
-    override func viewDidLayoutSubviews() {
-        super.viewDidLayoutSubviews()
-        guard !userHasZoomed,
-              let pv = pluginView,
-              scrollView.bounds.width > 0,
-              pv.frame.width > 0 else { return }
-
-        let scaleX = scrollView.bounds.width  / pv.frame.width
-        let scaleY = scrollView.bounds.height / pv.frame.height
-        let scale  = max(scaleX, scaleY)   // aspect-fill: no dead space, overflow is scrollable
-        guard scale > 0.01 else { return }
-        scrollView.minimumZoomScale = min(0.25, scale * 0.5)
-        // Only update if the scale has meaningfully changed to avoid layout loops.
-        if abs(scrollView.zoomScale - scale) > 0.01 {
-            scrollView.setZoomScale(scale, animated: false)
-        }
-        centerContent()
-    }
-
-    private func centerContent() {
-        guard let pv = pluginView else { return }
-        let scaledW = pv.frame.width  * scrollView.zoomScale
-        let scaledH = pv.frame.height * scrollView.zoomScale
-        let xInset = max(0, (scrollView.bounds.width  - scaledW) / 2)
-        let yInset = max(0, (scrollView.bounds.height - scaledH) / 2)
-        scrollView.contentInset = UIEdgeInsets(top: yInset, left: xInset, bottom: yInset, right: xInset)
-    }
-
-    // MARK: UIScrollViewDelegate
-
-    func viewForZooming(in scrollView: UIScrollView) -> UIView? { pluginView }
-
-    func scrollViewDidZoom(_ scrollView: UIScrollView) { centerContent() }
-
-    func scrollViewDidEndZooming(_ scrollView: UIScrollView, with view: UIView?, atScale scale: CGFloat) {
-        userHasZoomed = true
-    }
 }
 
 // MARK: - Mini audition keyboard

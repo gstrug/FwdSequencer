@@ -157,7 +157,11 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
 - **NEXT, reported 2026-10-17 — plugin screen (Graham is testing the 17 Oct changes
   first; do not start until he says):**
   1. Some plugins' editor windows do not size to the screen (`PluginEditorView`).
-     Remember lesson 2: resize with Auto Layout, never transform the view.
+     **Changed 2026-10-20, to test:** mid-sized plugins (KAGARIBI) were put in a scroll
+     view zoomed to aspect-FILL, so they came up zoomed in with controls off screen,
+     and the scroll view stole knob drags. Now no scroll view or zoom at all: large /
+     undeclared-size plugins fill; others show at their declared size, centred, shrunk
+     by Auto Layout if too big. Pinch-zoom of plugin windows is gone with it.
   2. **GeoShred slowness — SOLVED 2026-10-20, not our bug.** Timing showed the app had
      both instances created, restored and receiving notes within 4 s, but GeoShred was
      silent until 30 s. Cause: the GeoShred standalone app was loading a promotional
