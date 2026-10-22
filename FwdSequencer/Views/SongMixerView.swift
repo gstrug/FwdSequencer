@@ -81,9 +81,14 @@ struct SongChannelStrip: View {
 
     var body: some View {
         VStack(spacing: 14) {
+            // Always two lines tall, whatever the name: a one-line name next to a
+            // two-line one put the faders at different heights. Longer names shrink a
+            // little, then end in "…".
             Text(title ?? track.name)
                 .font(.caption.bold())
-                .lineLimit(2)
+                .lineLimit(2, reservesSpace: true)
+                .minimumScaleFactor(0.8)
+                .truncationMode(.tail)
                 .multilineTextAlignment(.center)
                 .frame(width: 80)
 

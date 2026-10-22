@@ -65,9 +65,11 @@ struct MasterStrip: View {
 
     var body: some View {
         VStack(spacing: 14) {
+            // Two lines tall like the track names, so its fader lines up with theirs.
             Text("MASTER")
                 .font(.caption.bold())
                 .foregroundStyle(.secondary)
+                .lineLimit(2, reservesSpace: true)
                 .frame(width: 80)
 
             FaderWithMeter(value: $masterVolume) { MasterVUMeter() }
