@@ -32,8 +32,9 @@ final class MIDIControlCenter: ObservableObject {
     @Published private(set) var disabledDevices: Set<String> = [] {
         didSet { learn.linksChanged(); refreshKeyRouting() }
     }
-    /// Device name → where its keys go. A device with no entry: Off.
-    @Published private(set) var keyDestinations: [String: MIDIKeysDestination] = [:] {
+    /// Device name → where its keys go (Play keyboard, tracks, both or neither).
+    /// A device with no entry: neither.
+    @Published private(set) var keySettings: [String: MIDIKeysSetting] = [:] {
         didSet { refreshKeyRouting() }
     }
     /// When each device last sent something, for its activity light.
@@ -75,14 +76,17 @@ final class MIDIControlCenter: ObservableObject {
     private static let templatesKey = "MIDIControllerTemplates.v1"
     private static let assignmentsKey = "MIDIControllerAssignments.v1"
     private static let disabledKey = "MIDIDisabledDevices.v1"
-    private static let keysKey = "MIDIKeyDestinations.v1"
+    /// The old single choice per device (Off / Play keyboard / Track N); read once to
+    /// carry a setting over to the two switches that replaced it.
+    private static let oldKeysKey = "MIDIKeyDestinations.v1"
+    private static let keysKey = "MIDIKeySettings.v2"
 
     private init() {
         loadSettings()
         messageQueue = MIDIMessageQueue { [weak self] batch in self?.handle(batch) }
         // Learn and Write Notes change how keys are routed. Received on the next main
         // turn, because @Published announces a change before the value is stored.
-        learn.$isOn.combineLatest(learn.$writingTrackID)
+        learn.$isOn.combineLatest(learn.$writingTrackID, learn.$playTrackIDs)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 // Armed elsewhere, or disarmed: any keys still down belong to before.
@@ -144,13 +148,34 @@ final class MIDIControlCenter: ObservableObject {
 
     // MARK: Keys
 
-    func keysDestination(forDevice name: String) -> MIDIKeysDestination {
-        keyDestinations[name] ?? .off
+    func keysSetting(forDevice name: String) -> MIDIKeysSetting {
+        keySettings[name] ?? MIDIKeysSetting()
     }
 
-    func setKeysDestination(_ destination: MIDIKeysDestination, forDevice name: String) {
-        keyDestinations[name] = destination
+    func setKeysSetting(_ setting: MIDIKeysSetting, forDevice name: String) {
+        keySettings[name] = setting
         saveSettings()
+    }
+
+    /// Whether any connected controller's keys go to the tracks, which is when the
+    /// tracks show their W or P button. Kept on `learn` too (updated in
+    /// refreshKeyRouting), so track rows can watch it without watching this whole
+    /// object, whose activity lights change with every message.
+    var keysReachTracks: Bool {
+        sources.contains { isEnabled($0.name) && keysSetting(forDevice: $0.name).toTracks }
+    }
+
+    /// The P button on a track (Write Notes off): keys play this track, alongside any
+    /// other track whose P is on. Several at once are fine.
+    func togglePlay(_ trackID: UUID) {
+        if learn.playTrackIDs.contains(trackID) { learn.playTrackIDs.remove(trackID) }
+        else { learn.playTrackIDs.insert(trackID) }
+    }
+
+    /// A track's keys button, whichever it is showing: W arms it while Write Notes is
+    /// on; otherwise P switches whether the keys play it.
+    func toggleKeysButton(_ trackID: UUID) {
+        if learn.writeNotesEnabled { toggleWriting(trackID) } else { togglePlay(trackID) }
     }
 
     // MARK: Write Notes
@@ -217,57 +242,68 @@ final class MIDIControlCenter: ObservableObject {
     /// Tell the MIDI thread where each controller's keys go now.
     private func refreshKeyRouting() {
         let store = songStore
-        var instruments: [String: UUID] = [:]
+        var destinations: [String: [UUID]] = [:]
+        var writingDevices: Set<String> = []
         var linked: [String: Set<MIDIControlSource>] = [:]
         var linkedControls: [String: Set<MIDIControlSource>] = [:]
         var needsPlayInstrument = false
+
+        // The tracks that keys going to the tracks reach. With a track armed for Write
+        // Notes, just that one (and notes are written into it); otherwise every track
+        // whose P is on. A muted or solo-silenced track is left out — silent — though an
+        // armed one is still written to. An armed track that has gone (deleted, another
+        // song) is disarmed.
+        var trackInstruments: [UUID] = []
+        var writing = false
+        if let store {
+            if let armedID = learn.writingTrackID {
+                if let armed = store.song.tracks.first(where: { $0.id == armedID }) {
+                    writing = true
+                    if store.song.isAudible(armed) { trackInstruments = [armed.id] }
+                } else {
+                    DispatchQueue.main.async { [weak self] in
+                        if self?.learn.writingTrackID == armedID { self?.learn.writingTrackID = nil }
+                    }
+                }
+            } else if !learn.writeNotesEnabled {
+                trackInstruments = store.song.tracks
+                    .filter { learn.playTrackIDs.contains($0.id) && store.song.isAudible($0) }
+                    .map(\.id)
+            }
+        }
+
         for source in sources where isEnabled(source.name) {
             if let t = template(forDevice: source.name) {
                 linked[source.name] = Set(t.mappings.map(\.source).filter { $0.kind == .note })
                 linkedControls[source.name] = Set(t.mappings.map(\.source).filter { $0.kind == .controlChange })
             }
             guard let store else { continue }
-            switch keysDestination(forDevice: source.name) {
-            case .off:
-                break
-            case .playKeyboard:
+            let setting = keysSetting(forDevice: source.name)
+            var instruments: [UUID] = []
+            if setting.toPlayKeyboard {
                 if let performance = store.song.performance {
-                    if store.song.isPlayKeyboardAudible { instruments[source.name] = performance.id }
+                    if store.song.isPlayKeyboardAudible { instruments.append(performance.id) }
                 } else {
                     needsPlayInstrument = true
                 }
-            case .track(let i):
-                // Muted (or silenced by a solo elsewhere): its keys are silent too.
-                if store.song.tracks.indices.contains(i), store.song.isAudible(store.song.tracks[i]) {
-                    instruments[source.name] = store.song.tracks[i].id
-                }
             }
-        }
-        // The track armed for Write Notes: its keys sound only if it can be heard, but
-        // notes are written either way. Gone (deleted, or another song): disarm.
-        var writing = false
-        var armedInstrument: UUID?
-        if let armedID = learn.writingTrackID {
-            if let store, let armed = store.song.tracks.first(where: { $0.id == armedID }) {
-                writing = true
-                if store.song.isAudible(armed) { armedInstrument = armed.id }
-            } else if store != nil {
-                DispatchQueue.main.async { [weak self] in
-                    if self?.learn.writingTrackID == armedID { self?.learn.writingTrackID = nil }
-                }
+            if setting.toTracks {
+                instruments += trackInstruments
+                if writing { writingDevices.insert(source.name) }
             }
+            if !instruments.isEmpty { destinations[source.name] = instruments }
         }
+        if learn.keysReachTracks != keysReachTracks { learn.keysReachTracks = keysReachTracks }
         let paused = store.map { $0.isLoading } ?? true
         let learning = learn.isOn
         let disabled = disabledDevices
         keyRouter.reconfigure { c in
-            c.instruments = instruments
+            c.destinations = destinations
+            c.writingDevices = writingDevices
             c.linkedNotes = linked
             c.linkedControls = linkedControls
             c.disabledDevices = disabled
             c.learning = learning
-            c.writingNotes = writing
-            c.armedInstrument = armedInstrument
             c.paused = paused
         }
         // The Play keyboard's instrument is made the first time it is needed, as the
@@ -370,8 +406,10 @@ final class MIDIControlCenter: ObservableObject {
             let mappings = template(forDevice: source.name)?.mappings(matching: message) ?? []
             if mappings.isEmpty {
                 // A key nothing is linked to: with a track armed for Write Notes, it sets
-                // or clears that note in the armed track (a chord only adds).
-                if message.kind == .note, let armed = learn.writingTrackID {
+                // or clears that note in the armed track (a chord only adds) — from a
+                // controller whose keys go to the tracks.
+                if message.kind == .note, let armed = learn.writingTrackID,
+                   keysSetting(forDevice: source.name).toTracks {
                     let key = "\(source.name)|\(message.channel)|\(message.number)"
                     if message.isPress {
                         writePress(message.number, key: key, into: armed)
@@ -514,7 +552,7 @@ final class MIDIControlCenter: ObservableObject {
             punchWriting(store)
         case .trackWriteNotes(let i):
             guard store.song.tracks.indices.contains(i) else { return }
-            toggleWriting(store.song.tracks[i].id)
+            toggleKeysButton(store.song.tracks[i].id)
         case .playMute:
             store.song.performance?.mixer.isMuted.toggle()
         case .playSolo:
@@ -623,8 +661,19 @@ final class MIDIControlCenter: ObservableObject {
         }
         disabledDevices = Set(defaults.stringArray(forKey: Self.disabledKey) ?? [])
         if let data = defaults.data(forKey: Self.keysKey),
-           let decoded = try? JSONDecoder().decode([String: MIDIKeysDestination].self, from: data) {
-            keyDestinations = decoded
+           let decoded = try? JSONDecoder().decode([String: MIDIKeysSetting].self, from: data) {
+            keySettings = decoded
+        } else if let data = defaults.data(forKey: Self.oldKeysKey),
+                  let old = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            // Carry the old single choice over: "playKeyboard" or a track become the
+            // matching switch. (Read loosely: the old type no longer exists.)
+            var carried: [String: MIDIKeysSetting] = [:]
+            for (device, value) in old {
+                let text = "\(value)"
+                carried[device] = MIDIKeysSetting(toPlayKeyboard: text.contains("playKeyboard"),
+                                                  toTracks: text.contains("track"))
+            }
+            keySettings = carried
         }
     }
 
@@ -638,7 +687,7 @@ final class MIDIControlCenter: ObservableObject {
             defaults.set(data, forKey: Self.assignmentsKey)
         }
         defaults.set(Array(disabledDevices).sorted(), forKey: Self.disabledKey)
-        if let data = try? JSONEncoder().encode(keyDestinations) {
+        if let data = try? JSONEncoder().encode(keySettings) {
             defaults.set(data, forKey: Self.keysKey)
         }
     }
@@ -750,7 +799,20 @@ final class MIDILearnState: ObservableObject {
     @Published var writingTrackID: UUID?
     /// The track armed last, for punching back in from a controller button.
     var lastWritingTrackID: UUID?
+    /// Tracks whose P is on: with Write Notes off, keys going to the tracks play all of
+    /// these. Remembered between launches (track ids are unique, so one set serves
+    /// every song).
+    @Published var playTrackIDs: Set<UUID> = Set(
+        (UserDefaults.standard.stringArray(forKey: "MIDIKeysPlayTracks.v1") ?? []).compactMap(UUID.init)
+    ) {
+        didSet {
+            UserDefaults.standard.set(playTrackIDs.map(\.uuidString).sorted(), forKey: "MIDIKeysPlayTracks.v1")
+        }
+    }
     var writingNotes: Bool { writingTrackID != nil }
+    /// Some controller's keys go to the tracks: tracks show W or P. See
+    /// MIDIControlCenter.keysReachTracks.
+    @Published var keysReachTracks = false
     /// The control waiting to be linked to the next message that arrives.
     @Published var target: MIDIControlTarget?
     /// Bumped whenever links, templates or devices change, so the link labels on

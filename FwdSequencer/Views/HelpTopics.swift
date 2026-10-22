@@ -24,6 +24,7 @@ enum HelpTopic: String {
     // A track
     case trackExpand, trackName, trackMenu, trackInstrument, trackEditInstrument,
          trackVolume, trackPan, trackMeter, trackMute, trackSolo, trackEffects, trackWrite,
+         trackPlayKeys,
          trackTime, trackKeyScale, trackSteps, trackKeyboard, trackNoteParams,
          trackStepsButton
 
@@ -55,6 +56,7 @@ enum HelpTopic: String {
 
     // MIDI
     case midiController, midiUse, midiTemplate, midiLoad, midiSaveAs, midiKeysPlay,
+         midiKeysTracks,
          midiTemplates, midiWriteNotes, midiClock, midiLearn
 
     var title: String {
@@ -104,6 +106,7 @@ enum HelpTopic: String {
         case .trackSolo: return "Solo (S)"
         case .trackEffects: return "Effects (FX)"
         case .trackWrite: return "Write Notes (W)"
+        case .trackPlayKeys: return "Keys Play (P)"
         case .trackTime: return "Time"
         case .trackKeyScale: return "Key and Scale"
         case .trackSteps: return "Step Display"
@@ -169,7 +172,8 @@ enum HelpTopic: String {
         case .midiTemplate: return "Template"
         case .midiLoad: return "Load"
         case .midiSaveAs: return "Save As"
-        case .midiKeysPlay: return "Keys Play"
+        case .midiKeysPlay: return "Keys → Play Keyboard"
+        case .midiKeysTracks: return "Keys → Tracks"
         case .midiTemplates: return "Templates"
         case .midiWriteNotes: return "Write Notes from Keys"
         case .midiClock: return "MIDI Clock Output"
@@ -267,7 +271,9 @@ enum HelpTopic: String {
         case .trackEffects:
             return "Tap to switch all the track's effects on or off; long press to add or edit them. Green: on. Orange: off or bypassed. With none, a tap opens the list."
         case .trackWrite:
-            return "Arms the track for Write Notes: keys on your MIDI controller play it and add or remove notes in this section. Play a chord to add notes without taking any out. One track at a time."
+            return "Arms the track for Write Notes: keys on your MIDI controller play it and add or remove notes in this section. Play a chord to add notes without taking any out. One track at a time. Turn Write Notes off (Settings ▸ MIDI) and this becomes P."
+        case .trackPlayKeys:
+            return "Keys on your MIDI controller play this track. Turn P on for as many tracks as you like to play them together. Turn Write Notes on (Settings ▸ MIDI) and this becomes W, for writing notes into one track."
         case .trackTime:
             return "How long each step lasts, from four whole notes (4/1) down to a 32nd note. T means triplet."
         case .trackKeyScale:
@@ -399,11 +405,13 @@ enum HelpTopic: String {
         case .midiSaveAs:
             return "Keeps this controller's current links under a new name and switches to the copy."
         case .midiKeysPlay:
-            return "Where this controller's keys go: Off, the Play keyboard, or a track. Sustain pedal, pitch bend, mod wheel and aftertouch go with them, unless linked with Learn."
+            return "This controller's keys play the Play keyboard's instrument. Sustain, pitch bend, mod wheel and aftertouch go with them, unless linked with Learn."
+        case .midiKeysTracks:
+            return "This controller's keys play the tracks: the track armed with W while Write Notes is on, otherwise every track with P on. Can be on together with Keys → Play Keyboard."
         case .midiTemplates:
             return "Every saved template. Tap one to see its links; swipe or long press to copy, rename or delete. Factory ones can be copied, not changed."
         case .midiWriteNotes:
-            return "Adds a W button to every track, for playing notes into a track from your controller."
+            return "On: tracks show W, to arm one track and write notes into it from your controller. Off: tracks show P, to choose which tracks your controller plays."
         case .midiClock:
             return "Sends this song's tempo and start and stop to other apps and hardware."
         case .midiLearn:

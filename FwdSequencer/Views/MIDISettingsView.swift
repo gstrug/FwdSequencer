@@ -25,7 +25,7 @@ struct MIDISettingsView: View {
                 } header: {
                     Text("Write Notes")
                 } footer: {
-                    Text("Adds a W button to every track. Tap W on a track to arm it — one track at a time: keys on any controller then play that track and add or remove notes in the section you are on, as tapping its keyboard does. A new track is armed as soon as you add it. Keys linked with Learn keep doing what they are linked to.")
+                    Text("For controllers with Keys → Tracks on. With this on, tracks show W: tap W to arm one track — keys then play it and add or remove notes in the section you are on, as tapping its keyboard does (a chord only adds). A new track is armed as soon as you add it. With this off, tracks show P instead: keys play every track whose P is on.")
                 }
                 Section {
                     Toggle(isOn: $songStore.midiClockEnabled) {
@@ -87,7 +87,7 @@ struct MIDISettingsView: View {
         } header: {
             Text("Controllers")
         } footer: {
-            Text("Each controller uses one template. Load switches it to another; Save As keeps its current links under a new name. Links you make with MIDI Learn are saved into the template straight away. The nanoKONTROL2 is set up automatically. Keys play sends a keyboard's notes to the Play keyboard's instrument or a track's; keys linked with Learn keep doing what they are linked to. Tracks are chosen by position, so Track 1 is the top track in every song.")
+            Text("Each controller uses one template. Load switches it to another; Save As keeps its current links under a new name. Links you make with MIDI Learn are saved into the template straight away. The nanoKONTROL2 is set up automatically. Keys → Play Keyboard plays the Play keyboard's instrument; Keys → Tracks plays the tracks you pick with W or P on each track. Either, both or neither, per controller. Sustain, pitch bend, mod wheel and aftertouch go with the keys. Keys linked with Learn keep doing what they are linked to. Links reach tracks by position, so Track 1 is the top track in every song.")
         }
     }
 
@@ -131,39 +131,32 @@ struct MIDISettingsView: View {
             .buttonStyle(.bordered)
             .disabled(!center.isEnabled(source.name))
 
-            Picker(selection: Binding(
-                get: { center.keysDestination(forDevice: source.name) },
-                set: { center.setKeysDestination($0, forDevice: source.name) }
-            )) {
-                ForEach(keyChoices(forDevice: source.name), id: \.self) { choice in
-                    Text(keyChoiceName(choice)).tag(choice)
-                }
-            } label: {
-                Label("Keys play", systemImage: "pianokeys")
+            // Where this controller's keys go. Two switches, so one keyboard can play the
+            // Play keyboard while another plays the tracks — or one plays both.
+            Toggle(isOn: keysBinding(source.name, \.toPlayKeyboard)) {
+                Label("Keys → Play Keyboard", systemImage: "pianokeys")
             }
-            .pickerStyle(.menu)
             .disabled(!center.isEnabled(source.name))
             .helpTag(.midiKeysPlay, instance: source.name)
+            Toggle(isOn: keysBinding(source.name, \.toTracks)) {
+                Label("Keys → Tracks", systemImage: "music.note.list")
+            }
+            .disabled(!center.isEnabled(source.name))
+            .helpTag(.midiKeysTracks, instance: source.name)
         }
         .padding(.vertical, 2)
     }
 
     /// Off, the Play keyboard, and every track in the open song — plus the device's
     /// current choice, if it points past the last track of this song.
-    private func keyChoices(forDevice name: String) -> [MIDIKeysDestination] {
-        var choices: [MIDIKeysDestination] = [.off, .playKeyboard]
-        choices += songStore.song.tracks.indices.map { .track($0) }
-        let current = center.keysDestination(forDevice: name)
-        if !choices.contains(current) { choices.append(current) }
-        return choices
-    }
-
-    /// "Track 2 · Bass" when the open song has that track.
-    private func keyChoiceName(_ choice: MIDIKeysDestination) -> String {
-        if case .track(let i) = choice, songStore.song.tracks.indices.contains(i) {
-            return "\(choice.displayName) · \(songStore.song.tracks[i].name)"
-        }
-        return choice.displayName
+    /// One of a controller's two keys switches.
+    private func keysBinding(_ device: String, _ flag: WritableKeyPath<MIDIKeysSetting, Bool>) -> Binding<Bool> {
+        Binding(get: { center.keysSetting(forDevice: device)[keyPath: flag] },
+                set: { value in
+                    var setting = center.keysSetting(forDevice: device)
+                    setting[keyPath: flag] = value
+                    center.setKeysSetting(setting, forDevice: device)
+                })
     }
 
     /// Templates to load onto a controller, the current one ticked.

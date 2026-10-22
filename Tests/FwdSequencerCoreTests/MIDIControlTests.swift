@@ -183,7 +183,7 @@ final class MIDIControlTests: XCTestCase {
 
     private func routing(_ device: String, plays id: UUID) -> MIDIKeyRouting {
         var r = MIDIKeyRouting()
-        _ = r.reconfigure { $0.instruments = [device: id]; $0.paused = false }
+        _ = r.reconfigure { $0.destinations = [device: [id]]; $0.paused = false }
         return r
     }
 
@@ -222,20 +222,41 @@ final class MIDIControlTests: XCTestCase {
         XCTAssertTrue(r.route(device: "Keys", note(60, 90)).actions.isEmpty)
     }
 
-    func testArmedTrackTakesEveryDevicesKeysAndPassesThemOnToBeWritten() {
-        let own = UUID(), armed = UUID()
-        var r = routing("Keys", plays: own)
-        _ = r.reconfigure { $0.writingNotes = true; $0.armedInstrument = armed }
+    func testWritingDevicesPassTheirKeysOnToBeWritten() {
+        let armed = UUID()
+        var r = routing("Keys", plays: UUID())
+        _ = r.reconfigure { $0.writingDevices = ["Keys"]; $0.destinations = ["Keys": [armed]] }
         let on = r.route(device: "Keys", note(64, 80))
-        XCTAssertEqual(on.actions, [.play(armed, note: 64, velocity: 80)], "plays the armed track, not Keys play's")
+        XCTAssertEqual(on.actions, [.play(armed, note: 64, velocity: 80)])
         XCTAssertTrue(on.passOn, "and goes on to be written")
-        // A device whose keys play nothing (Keys play Off) still plays and writes it.
-        XCTAssertEqual(r.route(device: "Other", note(65, 70)).actions, [.play(armed, note: 65, velocity: 70)])
+        // A device whose keys do not go to the tracks neither plays nor writes.
+        XCTAssertEqual(r.route(device: "Other", note(65, 70)), .init(passOn: true))
+    }
+
+    func testKeysPlaySeveralInstrumentsAtOnceAndReleaseThemAll() {
+        let play = UUID(), trackA = UUID(), trackB = UUID()
+        var r = MIDIKeyRouting()
+        _ = r.reconfigure { $0.destinations = ["Keys": [play, trackA, trackB]]; $0.paused = false }
+        XCTAssertEqual(r.route(device: "Keys", note(60, 90)).actions,
+                       [.play(play, note: 60, velocity: 90), .play(trackA, note: 60, velocity: 90),
+                        .play(trackB, note: 60, velocity: 90)])
+        XCTAssertEqual(r.route(device: "Keys", note(60, 0)).actions,
+                       [.stop(play, note: 60), .stop(trackA, note: 60), .stop(trackB, note: 60)])
+        XCTAssertEqual(r.routeControl(device: "Keys", status: 0xB0, data1: 64, data2: 127).count, 3,
+                       "the sustain pedal reaches all three")
+    }
+
+    func testEachControllerHasItsOwnDestinations() {
+        let play = UUID(), track = UUID()
+        var r = MIDIKeyRouting()
+        _ = r.reconfigure { $0.destinations = ["X-Station": [play], "Keys": [track]]; $0.paused = false }
+        XCTAssertEqual(r.route(device: "X-Station", note(60, 90)).actions, [.play(play, note: 60, velocity: 90)])
+        XCTAssertEqual(r.route(device: "Keys", note(62, 90)).actions, [.play(track, note: 62, velocity: 90)])
     }
 
     func testAnArmedTrackThatCannotBeHeardIsStillWritten() {
         var r = routing("Keys", plays: UUID())
-        _ = r.reconfigure { $0.writingNotes = true; $0.armedInstrument = nil }   // muted
+        _ = r.reconfigure { $0.writingDevices = ["Keys"]; $0.destinations = [:] }   // muted
         XCTAssertEqual(r.route(device: "Keys", note(64, 80)), .init(passOn: true))
     }
 
@@ -243,7 +264,7 @@ final class MIDIControlTests: XCTestCase {
         let own = UUID(), armed = UUID()
         var r = routing("Keys", plays: own)
         _ = r.route(device: "Keys", note(60, 90))
-        XCTAssertEqual(r.reconfigure { $0.writingNotes = true; $0.armedInstrument = armed },
+        XCTAssertEqual(r.reconfigure { $0.writingDevices = ["Keys"]; $0.destinations = ["Keys": [armed]] },
                        [.stop(own, note: 60)])
         _ = r.reconfigure { $0.linkedNotes = ["Keys": [MIDIControlSource(kind: .note, channel: 1, number: 36)]] }
         XCTAssertEqual(r.route(device: "Keys", note(36, 100)), .init(passOn: true), "a pad, not a note")
@@ -255,7 +276,7 @@ final class MIDIControlTests: XCTestCase {
         _ = r.route(device: "Keys", note(60, 90))
         _ = r.route(device: "Keys", note(62, 90))
         // Switching the keys to another track releases what was sounding on the first…
-        let released = r.reconfigure { $0.instruments = ["Keys": second] }
+        let released = r.reconfigure { $0.destinations = ["Keys": [second]] }
         XCTAssertEqual(Set(released.map { "\($0)" }),
                        Set([MIDIKeyRouting.Action.stop(first, note: 60), .stop(first, note: 62)].map { "\($0)" }))
         // …so a later release has nothing left to stop and does not reach the new one.
@@ -275,12 +296,15 @@ final class MIDIControlTests: XCTestCase {
         XCTAssertEqual(r.heldCount, 1)
     }
 
-    func testKeysDestinationRoundTrips() throws {
-        let all: [MIDIKeysDestination] = [.off, .playKeyboard, .track(4)]
-        let data = try JSONEncoder().encode(["a": all[0], "b": all[1], "c": all[2]])
-        let back = try JSONDecoder().decode([String: MIDIKeysDestination].self, from: data)
-        XCTAssertEqual(back, ["a": .off, "b": .playKeyboard, "c": .track(4)])
-        XCTAssertEqual(MIDIKeysDestination.track(4).displayName, "Track 5")
+    func testKeysSettingRoundTripsAndToleratesMissingKeys() throws {
+        let settings = ["a": MIDIKeysSetting(), "b": MIDIKeysSetting(toPlayKeyboard: true),
+                        "c": MIDIKeysSetting(toPlayKeyboard: true, toTracks: true)]
+        let back = try JSONDecoder().decode([String: MIDIKeysSetting].self,
+                                            from: JSONEncoder().encode(settings))
+        XCTAssertEqual(back, settings)
+        XCTAssertTrue(MIDIKeysSetting().isOff)
+        let partial = try JSONDecoder().decode(MIDIKeysSetting.self, from: Data(#"{"toTracks":true}"#.utf8))
+        XCTAssertEqual(partial, MIDIKeysSetting(toTracks: true))
     }
 
     // MARK: Play keyboard as a channel
@@ -380,7 +404,7 @@ final class MIDIControlTests: XCTestCase {
     func testControllersFollowTheArmedTrack() {
         let armed = UUID()
         var r = routing("Keys", plays: UUID())
-        _ = r.reconfigure { $0.writingNotes = true; $0.armedInstrument = armed }
+        _ = r.reconfigure { $0.writingDevices = ["Keys"]; $0.destinations = ["Keys": [armed]] }
         XCTAssertEqual(r.routeControl(device: "Keys", status: 0xB0, data1: 64, data2: 127),
                        [.control(armed, status: 0xB0, data1: 64, data2: 127)])
     }
@@ -389,18 +413,18 @@ final class MIDIControlTests: XCTestCase {
         let synth = UUID(), other = UUID()
         var r = routing("Keys", plays: synth)
         _ = r.routeControl(device: "Keys", status: 0xB0, data1: 64, data2: 127)
-        let released = r.reconfigure { $0.instruments = ["Keys": other] }
+        let released = r.reconfigure { $0.destinations = ["Keys": [other]] }
         XCTAssertEqual(released, [.control(synth, status: 0xB0, data1: 64, data2: 0),
                                   .control(synth, status: 0xE0, data1: 0, data2: 64),
                                   .control(synth, status: 0xB0, data1: 1, data2: 0),
                                   .control(synth, status: 0xD0, data1: 0, data2: 0)])
-        XCTAssertTrue(r.reconfigure { $0.instruments = ["Keys": synth] }.isEmpty,
+        XCTAssertTrue(r.reconfigure { $0.destinations = ["Keys": [synth]] }.isEmpty,
                       "nothing was moved on the other one")
     }
 
     func testWritingNotesPassesReleasesOnForChords() {
         var r = routing("Keys", plays: UUID())
-        _ = r.reconfigure { $0.writingNotes = true; $0.armedInstrument = UUID() }
+        _ = r.reconfigure { $0.writingDevices = ["Keys"]; $0.destinations = ["Keys": [UUID()]] }
         _ = r.route(device: "Keys", note(60, 90))
         XCTAssertTrue(r.route(device: "Keys", note(60, 0)).passOn)
     }

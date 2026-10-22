@@ -194,15 +194,30 @@ struct TrackWriteNotesButton: View {
     let index: Int
     @ObservedObject private var learn = MIDIControlCenter.shared.learn
 
+    /// Shown when a controller's keys go to the tracks (or Write Notes is on).
+    ///
+    /// - Write Notes on: **W** (red) — arms this track; one track at a time. Keys play
+    ///   it and add or remove notes in it.
+    /// - Write Notes off: **P** (green) — keys play this track. Any number at once.
     var body: some View {
-        if learn.writeNotesEnabled {
-            StudioToggleChip(title: "W",
-                             isOn: Binding(get: { learn.writingTrackID == track.id },
-                                           set: { _ in MIDIControlCenter.shared.toggleWriting(track.id) }),
-                             tint: .red,
-                             accessibilityLabel: "Write notes from keys into \(track.name)")
-                .midiLearnable(.trackWriteNotes(index))
-                .helpTag(.trackWrite, instance: track.id.uuidString)
+        if learn.keysReachTracks || learn.writeNotesEnabled {
+            if learn.writeNotesEnabled {
+                StudioToggleChip(title: "W",
+                                 isOn: Binding(get: { learn.writingTrackID == track.id },
+                                               set: { _ in MIDIControlCenter.shared.toggleWriting(track.id) }),
+                                 tint: .red,
+                                 accessibilityLabel: "Write notes from keys into \(track.name)")
+                    .midiLearnable(.trackWriteNotes(index))
+                    .helpTag(.trackWrite, instance: track.id.uuidString)
+            } else {
+                StudioToggleChip(title: "P",
+                                 isOn: Binding(get: { learn.playTrackIDs.contains(track.id) },
+                                               set: { _ in MIDIControlCenter.shared.togglePlay(track.id) }),
+                                 tint: .green,
+                                 accessibilityLabel: "Keys play \(track.name)")
+                    .midiLearnable(.trackWriteNotes(index))
+                    .helpTag(.trackPlayKeys, instance: track.id.uuidString)
+            }
         }
     }
 }

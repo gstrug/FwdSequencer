@@ -1608,7 +1608,7 @@ private struct SongTrackRowView: View {
             TrackEffectsButton(track: track)
                 .midiLearnable(.trackEffects(index))
                 .helpTag(.trackEffects, instance: track.id.uuidString)
-            // Only there while Write Notes from Keys is on.
+            // W or P: only there when a controller's keys go to the tracks.
             TrackWriteNotesButton(track: track, index: index)
 
             Divider().frame(height: 16)
@@ -1670,7 +1670,7 @@ private struct SongTrackRowView: View {
                 TrackEffectsButton(track: track)
                     .midiLearnable(.trackEffects(index))
                     .helpTag(.trackEffects, instance: track.id.uuidString)
-                // Only there while Write Notes from Keys is on.
+                // W or P: only there when a controller's keys go to the tracks.
                 TrackWriteNotesButton(track: track, index: index)
             }
             HStack(spacing: 8) {
@@ -1902,7 +1902,7 @@ private struct SongTrackRowView: View {
                 TrackEffectsButton(track: track)
                     .midiLearnable(.trackEffects(index))
                     .helpTag(.trackEffects, instance: track.id.uuidString)
-                // Only there while Write Notes from Keys is on.
+                // W or P: only there when a controller's keys go to the tracks.
                 TrackWriteNotesButton(track: track, index: index)
             }
 

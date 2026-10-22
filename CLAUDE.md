@@ -87,21 +87,23 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   & Clock). Links are app-wide in UserDefaults and address tracks **by position**.
   Controllers act only while a song is open (set in `ProjectBrowserView`) and are
   ignored while instruments restore (`isLoading`). Learn sits in Settings ▸ MIDI.
-- **Keys** (2026-10-16): per controller, "Keys play" Off / Play keyboard / Track N
-  (`MIDIKeysDestination`). Notes are played **on the CoreMIDI thread** by
-  `MIDIKeyRouter` (logic in the tested `MIDIKeyRouting`) straight into
-  `AudioEngineManager.playNote`, so they don't wait on the UI; held notes are released
-  when routing changes. Notes linked with Learn go to their link instead.
-- **Write Notes from Keys** (2026-10-17): a global switch (Settings ▸ MIDI, and on the
-  MIDI page; `learn.writeNotesEnabled`, UserDefaults) shows a red **W** on each track.
-  W arms one track at a time (`learn.writingTrackID`, not saved). While armed, every
-  enabled controller's unlinked keys play the armed track (overriding Keys play;
-  silent if it can't be heard) and toggle that note in its pool for the selected
-  section, obeying its scale. New tracks are armed on add. Targets `trackWriteNotes(N)`
-  and `writeNotes` (punch in/out, re-arming the last armed track).
-  Chords (a key pressed while another is down) only add notes; the chord's first key
-  is put back if it had toggled off (`writePress`). Releases reach the main thread
-  while writing for this.
+- **Keys** (reworked 2026-10-22): per controller, two switches (`MIDIKeysSetting`,
+  UserDefaults "MIDIKeySettings.v2", carried over once from the old single "Keys play"
+  choice): **Keys → Play Keyboard** and **Keys → Tracks**, either or both, so one
+  keyboard can play the Play keyboard while another plays tracks. Which tracks:
+  **Write Notes on** → each track shows a red **W**; one armed track at a time
+  (`learn.writingTrackID`, not saved) is played and written into. **Write Notes off** →
+  each track shows a green **P**; keys play every track with P on (`learn.playTrackIDs`,
+  saved by track id). The W/P button appears when a controller has Keys → Tracks on
+  (`learn.keysReachTracks`) or Write Notes is on. Notes are played **on the CoreMIDI
+  thread** by `MIDIKeyRouter` (logic in the tested `MIDIKeyRouting`, which now takes a
+  list of instruments per device) straight into `AudioEngineManager.playNote`; held
+  notes are released when routing changes; muted/solo-silenced channels are left out.
+  Notes linked with Learn go to their link instead. Writing: the pressed note is
+  toggled in the armed track's pool for the selected section, obeying its scale; a
+  chord (key pressed while another is down) only adds (`writePress`). New tracks are
+  armed on add. Targets `trackWriteNotes(N)` (the W/P button) and `writeNotes` (punch
+  in/out, re-arming the last armed track).
 - **Performance controllers** (2026-10-17): unlinked CCs (not 120+), pitch bend and
   aftertouch (poly and channel) from a controller go to the same instrument as its keys
   (`MIDIKeyRouting.routeControl` → `AudioEngineManager.sendPerformanceMessage`, channel

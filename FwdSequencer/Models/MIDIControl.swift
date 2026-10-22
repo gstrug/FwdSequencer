@@ -64,7 +64,8 @@ nonisolated enum MIDIControlTarget: Codable, Hashable {
     // Keys
     /// Punch in and out: arm the last armed track for Write Notes, or disarm.
     case writeNotes
-    /// Arm this track for Write Notes (or disarm it), by position.
+    /// A track's keys button, by position: arms it for Write Notes (W) while Write
+    /// Notes is on, otherwise switches its P (keys play it) on or off.
     case trackWriteNotes(Int)
     // The Play keyboard, as a channel of its own like a track.
     case playVolume, playPan, playMute, playSolo, playEffects
@@ -102,7 +103,7 @@ nonisolated enum MIDIControlTarget: Codable, Hashable {
         case .previousSection:      return "Previous Section"
         case .nextSection:          return "Next Section"
         case .writeNotes:           return "Write Notes Punch In/Out"
-        case .trackWriteNotes(let i): return "Track \(i + 1) Write Notes"
+        case .trackWriteNotes(let i): return "Track \(i + 1) Keys (W / P)"
         case .playVolume:           return "Play Keyboard Volume"
         case .playPan:              return "Play Keyboard Pan"
         case .playMute:             return "Play Keyboard Mute"
@@ -225,32 +226,43 @@ nonisolated struct MIDIControllerTemplate: Codable, Identifiable, Hashable {
 
 // MARK: - Keys
 
-/// Where a controller's keys go when they are not linked to a control.
-nonisolated enum MIDIKeysDestination: Codable, Hashable {
-    /// Keys do nothing (unless linked with Learn).
-    case off
-    /// The Play dock's own instrument.
-    case playKeyboard
-    /// A track's instrument, by position (0-based; shown as 1-based), like links.
-    case track(Int)
+/// Where one controller's keys go when they are not linked to a control. Two switches,
+/// set per controller, so one keyboard can play the Play keyboard while another plays
+/// the tracks.
+nonisolated struct MIDIKeysSetting: Codable, Hashable {
+    /// Keys play the Play keyboard's instrument.
+    var toPlayKeyboard = false
+    /// Keys play the tracks: the one armed with W while Write Notes is on (and write
+    /// into it), otherwise every track whose P is on.
+    var toTracks = false
 
-    var displayName: String {
-        switch self {
-        case .off:              return "Off"
-        case .playKeyboard:     return "Play Keyboard"
-        case .track(let i):     return "Track \(i + 1)"
-        }
+    init(toPlayKeyboard: Bool = false, toTracks: Bool = false) {
+        self.toPlayKeyboard = toPlayKeyboard; self.toTracks = toTracks
+    }
+
+    var isOff: Bool { !toPlayKeyboard && !toTracks }
+
+    private enum CodingKeys: String, CodingKey { case toPlayKeyboard, toTracks }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        toPlayKeyboard = try c.decodeIfPresent(Bool.self, forKey: .toPlayKeyboard) ?? false
+        toTracks = try c.decodeIfPresent(Bool.self, forKey: .toTracks) ?? false
     }
 }
 
-/// Decides, for each note from a controller, which instrument sounds it.
+/// Decides, for each note from a controller, which instruments sound it.
 ///
 /// Runs on CoreMIDI's thread so a key sounds at once rather than waiting for the main
 /// thread; the app keeps `config` up to date from there. Pure, so it is tested.
 nonisolated struct MIDIKeyRouting {
     struct Config: Equatable {
-        /// Per device: the instrument its keys play. No entry: its keys don't play.
-        var instruments: [String: UUID] = [:]
+        /// Per device: the instruments its keys play (the Play keyboard's, and the
+        /// armed or P tracks'), already narrowed to ones that can be heard. No entry or
+        /// empty: its keys play nothing.
+        var destinations: [String: [UUID]] = [:]
+        /// Devices whose key presses also go on to the main thread to be written into
+        /// the armed track (Keys → Tracks on, Write Notes on, a track armed).
+        var writingDevices: Set<String> = []
         /// Per device: the note messages a Learn link uses. Those belong to the link.
         var linkedNotes: [String: Set<MIDIControlSource>] = [:]
         /// Per device: the controllers (CCs) a Learn link uses. Those control the app;
@@ -259,12 +271,6 @@ nonisolated struct MIDIKeyRouting {
         var disabledDevices: Set<String> = []
         /// MIDI Learn on: the next note is for linking, not for playing.
         var learning = false
-        /// Write Notes armed on a track: every device's keys (other than linked ones) play
-        /// that track and also go on to set or clear the note in it.
-        var writingNotes = false
-        /// The armed track's instrument, or nil if it can't be heard (muted, or silenced
-        /// by a solo) — the notes are still written, just not sounded.
-        var armedInstrument: UUID? = nil
         /// No song open, or instruments restoring: keys must not reach a plugin.
         var paused = true
     }
@@ -283,13 +289,13 @@ nonisolated struct MIDIKeyRouting {
         var passOn: Bool
     }
 
-    private struct Held: Equatable { var instrument: UUID; var note: UInt8 }
+    private struct Held: Equatable { var instruments: [UUID]; var note: UInt8 }
 
     private(set) var config = Config()
     /// Instruments that have been sent controllers, so they can be put back to rest
     /// (pedal up, wheels centred) when the keys stop going to them.
     private var touched: Set<UUID> = []
-    /// Notes sounding, so each release reaches the instrument its press did — even if
+    /// Notes sounding, so each release reaches the instruments its press did — even if
     /// the routing changed while the key was down.
     private var held: [String: Held] = [:]
 
@@ -299,11 +305,12 @@ nonisolated struct MIDIKeyRouting {
         guard message.kind == .note else { return Decision(passOn: true) }
         let key = "\(device)|\(message.channel)|\(message.number)"
         let note = UInt8(clamping: message.number)
+        let writing = config.writingDevices.contains(device)
 
         if !message.isPress {
             if let h = held.removeValue(forKey: key) {
                 // Writing notes needs the release too, to tell a chord from single keys.
-                return Decision(actions: [.stop(h.instrument, note: h.note)], passOn: config.writingNotes)
+                return Decision(actions: h.instruments.map { Action.stop($0, note: h.note) }, passOn: writing)
             }
             return Decision(passOn: true)   // a link may want the release (trigger pads)
         }
@@ -311,20 +318,19 @@ nonisolated struct MIDIKeyRouting {
         if config.linkedNotes[device]?.contains(MIDIControlSource(message)) == true {
             return Decision(passOn: true)
         }
-        let destination = config.writingNotes ? config.armedInstrument : config.instruments[device]
-        guard !config.paused, let instrument = destination else {
-            return Decision(passOn: true)
-        }
+        let instruments = config.destinations[device] ?? []
+        guard !config.paused, !instruments.isEmpty else { return Decision(passOn: true) }
         var actions: [Action] = []
         // A second note-on without a release in between: end the first, or it hangs.
-        if let previous = held[key] { actions.append(.stop(previous.instrument, note: previous.note)) }
-        held[key] = Held(instrument: instrument, note: note)
-        actions.append(.play(instrument, note: note, velocity: UInt8(clamping: max(1, message.value))))
-        return Decision(actions: actions, passOn: config.writingNotes)
+        if let previous = held[key] { actions += previous.instruments.map { Action.stop($0, note: previous.note) } }
+        held[key] = Held(instruments: instruments, note: note)
+        let velocity = UInt8(clamping: max(1, message.value))
+        actions += instruments.map { Action.play($0, note: note, velocity: velocity) }
+        return Decision(actions: actions, passOn: writing)
     }
 
     /// A controller (CC), pitch bend or aftertouch from a device: played through
-    /// to the instrument its keys go to, unless a Learn link uses it, Learn is on, or
+    /// to the instruments its keys go to, unless a Learn link uses it, Learn is on, or
     /// nothing is listening. Channel-mode controllers (120 and up: all notes off and
     /// the like) are the app's to send, not a keyboard's.
     mutating func routeControl(device: String, status: UInt8, data1: UInt8, data2: UInt8) -> [Action] {
@@ -337,10 +343,9 @@ nonisolated struct MIDIKeyRouting {
                                            number: Int(data1))
             if config.linkedControls[device]?.contains(source) == true { return [] }
         }
-        guard let instrument = config.writingNotes ? config.armedInstrument : config.instruments[device]
-        else { return [] }
-        touched.insert(instrument)
-        return [.control(instrument, status: type, data1: data1, data2: data2)]
+        let instruments = config.destinations[device] ?? []
+        touched.formUnion(instruments)
+        return instruments.map { Action.control($0, status: type, data1: data1, data2: data2) }
     }
 
     /// Change the configuration. Notes still sounding are released when where keys go
@@ -348,23 +353,25 @@ nonisolated struct MIDIKeyRouting {
     mutating func reconfigure(_ change: (inout Config) -> Void) -> [Action] {
         let before = config
         change(&config)
-        let shouldRelease = config.instruments != before.instruments
+        let shouldRelease = config.destinations != before.destinations
             || config.paused != before.paused
             || (config.learning && !before.learning)
             || config.disabledDevices != before.disabledDevices
-            || config.writingNotes != before.writingNotes
-            || config.armedInstrument != before.armedInstrument
+            || config.writingDevices != before.writingDevices
         return shouldRelease ? releaseAll() : []
     }
 
     mutating func releaseAll() -> [Action] {
-        var actions = held.values
-            .sorted { ($0.instrument.uuidString, $0.note) < ($1.instrument.uuidString, $1.note) }
-            .map { Action.stop($0.instrument, note: $0.note) }
+        var actions: [Action] = []
+        for h in held.values.sorted(by: { $0.note < $1.note }) {
+            for id in h.instruments.sorted(by: { $0.uuidString < $1.uuidString }) {
+                actions.append(.stop(id, note: h.note))
+            }
+        }
         held.removeAll()
         // Then put back anything a keyboard moved: pedal up, bend centred, mod wheel
-        // and pressure down. A sustain pedal held as the keys move elsewhere would otherwise leave
-        // the old instrument ringing for good.
+        // and pressure down. A sustain pedal held as the keys move elsewhere would
+        // otherwise leave the old instrument ringing for good.
         for id in touched.sorted(by: { $0.uuidString < $1.uuidString }) {
             actions.append(.control(id, status: 0xB0, data1: 64, data2: 0))
             actions.append(.control(id, status: 0xE0, data1: 0, data2: 64))
