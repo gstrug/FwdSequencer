@@ -175,6 +175,8 @@ private struct SongTransportBar: View {
     @State private var finishedRecordingURL: URL?
     @State private var recordingFormat: RecordingFormat = .wav
     @State private var showingMIDISettings = false
+    /// The two-wheel time signature picker, from Other….
+    @State private var showingTimeSignature = false
     /// For the MIDI Learn switch in Settings ▸ MIDI.
     @ObservedObject private var midiLearn = MIDIControlCenter.shared.learn
     /// Typing an exact tempo, from a tap on the tempo display.
@@ -333,6 +335,9 @@ private struct SongTransportBar: View {
         .padding(.vertical, 8)
         .background(.bar)
         .overlay(alignment: .bottom) { Divider() }
+        .sheet(isPresented: $showingTimeSignature) {
+            TimeSignatureSheet(timeSignature: $songStore.song.timeSignature)
+        }
         .sheet(isPresented: $showingMIDISettings) {
             MIDISettingsView()
                 .environmentObject(songStore)
@@ -427,17 +432,39 @@ private struct SongTransportBar: View {
             }
     }
 
+    /// The signatures most music uses, one tap each. Anything else is under Other….
+    private static let commonTimeSignatures: [TimeSignature] = [
+        (2, 4), (3, 4), (4, 4), (5, 4), (6, 8), (7, 8), (9, 8), (12, 8),
+    ].map { TimeSignature(numerator: $0.0, denominator: $0.1) }
+
     /// Time signature in the same display style; a tap opens the choices.
+    ///
+    /// It used to be two separate pickers, beats and note value, which made every
+    /// change two trips through a menu. Now the common signatures are one tap, and
+    /// Other… opens two wheels side by side for anything unusual.
     private var timeSignatureMenu: some View {
-        Menu {
-            Picker("Beats per bar", selection: $songStore.song.timeSignature.numerator) {
-                ForEach(1...32, id: \.self) { Text("\($0)").tag($0) }
+        let current = songStore.song.timeSignature
+        return Menu {
+            // An unusual signature in use is shown, ticked, above the common ones.
+            if !Self.commonTimeSignatures.contains(current) {
+                Label("\(current.numerator)/\(current.denominator)", systemImage: "checkmark")
+                Divider()
             }
-            .pickerStyle(.menu)
-            Picker("Beat value", selection: $songStore.song.timeSignature.denominator) {
-                ForEach([1, 2, 4, 8, 16, 32], id: \.self) { Text("\($0)").tag($0) }
+            ForEach(Self.commonTimeSignatures, id: \.numerator) { signature in
+                Button {
+                    songStore.song.timeSignature = signature
+                } label: {
+                    if signature == current {
+                        Label("\(signature.numerator)/\(signature.denominator)", systemImage: "checkmark")
+                    } else {
+                        Text("\(signature.numerator)/\(signature.denominator)")
+                    }
+                }
             }
-            .pickerStyle(.menu)
+            Divider()
+            Button { showingTimeSignature = true } label: {
+                Label("Other…", systemImage: "slider.horizontal.3")
+            }
         } label: {
             HStack(spacing: 4) {
                 Text("\(songStore.song.timeSignature.numerator)/\(songStore.song.timeSignature.denominator)")
@@ -609,6 +636,50 @@ private struct SongTransportBar: View {
         } catch {
             songStore.notice = error.localizedDescription
         }
+    }
+}
+
+/// Any time signature: two wheels side by side, beats over note value, as in most
+/// music software. Changes apply as the wheels turn.
+private struct TimeSignatureSheet: View {
+    @Binding var timeSignature: TimeSignature
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            HStack(spacing: 0) {
+                VStack(spacing: 4) {
+                    Text("Beats").font(.caption).foregroundStyle(.secondary)
+                    Picker("Beats per bar", selection: $timeSignature.numerator) {
+                        ForEach(1...32, id: \.self) { Text("\($0)").tag($0) }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(width: 110)
+                }
+                Text("/")
+                    .font(.system(size: 34, weight: .light, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 18)
+                VStack(spacing: 4) {
+                    Text("Note value").font(.caption).foregroundStyle(.secondary)
+                    Picker("Beat value", selection: $timeSignature.denominator) {
+                        ForEach([1, 2, 4, 8, 16, 32], id: \.self) { Text("\($0)").tag($0) }
+                    }
+                    .pickerStyle(.wheel)
+                    .frame(width: 110)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding()
+            .navigationTitle("Time Signature")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .presentationDetents([.medium])
     }
 }
 
