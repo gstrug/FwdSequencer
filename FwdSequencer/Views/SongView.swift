@@ -159,6 +159,8 @@ struct SongView: View {
 
 private struct SongTransportBar: View {
     @EnvironmentObject var songStore: SongStore
+    /// In help mode, menu items explain themselves instead of acting.
+    @ObservedObject private var help = HelpCenter.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var onBack: () -> Void
     @Binding var showPlayDock: Bool
@@ -516,18 +518,19 @@ private struct SongTransportBar: View {
             // section chips do.
             // Everything MIDI in one place: Learn, the controllers and their
             // templates, and clock output.
+            HelpMenuIntro(topic: .settingsMenu)
             Menu {
-                Toggle(isOn: $midiLearn.isOn) {
+                Toggle(isOn: help.guarded(.midiLearn, $midiLearn.isOn)) {
                     Label("MIDI Learn", systemImage: "dot.radiowaves.left.and.right")
                 }
-                Toggle(isOn: $midiLearn.writeNotesEnabled) {
+                Toggle(isOn: help.guarded(.midiWriteNotes, $midiLearn.writeNotesEnabled)) {
                     Label("Write Notes from Keys", systemImage: "music.note.list")
                 }
-                Button { showingMIDISettings = true } label: {
+                Button { help.perform(.midiControllersPage) { showingMIDISettings = true } } label: {
                     Label("Controllers & Templates…", systemImage: "slider.horizontal.3")
                 }
                 Divider()
-                Toggle(isOn: $songStore.midiClockEnabled) {
+                Toggle(isOn: help.guarded(.midiClock, $songStore.midiClockEnabled)) {
                     Label("MIDI Clock Output", systemImage: "metronome")
                 }
             } label: {
@@ -536,8 +539,9 @@ private struct SongTransportBar: View {
         } label: {
             Label("Settings", systemImage: "gearshape")
         }
+        // No help outline: in help mode the menu opens and its items explain
+        // themselves (see HelpCenter.perform), with "About this menu" first.
         .buttonStyle(.bordered)
-        .helpTag(.settingsMenu)
     }
 
     private func handleTap() {
@@ -675,6 +679,8 @@ private struct ImmediateTouches: UIViewRepresentable {
 
 private struct ArrangementStrip: View {
     @EnvironmentObject var songStore: SongStore
+    /// In help mode, menu items explain themselves instead of acting.
+    @ObservedObject private var help = HelpCenter.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editingSection: SectionTarget? = nil
     /// Drives the queued chip's pulse. A single flag for the strip rather than one per
@@ -713,13 +719,14 @@ private struct ArrangementStrip: View {
                 // What the section chips do. Here rather than in Settings: it is a
                 // section matter. Only in this menu, not a chip's long press, which
                 // Trigger mode switches off anyway.
-                Toggle(isOn: $songStore.triggerMode) {
+                HelpMenuIntro(topic: .sectionMenu)
+                Toggle(isOn: help.guarded(.triggerMode, $songStore.triggerMode)) {
                     Label("Pattern Trigger Mode", systemImage: "hand.tap")
                 }
-                Toggle(isOn: $songStore.triggerHoldToPlay) {
+                Toggle(isOn: help.guarded(.triggerHold, $songStore.triggerHoldToPlay)) {
                     Label("Trigger Holds to Play", systemImage: "hand.point.up.left")
                 }
-                .disabled(!songStore.triggerMode)
+                .disabled(!songStore.triggerMode && !help.isOn)
                 Divider()
                 sectionActions(for: songStore.selectedSection)
             } label: {
@@ -730,7 +737,8 @@ private struct ArrangementStrip: View {
             // Tinted while Trigger mode is on: the chips behave differently, and that
             // needs to be visible without opening the menu.
             .tint(songStore.triggerMode ? .accentColor : nil)
-            .helpTag(.sectionMenu)
+            // No help outline: in help mode the menu opens and its items explain
+            // themselves, with "About this menu" first.
             .padding(.trailing, 8)
         }
         .background(.regularMaterial)
@@ -746,43 +754,40 @@ private struct ArrangementStrip: View {
     /// a chip, so the two cannot drift apart.
     @ViewBuilder
     private func sectionActions(for index: Int) -> some View {
-        // Name and length are separate items: "Rename & Length" hid the bar count behind
-        // a label that read as renaming only, so people did not find where to set it.
+        // Length is not here: it is the bars button under the section chips.
+        // In help mode each item explains itself instead of acting, and none is
+        // greyed out, so every one can be asked about.
         Button {
-            songStore.selectedSection = index
-            editingSection = SectionTarget(index: index, field: .name)
+            help.perform(.sectionRename) {
+                songStore.selectedSection = index
+                editingSection = SectionTarget(index: index, field: .name)
+            }
         } label: {
             Label("Rename…", systemImage: "pencil")
         }
-        Button {
-            songStore.selectedSection = index
-            editingSection = SectionTarget(index: index, field: .bars)
-        } label: {
-            Label("Number of Bars…", systemImage: "ruler")
-        }
         Divider()
-        Button { songStore.addSection() } label: {
+        Button { help.perform(.sectionAdd) { songStore.addSection() } } label: {
             Label("Add Section", systemImage: "plus")
         }
-        .disabled(songStore.song.sections.count >= SongStore.maximumEditableSectionCount)
-        Button { songStore.duplicateSection(at: index) } label: {
+        .disabled(!help.isOn && songStore.song.sections.count >= SongStore.maximumEditableSectionCount)
+        Button { help.perform(.sectionDuplicate) { songStore.duplicateSection(at: index) } } label: {
             Label("Duplicate", systemImage: "plus.square.on.square")
         }
-        .disabled(songStore.song.sections.count >= SongStore.maximumEditableSectionCount)
+        .disabled(!help.isOn && songStore.song.sections.count >= SongStore.maximumEditableSectionCount)
         Divider()
-        Button { songStore.moveSection(from: index, to: index - 1) } label: {
+        Button { help.perform(.sectionMove) { songStore.moveSection(from: index, to: index - 1) } } label: {
             Label("Move Earlier", systemImage: "arrow.left")
         }
-        .disabled(index <= 0)
-        Button { songStore.moveSection(from: index, to: index + 1) } label: {
+        .disabled(!help.isOn && index <= 0)
+        Button { help.perform(.sectionMove) { songStore.moveSection(from: index, to: index + 1) } } label: {
             Label("Move Later", systemImage: "arrow.right")
         }
-        .disabled(index >= songStore.song.sections.count - 1)
+        .disabled(!help.isOn && index >= songStore.song.sections.count - 1)
         Divider()
-        Button(role: .destructive) { songStore.deleteSection(at: index) } label: {
+        Button(role: .destructive) { help.perform(.sectionDelete) { songStore.deleteSection(at: index) } } label: {
             Label("Delete", systemImage: "trash")
         }
-        .disabled(songStore.song.sections.count <= 1)
+        .disabled(!help.isOn && songStore.song.sections.count <= 1)
     }
 
     /// Built outside the view body: inline, this concatenation pushed the SwiftUI
@@ -893,9 +898,8 @@ private struct SectionSettingsBar: View {
             HStack(spacing: 12) {
                 if songStore.song.sections.indices.contains(sel) {
                 // The name is shown read-only so you know where you are; it is set in the
-                // section menu. The length is a button: it is changed often enough that
-                // the menu was too far away. Drawn like M / S / FX, and opening the same
-                // Number of Bars sheet as the menu item.
+                // section menu. The length is a button, drawn like M / S / FX, and the
+                // only place to set it: it is changed often, so it is never in a menu.
                 Image(systemName: "square.stack").foregroundStyle(.secondary)
                 Text(songStore.song.sections[sel].name)
                     .font(.caption.bold()).lineLimit(1)
@@ -1221,6 +1225,8 @@ private struct SongTrackRowView: View {
     let trackCount: Int
     @Binding var isCollapsed: Bool
     @EnvironmentObject var songStore: SongStore
+    /// In help mode, menu items explain themselves instead of acting.
+    @ObservedObject private var help = HelpCenter.shared
 
     @State private var showEffects = false
     @State private var showPluginPicker = false
@@ -1496,20 +1502,20 @@ private struct SongTrackRowView: View {
     /// on a collapsed row, so the two cannot drift apart.
     @ViewBuilder
     private var arrangeActions: some View {
-        Button { songStore.moveTrackUp(track.id) } label: {
+        Button { help.perform(.trackMove) { songStore.moveTrackUp(track.id) } } label: {
             Label("Move Up", systemImage: "chevron.up")
         }
-        .disabled(index == 0)
+        .disabled(!help.isOn && index == 0)
 
-        Button { songStore.moveTrackDown(track.id) } label: {
+        Button { help.perform(.trackMove) { songStore.moveTrackDown(track.id) } } label: {
             Label("Move Down", systemImage: "chevron.down")
         }
-        .disabled(index == trackCount - 1)
+        .disabled(!help.isOn && index == trackCount - 1)
 
-        Button { songStore.duplicateTrack(track.id) } label: {
+        Button { help.perform(.trackDuplicate) { songStore.duplicateTrack(track.id) } } label: {
             Label("Duplicate Track", systemImage: "plus.square.on.square")
         }
-        .disabled(trackCount >= SongStore.maximumEditableTrackCount)
+        .disabled(!help.isOn && trackCount >= SongStore.maximumEditableTrackCount)
     }
 
     /// The same actions plus expand and delete, for a collapsed row — which has no menu
@@ -1521,16 +1527,19 @@ private struct SongTrackRowView: View {
     /// List, so there is no `swipeActions` to lean on.
     @ViewBuilder
     private var collapsedRowActions: some View {
+        HelpMenuIntro(topic: .trackMenu)
         Button {
-            if reduceMotion { isCollapsed = false }
-            else { withAnimation(.easeInOut(duration: 0.2)) { isCollapsed = false } }
+            help.perform(.trackExpand) {
+                if reduceMotion { isCollapsed = false }
+                else { withAnimation(.easeInOut(duration: 0.2)) { isCollapsed = false } }
+            }
         } label: {
             Label("Expand", systemImage: "chevron.down")
         }
         Divider()
         arrangeActions
         Divider()
-        Button(role: .destructive) { showDeleteAlert = true } label: {
+        Button(role: .destructive) { help.perform(.trackDelete) { showDeleteAlert = true } } label: {
             Label("Delete Track", systemImage: "trash")
         }
     }
@@ -1703,6 +1712,7 @@ private struct SongTrackRowView: View {
                 .helpTag(.trackName, instance: track.id.uuidString)
 
                 Menu {
+                    HelpMenuIntro(topic: .trackMenu)
                     arrangeActions
                     Divider()
 
@@ -1710,10 +1720,10 @@ private struct SongTrackRowView: View {
                     // once per instrument and then left alone, so it does not earn
                     // permanent space next to the controls used every take.
                     Menu {
-                        Picker("Chord Roll", selection: Binding(
+                        Picker("Chord Roll", selection: help.guarded(.feelChordRoll, Binding(
                             get: { Int(track.effectiveChordSpread.rounded()) },
                             set: { track.chordSpread = Double($0) }
-                        )) {
+                        ))) {
                             Text("Off (block chords)").tag(0)
                             Text("Subtle — 15 ms").tag(15)
                             Text("Played — 30 ms").tag(30)
@@ -1725,10 +1735,10 @@ private struct SongTrackRowView: View {
                     }
 
                     Menu {
-                        Picker("Accent", selection: Binding(
+                        Picker("Accent", selection: help.guarded(.feelAccent, Binding(
                             get: { track.effectiveAccent },
                             set: { track.accent = $0 }
-                        )) {
+                        ))) {
                             Text("Off (even)").tag(0)
                             Text("Light").tag(12)
                             Text("Medium").tag(24)
@@ -1739,10 +1749,10 @@ private struct SongTrackRowView: View {
                     }
 
                     Menu {
-                        Picker("Variation", selection: Binding(
+                        Picker("Variation", selection: help.guarded(.feelVariation, Binding(
                             get: { track.effectiveVariation },
                             set: { track.variation = $0 }
-                        )) {
+                        ))) {
                             Text("Off (identical)").tag(0)
                             Text("Light").tag(10)
                             Text("Medium").tag(22)
@@ -1753,10 +1763,10 @@ private struct SongTrackRowView: View {
                     }
 
                     Menu {
-                        Picker("Swing", selection: Binding(
+                        Picker("Swing", selection: help.guarded(.feelSwing, Binding(
                             get: { Int(track.effectiveSwing.rounded()) },
                             set: { track.swing = Double($0) }
-                        )) {
+                        ))) {
                             Text("Off (straight)").tag(0)
                             Text("Light — 25%").tag(25)
                             Text("Medium — 50%").tag(50)
@@ -1768,10 +1778,10 @@ private struct SongTrackRowView: View {
                     }
 
                     Menu {
-                        Picker("Timing", selection: Binding(
+                        Picker("Timing", selection: help.guarded(.feelTiming, Binding(
                             get: { Int(track.effectiveTimingJitter.rounded()) },
                             set: { track.timingJitter = Double($0) }
-                        )) {
+                        ))) {
                             Text("Off (exact)").tag(0)
                             Text("Tight — 10 ms").tag(10)
                             Text("Human — 22 ms").tag(22)
@@ -1783,7 +1793,7 @@ private struct SongTrackRowView: View {
 
                     Divider()
 
-                    Button { showEffects = true } label: {
+                    Button { help.perform(.trackEffectsMenu) { showEffects = true } } label: {
                         Label(track.effectSlots.isEmpty
                               ? "Effects" : "Effects (\(track.effectSlots.count))",
                               systemImage: "fx")
@@ -1791,7 +1801,7 @@ private struct SongTrackRowView: View {
 
                     Divider()
 
-                    Button(role: .destructive) { showDeleteAlert = true } label: {
+                    Button(role: .destructive) { help.perform(.trackDelete) { showDeleteAlert = true } } label: {
                         Label("Delete Track", systemImage: "trash")
                     }
                 } label: {
@@ -1804,7 +1814,8 @@ private struct SongTrackRowView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Actions for \(track.name)")
-                .helpTag(.trackMenu, instance: track.id.uuidString)
+                // No help outline: in help mode the menu opens and its items explain
+                // themselves, with "About this menu" first.
             }
 
             Button { showPluginPicker = true } label: {

@@ -35,7 +35,6 @@ struct PlayDockView: View {
                         AudioEngineManager.shared.stopNote(trackID: p.id, midiNote: note)
                     }
                 )
-                .helpTag(.playKeys)
             }
         }
         .padding(10)
@@ -214,6 +213,7 @@ private struct PlayableKeyboard: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(centerC <= Self.lowMidi)
+                .helpTag(.playOctave, instance: "down")
 
                 Spacer()
                 Text("C\(centerC / 12 - 1)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
@@ -225,6 +225,7 @@ private struct PlayableKeyboard: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(centerC >= Self.highMidi - 12)
+                .helpTag(.playOctave, instance: "up")
             }
             .padding(.horizontal, 8)
 
@@ -267,6 +268,8 @@ private struct PlayableKeyboard: View {
                 .clipped()
             }
             .frame(height: keyH)
+            // On the keys only, so the octave buttons above keep their own help.
+            .helpTag(.playKeys)
         }
     }
 

@@ -18,6 +18,18 @@ struct StepTypePickerSheet: View {
         }
     }
 
+    private func helpTopic(for type: StepType) -> HelpTopic {
+        switch type {
+        case .fwd:    return .stepFwd
+        case .back:   return .stepBack
+        case .rep:    return .stepRepeat
+        case .play:   return .stepPlay
+        case .random: return .stepRandom
+        case .hold:   return .stepHold
+        case .pause:  return .stepRest
+        }
+    }
+
     var body: some View {
         NavigationStack {
             List(StepType.allCases, id: \.self) { type in
@@ -44,10 +56,13 @@ struct StepTypePickerSheet: View {
                     .padding(.vertical, 4)
                 }
                 .buttonStyle(.plain)
+                .helpTag(helpTopic(for: type))
             }
             .navigationTitle("Choose Step Type")
             .navigationBarTitleDisplayMode(.inline)
+            .helpHost()
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) { HelpButton() }
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }

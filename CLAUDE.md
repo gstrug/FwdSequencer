@@ -121,8 +121,13 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   `HelpCenter`; controls tagged `.helpTag(.topic, instance:)` are outlined and a tap
   shows that topic in a card at the bottom (`.helpHost()` once per screen/sheet), using
   nothing else while on. All wording is in `Views/HelpTopics.swift`, also used as
-  VoiceOver hints. Learn and help mode switch each other off. Not covered: plugin
-  windows, Key & Scale, Number of Bars/Rename, step type and plugin pickers. The
+  VoiceOver hints. Learn and help mode switch each other off. **Menus** (track ⋯,
+  Section, a collapsed row's long press, Settings) can't carry outlines — the system
+  draws their items — so in help mode they open as normal, start with "About this
+  menu" (`HelpMenuIntro`), and choosing an item shows its help instead of acting
+  (`HelpCenter.perform` / `guarded`); greyed-out items are enabled in help mode so they
+  can be asked about. Toolbar items use `HelpToolbarItem`. Not covered: plugin
+  windows, Key & Scale, Number of Bars/Rename, plugin pickers. The
   tutorial was removed 2026-10-22 (Graham: help mode makes it redundant). The help
   text was rewritten by Graham on 2026-10-22; keep his wording when editing it.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI

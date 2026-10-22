@@ -119,7 +119,8 @@ struct ShapeSectionView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .helpTag(.shapeNotes, instance: option.rawValue)
+                    .helpTag(option == .rotate ? .shapeRotate
+                             : option == .reverse ? .shapeReverse : .shapeTranspose)
 
                     Text(option.detail).font(.caption).foregroundStyle(.secondary)
 

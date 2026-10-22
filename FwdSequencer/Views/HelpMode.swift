@@ -36,6 +36,46 @@ final class HelpCenter: ObservableObject {
     }
 
     private init() {}
+
+    // MARK: Menus
+    //
+    // The items in an open menu are drawn by the system, so help outlines cannot reach
+    // them. Instead, in help mode a menu still opens, and choosing an item shows its
+    // help rather than doing it — the same rule as everywhere else in help mode.
+
+    /// Show `topic`, as if its control had been tapped in help mode.
+    func show(_ topic: HelpTopic) {
+        selection = Selection(topic: topic, instance: "menu")
+    }
+
+    /// For a menu item's action: in help mode, show `topic` instead of acting.
+    func perform(_ topic: HelpTopic, _ action: () -> Void) {
+        if isOn { show(topic) } else { action() }
+    }
+
+    /// For a toggle or picker in a menu: in help mode, choosing shows `topic` and
+    /// changes nothing.
+    func guarded<Value>(_ topic: HelpTopic, _ binding: Binding<Value>) -> Binding<Value> {
+        Binding(get: { binding.wrappedValue },
+                set: { newValue in
+                    if self.isOn { self.show(topic) } else { binding.wrappedValue = newValue }
+                })
+    }
+}
+
+/// In help mode only: a first item in a menu that explains the menu as a whole.
+struct HelpMenuIntro: View {
+    let topic: HelpTopic
+    @ObservedObject private var help = HelpCenter.shared
+
+    var body: some View {
+        if help.isOn {
+            Button { help.show(topic) } label: {
+                Label("About this menu", systemImage: "questionmark.circle")
+            }
+            Divider()
+        }
+    }
 }
 
 extension View {
