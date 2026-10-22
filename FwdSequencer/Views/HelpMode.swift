@@ -39,9 +39,9 @@ final class HelpCenter: ObservableObject {
 
     // MARK: Menus
     //
-    // The items in an open menu are drawn by the system, so help outlines cannot reach
-    // them. Instead, in help mode a menu still opens, and choosing an item shows its
-    // help rather than doing it — the same rule as everywhere else in help mode.
+    // Menus get a help screen of their own (`.helpMenu`, below). These are a safety net
+    // for any menu that still opens in help mode, such as a collapsed track's long
+    // press: choosing an item then shows its help rather than doing it.
 
     /// Show `topic`, as if its control had been tapped in help mode.
     func show(_ topic: HelpTopic) {
@@ -63,22 +63,163 @@ final class HelpCenter: ObservableObject {
     }
 }
 
-/// In help mode only: a first item in a menu that explains the menu as a whole.
-struct HelpMenuIntro: View {
-    let topic: HelpTopic
-    @ObservedObject private var help = HelpCenter.shared
+// MARK: - Menu help screens
+//
+// In help mode a menu button does not open its menu. It is outlined like any other
+// control, and a tap opens a help screen that lists the menu's items — same icons,
+// same order — each with its own help, so the whole menu can be read at once.
+
+/// One menu, as its help screen shows it.
+struct HelpMenuPage: Identifiable {
+    struct Item: Identifiable {
+        let icon: String
+        let label: String
+        let topic: HelpTopic
+        var id: String { label }
+    }
+    struct ItemGroup: Identifiable {
+        /// A submenu's name, or nil for items at the top level.
+        let heading: String?
+        let items: [Item]
+        var id: String { heading ?? items.first?.label ?? "" }
+    }
+
+    let title: String
+    /// A line about the menu as a whole, shown at the top.
+    let intro: HelpTopic?
+    let groups: [ItemGroup]
+    var id: String { title }
+
+    static let section = HelpMenuPage(title: "Section Menu", intro: .sectionMenu, groups: [
+        ItemGroup(heading: nil, items: [
+            Item(icon: "hand.tap", label: "Pattern Trigger Mode", topic: .triggerMode),
+            Item(icon: "hand.point.up.left", label: "Trigger Holds to Play", topic: .triggerHold),
+        ]),
+        ItemGroup(heading: "The selected section", items: [
+            Item(icon: "pencil", label: "Rename…", topic: .sectionRename),
+            Item(icon: "plus", label: "Add Section", topic: .sectionAdd),
+            Item(icon: "plus.square.on.square", label: "Duplicate", topic: .sectionDuplicate),
+            Item(icon: "arrow.left.arrow.right", label: "Move Earlier / Move Later", topic: .sectionMove),
+            Item(icon: "trash", label: "Delete", topic: .sectionDelete),
+        ]),
+    ])
+
+    static let track = HelpMenuPage(title: "Track Menu", intro: .trackMenu, groups: [
+        ItemGroup(heading: nil, items: [
+            Item(icon: "chevron.up.chevron.down", label: "Move Up / Move Down", topic: .trackMove),
+            Item(icon: "plus.square.on.square", label: "Duplicate Track", topic: .trackDuplicate),
+        ]),
+        ItemGroup(heading: "Feel", items: [
+            Item(icon: "hand.draw", label: "Chord Roll", topic: .feelChordRoll),
+            Item(icon: "waveform.path.ecg", label: "Accent", topic: .feelAccent),
+            Item(icon: "dice", label: "Variation", topic: .feelVariation),
+            Item(icon: "metronome", label: "Swing", topic: .feelSwing),
+            Item(icon: "waveform.path", label: "Timing", topic: .feelTiming),
+        ]),
+        ItemGroup(heading: nil, items: [
+            Item(icon: "fx", label: "Effects", topic: .trackEffectsMenu),
+            Item(icon: "trash", label: "Delete Track", topic: .trackDelete),
+        ]),
+    ])
+
+    static let settings = HelpMenuPage(title: "Settings", intro: .settingsMenu, groups: [
+        ItemGroup(heading: "MIDI", items: [
+            Item(icon: "dot.radiowaves.left.and.right", label: "MIDI Learn", topic: .midiLearn),
+            Item(icon: "music.note.list", label: "Write Notes from Keys", topic: .midiWriteNotes),
+            Item(icon: "slider.horizontal.3", label: "Controllers & Templates…", topic: .midiControllersPage),
+            Item(icon: "metronome", label: "MIDI Clock Output", topic: .midiClock),
+        ]),
+    ])
+}
+
+/// The help screen for one menu.
+struct HelpMenuSheet: View {
+    let page: HelpMenuPage
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        if help.isOn {
-            Button { help.show(topic) } label: {
-                Label("About this menu", systemImage: "questionmark.circle")
+        NavigationStack {
+            List {
+                if let intro = page.intro {
+                    Section {
+                        Text(intro.text)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                ForEach(page.groups) { group in
+                    Section {
+                        ForEach(group.items) { item in
+                            HStack(alignment: .top, spacing: 14) {
+                                Image(systemName: item.icon)
+                                    .font(.body)
+                                    .foregroundStyle(.cyan)
+                                    .frame(width: 26)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(item.label).font(.body.bold())
+                                    Text(item.topic.text)
+                                        .font(.callout)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            .padding(.vertical, 3)
+                            .accessibilityElement(children: .combine)
+                        }
+                    } header: {
+                        if let heading = group.heading { Text(heading) }
+                    }
+                }
             }
-            Divider()
+            .navigationTitle(page.title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
         }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+private struct HelpMenuModifier: ViewModifier {
+    let page: HelpMenuPage
+    let instance: String
+    @ObservedObject private var help = HelpCenter.shared
+    @State private var showing = false
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if help.isOn {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.cyan.opacity(0.06))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .strokeBorder(Color.cyan.opacity(0.7),
+                                              style: StrokeStyle(lineWidth: 1.2, dash: [4, 3]))
+                        )
+                        .padding(-3)
+                        .contentShape(Rectangle())
+                        .onTapGesture { showing = true }
+                        .accessibilityElement()
+                        .accessibilityAddTraits(.isButton)
+                        .accessibilityLabel("Help: \(page.title)")
+                }
+            }
+            .sheet(isPresented: $showing) { HelpMenuSheet(page: page) }
     }
 }
 
 extension View {
+    /// For a menu button: outlined in help mode, and a tap opens a help screen listing
+    /// the menu's items with their help, instead of the menu.
+    func helpMenu(_ page: HelpMenuPage, instance: String = "") -> some View {
+        modifier(HelpMenuModifier(page: page, instance: instance))
+    }
+
     /// Give this control help: outlined in help mode, and a tap shows `topic`.
     /// `instance` tells apart copies of the same control, such as each track's fader.
     func helpTag(_ topic: HelpTopic, instance: String = "") -> some View {

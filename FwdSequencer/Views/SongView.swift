@@ -545,7 +545,6 @@ private struct SongTransportBar: View {
             // section chips do.
             // Everything MIDI in one place: Learn, the controllers and their
             // templates, and clock output.
-            HelpMenuIntro(topic: .settingsMenu)
             Menu {
                 Toggle(isOn: help.guarded(.midiLearn, $midiLearn.isOn)) {
                     Label("MIDI Learn", systemImage: "dot.radiowaves.left.and.right")
@@ -566,9 +565,9 @@ private struct SongTransportBar: View {
         } label: {
             Label("Settings", systemImage: "gearshape")
         }
-        // No help outline: in help mode the menu opens and its items explain
-        // themselves (see HelpCenter.perform), with "About this menu" first.
         .buttonStyle(.bordered)
+        // In help mode: a help screen listing the menu's items, instead of the menu.
+        .helpMenu(.settings)
     }
 
     private func handleTap() {
@@ -790,7 +789,6 @@ private struct ArrangementStrip: View {
                 // What the section chips do. Here rather than in Settings: it is a
                 // section matter. Only in this menu, not a chip's long press, which
                 // Trigger mode switches off anyway.
-                HelpMenuIntro(topic: .sectionMenu)
                 Toggle(isOn: help.guarded(.triggerMode, $songStore.triggerMode)) {
                     Label("Pattern Trigger Mode", systemImage: "hand.tap")
                 }
@@ -808,8 +806,8 @@ private struct ArrangementStrip: View {
             // Tinted while Trigger mode is on: the chips behave differently, and that
             // needs to be visible without opening the menu.
             .tint(songStore.triggerMode ? .accentColor : nil)
-            // No help outline: in help mode the menu opens and its items explain
-            // themselves, with "About this menu" first.
+            // In help mode: a help screen listing the menu's items, instead of the menu.
+            .helpMenu(.section)
             .padding(.trailing, 8)
         }
         .background(.regularMaterial)
@@ -1598,7 +1596,6 @@ private struct SongTrackRowView: View {
     /// List, so there is no `swipeActions` to lean on.
     @ViewBuilder
     private var collapsedRowActions: some View {
-        HelpMenuIntro(topic: .trackMenu)
         Button {
             help.perform(.trackExpand) {
                 if reduceMotion { isCollapsed = false }
@@ -1679,6 +1676,9 @@ private struct SongTrackRowView: View {
             Divider().frame(height: 16)
 
             Text(track.name).font(.subheadline.bold()).lineLimit(1)
+                // A folded track's menu is a long press; in help mode its name opens
+                // the track menu's help screen.
+                .helpMenu(.track, instance: track.id.uuidString)
 
             Divider().frame(height: 16)
 
@@ -1720,6 +1720,9 @@ private struct SongTrackRowView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(track.name).font(.subheadline.bold()).lineLimit(1)
+                // A folded track's menu is a long press; in help mode its name opens
+                // the track menu's help screen.
+                .helpMenu(.track, instance: track.id.uuidString)
                     Text(track.pluginInfo?.name ?? "Built-in Sound")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
@@ -1783,7 +1786,6 @@ private struct SongTrackRowView: View {
                 .helpTag(.trackName, instance: track.id.uuidString)
 
                 Menu {
-                    HelpMenuIntro(topic: .trackMenu)
                     arrangeActions
                     Divider()
 
@@ -1885,8 +1887,8 @@ private struct SongTrackRowView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Actions for \(track.name)")
-                // No help outline: in help mode the menu opens and its items explain
-                // themselves, with "About this menu" first.
+                // In help mode: a help screen listing the menu's items, instead of the menu.
+                .helpMenu(.track, instance: track.id.uuidString)
             }
 
             Button { showPluginPicker = true } label: {
