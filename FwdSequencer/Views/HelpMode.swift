@@ -270,8 +270,11 @@ private struct HelpTagModifier: ViewModifier {
 private struct HelpHostModifier: ViewModifier {
     @ObservedObject private var help = HelpCenter.shared
 
+    /// An inset, not an overlay: the card takes its own room at the bottom, so lists
+    /// and scrolling screens can still bring their last item into view above it. Laid
+    /// over the content, it hid whatever was underneath (the last step type, Pause).
     func body(content: Content) -> some View {
-        content.overlay(alignment: .bottom) {
+        content.safeAreaInset(edge: .bottom, spacing: 0) {
             if help.isOn { HelpCard() }
         }
     }
