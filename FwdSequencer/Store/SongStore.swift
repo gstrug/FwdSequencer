@@ -1073,7 +1073,10 @@ class SongStore: ObservableObject {
             notice = "A song can contain up to \(Self.maximumEditableSectionCount) editable sections."
             return
         }
-        song.addEmptySection(named: "Section \(song.sections.count + 1)")
+        // Next free number: with a section renamed or deleted, "Section <count + 1>"
+        // could already exist.
+        song.addEmptySection(named: SongNaming.uniqueName("Section \(song.sections.count + 1)",
+                                                          among: song.sections.map(\.name)))
         selectedSection = song.sections.count - 1
     }
 
@@ -1086,7 +1089,9 @@ class SongStore: ObservableObject {
         guard song.sections.indices.contains(index) else { return }
         var copy = song.sections[index]
         copy.id = UUID()
-        copy.name = copy.name + " copy"
+        // Numbered like the original rather than "copy copy": "Section 1" → "Section 2"
+        // (the next free number), "Verse" → "Verse 2".
+        copy.name = SongNaming.uniqueName(copy.name, among: song.sections.map(\.name))
         song.sections.insert(copy, at: index + 1)
         selectedSection = index + 1
     }

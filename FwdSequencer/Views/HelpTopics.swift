@@ -19,7 +19,7 @@ enum HelpTopic: String {
          settingsMenu
 
     // Sections
-    case sectionChip, sectionMenu, sectionBars, shape, snapshots, hold
+    case sectionChip, sectionMenu, sectionBars, shape, snapshots, hold, addTrack
 
     // A track
     case trackExpand, trackName, trackMenu, trackInstrument, trackEditInstrument,
@@ -60,7 +60,7 @@ enum HelpTopic: String {
     var title: String {
         switch self {
         case .newSong: return "New Song"
-        case .importSong: return "Import Song"
+        case .importSong: return "More (⋯)"
         case .songRow: return "A Song"
         case .recentlyDeleted: return "Recently Deleted"
         case .needsAttention: return "Needs Attention"
@@ -90,6 +90,7 @@ enum HelpTopic: String {
         case .shape: return "Shape"
         case .snapshots: return "Snapshots"
         case .hold: return "Hold"
+        case .addTrack: return "Add Track"
 
         case .trackExpand: return "Expand / Collapse"
         case .trackName: return "Track Name"
@@ -182,7 +183,7 @@ enum HelpTopic: String {
         case .newSong:
             return "Start a new song from a template. You name it first; a name already in use gets a number added."
         case .importSong:
-            return "Bring in a .fwdsong file, from Files or another app. It is added as a new song; nothing is replaced."
+            return "Import Song: bring in a .fwdsong file from Files or another app. It is added as a new song; nothing is replaced."
         case .songRow:
             return "Tap to open. Long press for Rename, Duplicate, Export and Delete. Swipe left to delete, right to export."
         case .recentlyDeleted:
@@ -224,19 +225,21 @@ enum HelpTopic: String {
         case .mixerButton:
             return "Opens the mixer: a fader, pan, mute, solo and effects for every track, the Play keyboard and the master."
         case .settingsMenu:
-            return "Pattern Trigger Mode (the section chips become pads you press to play), MIDI settings and the tutorial."
+            return "MIDI settings and the tutorial."
 
         // Sections
         case .sectionChip:
             return "A part of the song. Tap to select it for editing, long press for its menu. In Pattern Trigger Mode, press to play it."
         case .sectionMenu:
-            return "Rename, set the length, add, duplicate, move or delete the selected section."
+            return "Pattern Trigger Mode (the section chips become pads you press to play, tinted while on) and Trigger Holds to Play. Then rename, set the length, add, duplicate, move or delete the selected section."
         case .sectionBars:
             return "How many bars the selected section lasts. Tap to change it."
         case .shape:
             return "Rework this section's notes and steps on the tracks you choose: rotate, reverse or transpose notes, or generate new steps. Needs Hold on."
         case .snapshots:
             return "Save versions of this section's notes and steps and go back to them. Needs Hold on."
+        case .addTrack:
+            return "Adds a new track at the bottom with the built-in sound. Tap its instrument button to choose a plugin. With Write Notes on, the new track is armed straight away."
         case .hold:
             return "Repeats the selected section and keeps the editor on it, so you can change it while you listen. Shape and Snapshots need it."
 

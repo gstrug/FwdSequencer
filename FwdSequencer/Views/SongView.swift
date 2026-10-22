@@ -62,6 +62,7 @@ struct SongView: View {
                     }
                     .buttonStyle(.bordered)
                     .disabled(songStore.song.tracks.count >= SongStore.maximumEditableTrackCount)
+                    .helpTag(.addTrack)
                 }
                 .padding(12)
             }
@@ -520,14 +521,8 @@ private struct SongTransportBar: View {
 
     private var songSettingsMenu: some View {
         Menu {
-            Toggle(isOn: $songStore.triggerMode) {
-                Label("Pattern Trigger Mode", systemImage: "hand.tap")
-            }
-            Toggle(isOn: $songStore.triggerHoldToPlay) {
-                Label("Trigger Holds to Play", systemImage: "hand.point.up.left")
-            }
-            .disabled(!songStore.triggerMode)
-            Divider()
+            // Pattern Trigger Mode lives in the Section menu now: it is about what the
+            // section chips do.
             // Everything MIDI in one place: Learn, the controllers and their
             // templates, and clock output.
             Menu {
@@ -554,12 +549,9 @@ private struct SongTransportBar: View {
                 Label("Show Tutorial", systemImage: "questionmark.circle")
             }
         } label: {
-            // Tinted while armed: the chips behave differently, and that needs to be
-            // visible from the transport without opening the menu.
             Label("Settings", systemImage: "gearshape")
         }
         .buttonStyle(.bordered)
-        .tint(songStore.triggerMode ? .accentColor : nil)
         .helpTag(.settingsMenu)
     }
 
@@ -733,12 +725,26 @@ private struct ArrangementStrip: View {
             }
 
             Menu {
+                // What the section chips do. Here rather than in Settings: it is a
+                // section matter. Only in this menu, not a chip's long press, which
+                // Trigger mode switches off anyway.
+                Toggle(isOn: $songStore.triggerMode) {
+                    Label("Pattern Trigger Mode", systemImage: "hand.tap")
+                }
+                Toggle(isOn: $songStore.triggerHoldToPlay) {
+                    Label("Trigger Holds to Play", systemImage: "hand.point.up.left")
+                }
+                .disabled(!songStore.triggerMode)
+                Divider()
                 sectionActions(for: songStore.selectedSection)
             } label: {
                 Label("Section", systemImage: "ellipsis.circle")
                     .frame(minHeight: 44)
             }
             .buttonStyle(.bordered)
+            // Tinted while Trigger mode is on: the chips behave differently, and that
+            // needs to be visible without opening the menu.
+            .tint(songStore.triggerMode ? .accentColor : nil)
             .helpTag(.sectionMenu)
             .padding(.trailing, 8)
         }

@@ -43,14 +43,15 @@ struct MIDISettingsView: View {
             .helpHost()
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button {
-                        // Learn happens on the song screen, so close this to get there.
-                        center.learn.isOn = true
-                        dismiss()
-                    } label: {
-                        Label("Learn", systemImage: "dot.radiowaves.left.and.right")
+                    HelpToolbarItem(topic: .midiLearn) {
+                        Button {
+                            // Learn happens on the song screen, so close this to get there.
+                            center.learn.isOn = true
+                            dismiss()
+                        } label: {
+                            Label("Learn", systemImage: "dot.radiowaves.left.and.right")
+                        }
                     }
-                    .helpTag(.midiLearn)
                 }
                 ToolbarItem(placement: .navigationBarLeading) { HelpButton() }
                 ToolbarItem(placement: .confirmationAction) {

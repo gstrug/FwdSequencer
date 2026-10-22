@@ -58,7 +58,9 @@ struct SongMixerView: View {
             .toolbar {
                 // Learn works here too, so the strips can be linked to a controller's
                 // faders without leaving the mixer.
-                ToolbarItem(placement: .navigationBarLeading) { MIDILearnButton() }
+                ToolbarItem(placement: .navigationBarLeading) {
+                    HelpToolbarItem(topic: .midiLearn) { MIDILearnButton() }
+                }
                 ToolbarItem(placement: .navigationBarLeading) { HelpButton() }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }

@@ -50,29 +50,37 @@ struct ProjectBrowserView: View {
                 .navigationTitle("FWD Sequencer")
                 .toolbar {
                     ToolbarItem(placement: .primaryAction) {
-                        Menu {
-                            ForEach(SongTemplate.allCases) { template in
-                                Button { createSongAndOpen(template) } label: {
-                                    Label {
-                                        VStack(alignment: .leading) {
-                                            Text(template.name)
-                                            Text(template.summary)
+                        HelpToolbarItem(topic: .newSong) {
+                            Menu {
+                                ForEach(SongTemplate.allCases) { template in
+                                    Button { createSongAndOpen(template) } label: {
+                                        Label {
+                                            VStack(alignment: .leading) {
+                                                Text(template.name)
+                                                Text(template.summary)
+                                            }
+                                        } icon: {
+                                            Image(systemName: template.systemImage)
                                         }
-                                    } icon: {
-                                        Image(systemName: template.systemImage)
                                     }
                                 }
+                            } label: {
+                                Label("New Song", systemImage: "plus")
                             }
-                        } label: {
-                            Label("New Song", systemImage: "plus")
                         }
-                        .helpTag(.newSong)
                     }
-                    ToolbarItem(placement: .secondaryAction) {
-                        Button { importingSong = true } label: {
-                            Label("Import Song", systemImage: "square.and.arrow.down")
+                    // Our own ⋯ menu rather than the system's overflow, so help mode can
+                    // explain it like everything else.
+                    ToolbarItem(placement: .primaryAction) {
+                        HelpToolbarItem(topic: .importSong) {
+                            Menu {
+                                Button { importingSong = true } label: {
+                                    Label("Import Song", systemImage: "square.and.arrow.down")
+                                }
+                            } label: {
+                                Label("More", systemImage: "ellipsis.circle")
+                            }
                         }
-                        .helpTag(.importSong)
                     }
                     ToolbarItem(placement: .navigationBarLeading) {
                         HelpButton()

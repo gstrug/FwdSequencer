@@ -135,6 +135,39 @@ private struct HelpCard: View {
     }
 }
 
+/// A toolbar item that explains itself in help mode.
+///
+/// The system draws toolbar items in its own bar, which does not let an overlay take
+/// their taps: with help on, a tagged ＋ or ⋯ in the toolbar still opened its menu. So
+/// in help mode the item is swapped for a plain button showing its help, drawn the
+/// same but with the help outline.
+struct HelpToolbarItem<Content: View>: View {
+    let topic: HelpTopic
+    @ViewBuilder var content: Content
+    @ObservedObject private var help = HelpCenter.shared
+
+    var body: some View {
+        if help.isOn {
+            let selected = help.selection?.topic == topic
+            Button {
+                help.selection = selected ? nil : HelpCenter.Selection(topic: topic, instance: "toolbar")
+            } label: {
+                content
+                    .allowsHitTesting(false)
+                    .padding(4)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .strokeBorder(Color.cyan, style: StrokeStyle(lineWidth: selected ? 2.5 : 1.2,
+                                                                         dash: selected ? [] : [4, 3]))
+                    )
+            }
+            .accessibilityLabel("Help: \(topic.title)")
+        } else {
+            content
+        }
+    }
+}
+
 /// The ? button that turns help mode on and off. One on every screen.
 struct HelpButton: View {
     @ObservedObject private var help = HelpCenter.shared
