@@ -172,16 +172,12 @@ private struct SongTransportBar: View {
     /// A finished take waiting for the user to pick an export format.
     @State private var finishedRecordingURL: URL?
     @State private var recordingFormat: RecordingFormat = .wav
-    @State private var showingOnboarding = false
     @State private var showingMIDISettings = false
     /// For the MIDI Learn switch in Settings ▸ MIDI.
     @ObservedObject private var midiLearn = MIDIControlCenter.shared.learn
     /// Typing an exact tempo, from a tap on the tempo display.
     @State private var editingTempo = false
     @State private var tempoText = ""
-    /// Read only so the tutorial knows it is being reopened rather than met for the
-    /// first time; the first-run showing itself belongs to the song list.
-    @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding = false
 
     private var beatCount: Int { songStore.song.timeSignature.numerator }
     private var currentSectionBars: Int {
@@ -335,11 +331,6 @@ private struct SongTransportBar: View {
         .padding(.vertical, 8)
         .background(.bar)
         .overlay(alignment: .bottom) { Divider() }
-        .sheet(isPresented: $showingOnboarding) {
-            // isFirstRun only changes the closing button's wording — reopened from here
-            // there is already a song in front of you, so it simply closes.
-            OnboardingView(completed: $didCompleteOnboarding, isFirstRun: false)
-        }
         .sheet(isPresented: $showingMIDISettings) {
             MIDISettingsView()
                 .environmentObject(songStore)
@@ -541,12 +532,6 @@ private struct SongTransportBar: View {
                 }
             } label: {
                 Label("MIDI", systemImage: "cable.connector")
-            }
-            Divider()
-            // Worth rereading once the app has grown past what you took in the first
-            // time. It still opens by itself on a first run, from the song list.
-            Button { showingOnboarding = true } label: {
-                Label("Show Tutorial", systemImage: "questionmark.circle")
             }
         } label: {
             Label("Settings", systemImage: "gearshape")

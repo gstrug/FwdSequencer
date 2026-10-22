@@ -185,13 +185,13 @@ enum HelpTopic: String {
         switch self {
         // Song list
         case .newSong:
-            return "Start a new song from a template. You name it first; a name already in use gets a number added."
+            return "Start a new song from scratch or open an example template. Give new songs a name. If a name is already in use, a suffix is added."
         case .importSong:
-            return "Import Song: bring in a .fwdsong file from Files or another app. It is added as a new song; nothing is replaced."
+            return "Import Song: bring in a .fwdsong file from Files or another app. It is added as a new song."
         case .songRow:
-            return "Tap to open. Long press for Rename, Duplicate, Export and Delete. Swipe left to delete, right to export."
+            return "Tap to open the song. Long press to Rename, Duplicate, Export or Delete the song. Swipe left to delete, right to export to midi or .fwdsong."
         case .recentlyDeleted:
-            return "Deleted songs wait here. Restore brings one back; the bin button deletes it for good."
+            return "Deleted songs list. Restore the song or delete it for good."
         case .needsAttention:
             return "A song file that could not be read. Restore Backup brings back its last good copy, if there is one."
 
@@ -203,195 +203,195 @@ enum HelpTopic: String {
         case .rewind:
             return "Back to the start of the song."
         case .playPause:
-            return "Play the song from the start, or pause and carry on from the same place. With Hold on, it plays the held section."
+            return "Play/Pause the song. If the Hold function is active it works on the selected section."
         case .stop:
             return "Stops playback and returns to the start."
         case .record:
-            return "Records everything you hear. Tap again to stop, then choose WAV (24-bit) or CAF (32-bit float) to save the take."
+            return "Records the active audio. Tap again to stop, then choose WAV (24-bit) or CAF (32-bit float) to save the take."
         case .panic:
-            return "Stops playback and silences every note. Use it if a note gets stuck."
+            return "Panic! Stops playback and silences every note. Will not silence effects tails."
         case .loop:
-            return "When on, the song starts again from the top when it reaches the end. In Pattern Trigger Mode it makes a pad repeat."
+            return "Loop: Plays through the song and repeats. In Pattern Trigger Mode it makes the active pad repeat."
         case .tempo:
-            return "Beats per minute. Drag up or down to change it, tap to type an exact value, double tap for 120."
+            return "Beats per minute. Drag up or down to change tempo, tap to enter an exact value or double tap resets to 120."
         case .tapTempo:
-            return "Tap in time, at least twice, to set the tempo to your tapping."
+            return "Tap Tempo: tap at least twice, to set the tempo in time with your tapping."
         case .beatAndBar:
-            return "Where the song is: the lit dot is the beat (red on beat one), then the bar within the section playing."
+            return "Beat Indicator: Shows the bar count and beat number in a section. Red indicates beat one."
         case .timeSignature:
-            return "Beats per bar, and which note gets the beat. Tap to change."
+            return "Time signature: How many beats in a bar / which note gets one beat. Tap to change."
         case .masterVolume:
-            return "Volume of everything together, with the overall level shown underneath. Double tap to reset to 100%."
+            return "Master Volume and level meter. Double tap to reset to 100%."
         case .cpu:
-            return "How hard the iPad is working. Plugins use most of it; crackles and dropouts start when it runs out."
+            return "Indicates cpu usage. Keep an eye on it, especially when adding many tracks or effects. Crackles and dropouts start when it runs out."
         case .playButton:
-            return "Shows or hides the Play keyboard, for playing a part by hand over the song with its own instrument."
+            return "Shows or hides the virtual keyboard. Used for playing an independent part with its own instrument."
         case .mixerButton:
-            return "Opens the mixer: a fader, pan, mute, solo and effects for every track, the Play keyboard and the master."
+            return "Opens the audio mixer: Adjust volume, pan, mute, solo and effects for every track and the virtual keyboard."
         case .settingsMenu:
-            return "MIDI settings and the tutorial."
+            return "Settings menu: Midi learn, templates and keyboard routing."
 
         // Sections
         case .sectionChip:
-            return "A part of the song. Tap to select it for editing, long press for its menu. In Pattern Trigger Mode, press to play it."
+            return "Songs can contain multiple sections. Tap a section to select for editing. Long press for its menu. In Pattern Trigger Mode, tap or hold to play the section."
         case .sectionMenu:
-            return "Pattern Trigger Mode (the section chips become pads you press to play, tinted while on) and Trigger Holds to Play. Then rename, set the length, add, duplicate, move or delete the selected section."
+            return "Pattern Trigger Mode: Sections become triggers. Tap to play. Next pad can be queued by tapping while the first pad plays. Trigger Holds to Play: Sections play only while holding the trigger. Rename, Add, Duplicate, Move or Delete the selected section."
         case .sectionBars:
-            return "How many bars the selected section lasts. Tap to change it."
+            return "Number of bars for the selected section. Tap to change."
         case .shape:
-            return "Rework this section's notes and steps on the tracks you choose: rotate, reverse or transpose notes, or generate new steps. Needs Hold on."
+            return "Creative options to rework the selected section. Generate or modify notes and steps on the tracks you choose. Available when 'Hold' is on."
         case .snapshots:
-            return "Save versions of this section's notes and steps and go back to them. Needs Hold on."
+            return "Save versions of a section's notes and steps and go back to them. Available when 'Hold' is on."
         case .addTrack:
-            return "Adds a new track at the bottom with the built-in sound. Tap its instrument button to choose a plugin. With Write Notes on, the new track is armed straight away."
+            return "Add Track adds a new track with the built-in sound."
         case .hold:
-            return "Repeats the selected section and keeps the editor on it, so you can change it while you listen. Shape and Snapshots need it."
+            return "Hold: Repeats the selected section so you can audition changes you make while you listen. Shape and Snapshots only work when 'Hold' is on."
 
         // Track
         case .trackExpand:
-            return "Opens the track to edit its notes, or folds it to a single line."
+            return "Expands the track to edit its notes, or collapses it to a single line."
         case .trackName:
-            return "The track's name. Tap to edit; long press to select it all."
+            return "The track name. Tap to edit; long press to select all."
         case .trackMenu:
-            return "Move, duplicate or delete the track, its effects, and Feel: chord roll, accent, variation, swing and timing, which make it sound less mechanical. Tinted when any Feel is on."
+            return "Track Menu: Move, Duplicate or Delete the track. Add or remove effects. Change Feel: chord roll, accent, variation, swing and timing, which make it sound less mechanical. Tinted when any Feel is on."
         case .trackInstrument:
-            return "The sound this track plays. Tap to choose an AUv3 plugin, or the built-in sound."
+            return "The sound played by this track. Tap to choose an AUv3 plugin."
         case .trackEditInstrument:
-            return "Opens the plugin's own controls, to change its sound."
+            return "Opens the plugin's controls, to change its sound."
         case .trackVolume:
-            return "Track volume. Drag to change it; move your finger away from the slider for finer steps. Double tap to reset to 0 dB."
+            return "Track volume. Drag to adjust. Move your finger away from the slider for finer steps. Double tap to reset to 0 dB."
         case .trackPan:
-            return "Left or right in the stereo mix. Drag up or down; double tap to centre."
+            return "Pan: Sets the track audio position in the stereo mix. Drag up or down to change; double tap to centre."
         case .trackMeter:
-            return "How loud the track is right now."
+            return "Visual display of the track volume."
         case .trackMute:
-            return "Silences the track. It keeps running, so it comes back in time."
+            return "Mute: Silences the track."
         case .trackSolo:
-            return "Plays only the soloed tracks; everything else goes quiet. Solo more than one to hear them together."
+            return "Solo: Plays only the soloed tracks; Solo more than one to hear them together."
         case .trackEffects:
-            return "Tap to switch all the track's effects on or off; long press to add or edit them. Green: on. Orange: off or bypassed. With none, a tap opens the list."
+            return "Effects: Tap to toggle all the track effects on or off; long press to add or edit effects. Green when effects are active, Orange when they are off or bypassed."
         case .trackWrite:
-            return "Arms the track for Write Notes: keys on your MIDI controller play it and add or remove notes in this section. Play a chord to add notes without taking any out. One track at a time. Turn Write Notes off (Settings ▸ MIDI) and this becomes P."
+            return "Write: Arms a track so notes can quickly be edited using a midi controller. Play a chord to add multiple notes. Single notes can be toggled on/off. Write Notes from Keys must be on in Settings ▸ MIDI."
         case .trackPlayKeys:
-            return "Keys on your MIDI controller play this track. Turn P on for as many tracks as you like to play them together. Turn Write Notes on (Settings ▸ MIDI) and this becomes W, for writing notes into one track."
+            return "Play: Turn Keys ▸ Tracks on in Settings ▸ MIDI ▸ Controllers & Templates to enable. Your MIDI controller can now play any track where P is active (green)."
         case .trackTime:
-            return "How long each step lasts, from four whole notes (4/1) down to a 32nd note. T means triplet."
+            return "Time: Duration of a step for the selected Section. Adjustable from four whole notes down to a 32nd note. T means triplet."
         case .trackKeyScale:
-            return "The key and scale this track's notes are chosen from. Notes outside it are dimmed on the keyboard."
+            return "The key and scale can be assigned independently for each track. Notes falling outside the scale are dimmed and not selectable. If a scale is changed, active notes outside of the new scale will be removed."
         case .trackSteps:
-            return "The track's step sequence for this section; the lit step is the one playing. Change it with Steps."
+            return "The track's step sequence display for the active section; the lit step is the one playing. Edit Steps using the Steps menu under an expanded track."
         case .trackKeyboard:
-            return "Tap keys to add or remove notes from the pool this track plays from. Blue: in the pool. Yellow: sounding now."
+            return "The heart of FWD Sequencer. Tap keys to add or remove notes in the track pool. Blue notes are selected and in the note pool. Notes in the pool are indexed from lowest to highest, not the order of selection. When notes sound they will display Yellow."
         case .trackNoteParams:
-            return "Set how loud (velocity) and how long (gate) each note in the pool plays, one by one or as a shape."
+            return "Note Params: Set how loud (velocity) and how long (gate) each note in the pool plays. Adjust individual notes or apply a preset shape."
         case .trackStepsButton:
-            return "Edit the step sequence: the rules that decide which note of the pool plays next."
+            return "Edit the step sequence: the rules that determine the order in which notes in the pool play."
 
         // Play keyboard
         case .playInstrument:
-            return "The Play keyboard's own instrument, separate from the tracks. Tap to choose a plugin or the built-in sound."
+            return "Independently play a virtual keyboard over the sequenced tracks. Tap to choose a plugin."
         case .playEditInstrument:
-            return "Opens the Play keyboard instrument's own controls."
+            return "Tap to open the plugin's controls to edit the sound played by the virtual keyboard."
         case .playVolume:
-            return "Volume of the Play keyboard. Double tap to reset to 0 dB."
+            return "Volume of the virtual keyboard. Double tap to reset to 0 dB."
         case .playMute:
-            return "Silences the Play keyboard."
+            return "Mute the virtual keyboard."
         case .playSolo:
-            return "Plays the Play keyboard and soloed tracks only."
+            return "Solo the virtual keyboard."
         case .playEffects:
-            return "Tap to switch the Play keyboard's effects on or off; long press to add or edit them."
+            return "Tap to toggle the virtual keyboard's effects on or off; long press to add or edit them."
         case .playKeys:
-            return "Play by hand. Slide across the keys to move between notes."
+            return "Slide across the keys to move between notes or play individual notes or chords."
         case .playClose:
             return "Hides the Play keyboard."
 
         // Mixer
         case .mixerMaster:
-            return "Volume of everything together, with the overall level."
+            return "Master Volume: Overall level for all tracks."
         case .mixerFader:
-            return "Track volume, with its level beside it. Drag; move away from the fader for finer steps. Double tap for 0 dB."
+            return "Individual Track volume. Drag to adjust; move away from the fader for finer steps. Double tap for 0 dB."
         case .mixerPan:
-            return "Left or right in the stereo mix. Double tap to centre."
+            return "Left or right balance in the stereo mix. Double tap to centre."
 
         // Steps
         case .stepType:
-            return "What the step does. Fwd and Back move through the pool, Repeat plays the same note again, Play jumps to a note or chord, Random picks one, Hold lets the last note ring, Rest is silence."
+            return "Step Type: Move Fwd or back through the pool, Repeat notes, Play specific notes (or chords). Play a Random note, Hold a note or Rest. The sequencer steps continuously through the pool and executes defined rules from top to bottom."
         case .stepAmount:
-            return "How far the step moves, how many times it repeats, or how many steps it holds or rests."
+            return "Depending on the step type this sets, how far the step moves, how many times it repeats, or how many steps it holds or rests."
         case .stepChord:
-            return "Which pool notes to play, counting from the lowest as 1. Type one number, or several like 1,3,5 for a chord."
+            return "Which notes in the pool to play. Type one number, or several like note 1,3,5 for a chord. The numbers indicate the note position, from bottom to top in the note pool."
         case .stepGate:
             return "How long this step's note sounds, as a share of the step. Double tap for 100%."
         case .stepProbability:
-            return "How often the step plays. Below 100% it is sometimes silent; the sequence still moves on, and repeats the same way each time."
+            return "How often the step plays. Lower percentage increases the chance of the note not playing every time. Double tap to reset to 100%."
         case .stepDivide:
             return "Splits the step into equal repeats: 3 on a quarter-note step is a triplet."
         case .stepDelete:
             return "Removes this step."
         case .addStep:
-            return "Adds a Fwd step at the end."
+            return "Adds a new step at the end. Initially set to Fwd."
         case .clearSteps:
             return "Removes every step. With no steps, the notes play in order."
 
         // Note parameters
         case .notePattern:
-            return "The shape Apply gives the notes, from lowest to highest: ramps, arch, valley, alternating, random or stagger."
+            return "Choose a preset shape to apply to the note pool. Ramp up, Ramp down, Arch, Valley, Alternating, Random or Stagger."
         case .noteShapeVelocity:
-            return "Turn on to shape how loud the notes are, between Min and Max."
+            return "Activate to apply a minimum and maximum velocity range to the selected shape."
         case .noteShapeGate:
-            return "Turn on to shape how long the notes are, between Min and Max."
+            return "Activate to apply a minimum and maximum gate range to the selected shape."
         case .noteApply:
-            return "Sets the notes to the pattern, replacing their values. Random patterns say Roll; tap again for another."
+            return "Applies the shape settings to the notes. Apply changes to Roll for random patterns. Keep rolling until you get something you like."
         case .noteReset:
-            return "Puts the shaped values back to the defaults."
+            return "Sets the velocity and gate values back to the defaults."
         case .noteVelocity:
-            return "How loud this note plays. Double tap for 100."
+            return "Adjust how loud this note plays. Double tap to reset to 100."
         case .noteGate:
-            return "How long this note sounds, as a share of its step. Double tap for 50%."
+            return "How long this note sounds, as a share of its step. Double tap to reset to 50%."
 
         // Shape
         case .shapeTracks:
-            return "Tick the tracks to change. Nothing else is touched."
+            return "Tick the tracks to change. Only selected tracks will be affected."
         case .shapeNotes:
-            return "Rotate shifts the pool round so each step lands on a different note, Reverse flips its order, Transpose moves every note up or down. The steps stay as they are."
+            return "Rotate shifts the note pool round, forwards or backwards a number of steps, so each step now lands on a different note, Reverse flips the order of the note pool. Transpose moves every note in the pool up or down."
         case .shapeApply:
-            return "Makes the note change on the ticked tracks."
+            return "Applies the changes to the selected (ticked) tracks."
         case .shapeLength:
-            return "How many steps Generate makes."
+            return "Sets how many steps to Generate."
         case .shapeCharacter:
             return "The kind of sequence Generate makes: Flowing moves mostly step by step, Sparse leaves long notes and rests, Jumpy leaps and surprises."
         case .shapeGenerate:
-            return "Replaces the ticked tracks' steps with a new sequence. Keep pressing until you like one, then save a snapshot."
+            return "Replaces the selected (ticked) tracks steps with a new sequence. Keep pressing until you find one you like. Tip: Save a snapshot of anything you like so you can come back to it."
 
         // Snapshots
         case .snapshotTracks:
-            return "Tick the tracks a new snapshot covers, so you can keep one part while trying ideas on another."
+            return "Tick the tracks a new snapshot covers, so you can keep parts while trying ideas on another."
         case .snapshotSave:
             return "Saves the ticked tracks' notes, steps, time, key and scale for this section. Instruments and mixer are not included."
         case .snapshotAudition:
-            return "Plays the snapshot without changing anything."
+            return "Plays the snapshot back without changing anything."
         case .snapshotRestore:
-            return "Puts the snapshot back into the section and removes it from the list. Original is always kept."
+            return "Puts the saved snapshot back into the section and removes it from the list."
         case .snapshotRestoreKeep:
-            return "Puts the snapshot back and keeps it in the list."
+            return "Puts the saved snapshot back and keeps it in the list."
         case .snapshotRename:
-            return "Change the snapshot's name."
+            return "Change the snapshot's name to easily identify it."
 
         // Effects
         case .effectsOn:
-            return "Switches the whole chain in or out. Effects you bypassed one by one stay bypassed."
+            return "Switches the whole effects chain in or out. Bypassed effects stay bypassed."
         case .effectEdit:
-            return "Opens the effect's own controls."
+            return "Opens the effect's controls for editing."
         case .effectBypass:
-            return "Takes this one effect out of the sound, keeping its settings."
+            return "Switches an effect in or out of the chain, keeping its settings."
         case .effectReplace:
-            return "Swaps this effect for another in the same place."
+            return "Replace the effect with a different one."
         case .effectRemove:
-            return "Removes this effect."
+            return "Remove this effect."
         case .effectAdd:
-            return "Adds an AUv3 effect at the end of the chain, up to four."
+            return "Adds an AUv3 effect at the end of the chain, each track can hold up to four effects."
         case .effectOrder:
-            return "The sound passes through the effects from top to bottom. Drag the handles to reorder."
+            return "The sound passes through the effects chain from top to bottom. Drag the handles to reorder."
 
         // MIDI
         case .midiController:
@@ -401,21 +401,21 @@ enum HelpTopic: String {
         case .midiTemplate:
             return "The set of links this controller uses: which knob, fader or button does what."
         case .midiLoad:
-            return "Switch this controller to another template, or to None."
+            return "Load a template for this controller, or switch to None."
         case .midiSaveAs:
-            return "Keeps this controller's current links under a new name and switches to the copy."
+            return "Saves this controller's current links under a new name and switches to the saved copy."
         case .midiKeysPlay:
-            return "This controller's keys play the Play keyboard's instrument. Sustain, pitch bend, mod wheel and aftertouch go with them, unless linked with Learn."
+            return "This controller's keys play the Play keyboard's instrument. Sustain, pitch bend, mod wheel and aftertouch go with them, unless linked differently in the template."
         case .midiKeysTracks:
-            return "This controller's keys play the tracks: the track armed with W while Write Notes is on, otherwise every track with P on. Can be on together with Keys → Play Keyboard."
+            return "This controller's keys send notes to every track armed with P. If Write Notes is on, sends notes to the track with W armed."
         case .midiTemplates:
-            return "Every saved template. Tap one to see its links; swipe or long press to copy, rename or delete. Factory ones can be copied, not changed."
+            return "Saved templates. Tap one to see its links; swipe or long press to copy, rename or delete. Factory ones can be copied, not changed."
         case .midiWriteNotes:
             return "On: tracks show W, to arm one track and write notes into it from your controller. Off: tracks show P, to choose which tracks your controller plays."
         case .midiClock:
             return "Sends this song's tempo and start and stop to other apps and hardware."
         case .midiLearn:
-            return "Link a control to your controller: turn Learn on, tap a control on screen, then move or press the one on the controller."
+            return "Link a control to hardware on your controller: turn on Learn, tap a control on screen, then move or press the one on the controller to link it."
         }
     }
 }

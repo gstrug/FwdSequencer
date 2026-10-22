@@ -123,7 +123,8 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   nothing else while on. All wording is in `Views/HelpTopics.swift`, also used as
   VoiceOver hints. Learn and help mode switch each other off. Not covered: plugin
   windows, Key & Scale, Number of Bars/Rename, step type and plugin pickers. The
-  tutorial (`OnboardingView`) is now four pages explaining help mode, with Exit on each.
+  tutorial was removed 2026-10-22 (Graham: help mode makes it redundant). The help
+  text was rewritten by Graham on 2026-10-22; keep his wording when editing it.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI
   (`.github/workflows/validate.yml`) runs `swift test` and a simulator build on every
   push/PR.

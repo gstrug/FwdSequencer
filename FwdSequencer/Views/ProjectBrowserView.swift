@@ -3,7 +3,6 @@ import UniformTypeIdentifiers
 
 struct ProjectBrowserView: View {
     @EnvironmentObject var songStore: SongStore
-    @AppStorage("didCompleteOnboarding") private var didCompleteOnboarding = false
     @AppStorage("didInstallMidnightCurrentDemoV1") private var didInstallMidnightCurrentDemo = false
     /// Its own flag, so the example reaches people who already have the app rather than
     /// only a fresh install. V2 because the arrangement was replaced with a corrected
@@ -37,7 +36,6 @@ struct ProjectBrowserView: View {
 
     @State private var midiDocument: MIDIFileDocument? = nil
     @State private var midiFilename = "FWD Song"
-    @State private var showingOnboarding = false
     @State private var failedRemovalTarget: FailedSongFile? = nil
     @State private var exportingFailedFile = false
     @State private var failedFileDocument: RawSongDocument? = nil
@@ -85,16 +83,14 @@ struct ProjectBrowserView: View {
                     ToolbarItem(placement: .navigationBarLeading) {
                         HelpButton()
                     }
-                    // "Show Tutorial" is not here any more: it lives in Song Settings, on
-                    // the transport, where it is beside the song it describes. This screen
-                    // still opens the tutorial on a first run.
+                    // No tutorial: removed 2026-10-22. Help mode (the ?) explains every
+                    // control where it is.
                 }
         }
         .onAppear {
             SongStorage.prepareExportsFolder()
             reload()
             installBundledDemoIfNeeded()
-            if !didCompleteOnboarding { showingOnboarding = true }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
             // Backgrounding is a safe point to snapshot live plugin sounds and persist.
@@ -251,11 +247,6 @@ struct ProjectBrowserView: View {
                       defaultFilename: failedExportFilename) { result in
             if case .failure(let error) = result { notice = error.localizedDescription }
             failedFileDocument = nil
-        }
-        .sheet(isPresented: $showingOnboarding) {
-            // isFirstRun changes only the wording of the closing button: on first run it
-            // hands you on to a template, reopened it simply closes.
-            OnboardingView(completed: $didCompleteOnboarding, isFirstRun: !didCompleteOnboarding)
         }
     }
 
