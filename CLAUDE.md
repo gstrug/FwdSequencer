@@ -177,6 +177,16 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
      first. (The timing messages used to find this were removed afterwards; commit
      a5b7444 has them if they are needed again.)
 
+- **NEXT, reported 2026-10-22 — some of Apple's built-in effects crash the app.**
+  Seen in Graham's testing on 2026-10-21, adding Apple's own AU effects (the ones that
+  ship with iPadOS, e.g. AUDelay, AUReverb, AUDistortion) to a track. Not yet looked
+  at. Ask which effects, and when it crashes (on adding, on opening Edit, on play, on
+  bypass), and get the crash log (Xcode console when run from Xcode, or Settings ▸
+  Privacy & Security ▸ Analytics Data on the iPad). Suspects to check: Apple's units
+  are in-process v2 AUs, not out-of-process AUv3s, so they may have no
+  `scheduleMIDIEventBlock`/view controller and behave differently in
+  `loadEffect`, `rebuildChainLocked`, bypass routing (`7a648dc`), state capture, and
+  `PluginEditorView` (no custom view → generic/preset fallback).
 - Decide whether a hosted-plugin build (FWD as an AUv3 MIDI generator) is wanted; it
   affects where the scheduler seam goes (see `TIMING.md` section 6).
 - Groove templates (per-position offset tables) not built; swing covers the common case.
