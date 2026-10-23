@@ -48,25 +48,6 @@ struct ArrangerView: View {
                 }
 
                 Section {
-                    if slots.isEmpty {
-                        Text("Nothing arranged yet. Add sections below, in the order they should play.")
-                            .foregroundStyle(.secondary)
-                    }
-                    ForEach(Array(rows.enumerated()), id: \.element.slot.id) { index, row in
-                        slotRow(index, row)
-                            .helpTag(.arrangerSlot, instance: row.slot.id.uuidString)
-                    }
-                    .onMove { songStore.moveInArrangement(from: $0, to: $1) }
-                    .onDelete { songStore.removeFromArrangement(at: $0) }
-                } header: {
-                    Text("Song order")
-                } footer: {
-                    if !slots.isEmpty {
-                        Text("Drag ≡ to reorder. Tap − or swipe left to remove.")
-                    }
-                }
-
-                Section {
                     ForEach(Array(song.sections.enumerated()), id: \.element.id) { index, section in
                         Button {
                             help.perform(.arrangerAdd) { songStore.appendToArrangement(sectionAt: index) }
@@ -86,7 +67,7 @@ struct ArrangerView: View {
                         .helpTag(.arrangerAdd, instance: section.id.uuidString)
                     }
                 } header: {
-                    Text("Add a section")
+                    Text("Available Sections")
                 } footer: {
                     Text("Tap a section to add it to the end. Any section can be used as often as you like.")
                 }
@@ -105,6 +86,25 @@ struct ArrangerView: View {
                     }
                     .disabled(!help.isOn && slots.isEmpty)
                     .helpTag(.arrangerClear)
+                }
+
+                Section {
+                    if slots.isEmpty {
+                        Text("Nothing arranged yet. Tap sections above, in the order they should play.")
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(Array(rows.enumerated()), id: \.element.slot.id) { index, row in
+                        slotRow(index, row)
+                            .helpTag(.arrangerSlot, instance: row.slot.id.uuidString)
+                    }
+                    .onMove { songStore.moveInArrangement(from: $0, to: $1) }
+                    .onDelete { songStore.removeFromArrangement(at: $0) }
+                } header: {
+                    Text("Song Order")
+                } footer: {
+                    if !slots.isEmpty {
+                        Text("Drag ≡ to reorder. Tap − or swipe left to remove.")
+                    }
                 }
             }
             // Always editing: the drag handles are the point of this screen.
@@ -172,24 +172,6 @@ struct ArrangerView: View {
                     .background(Color.green.opacity(0.25), in: Capsule())
                     .foregroundStyle(.green)
             }
-            Menu {
-                Button {
-                    songStore.repeatArrangementSlot(at: index)
-                } label: {
-                    Label("Place Again After This", systemImage: "plus.square.on.square")
-                }
-                Button(role: .destructive) {
-                    songStore.removeFromArrangement(at: IndexSet(integer: index))
-                } label: {
-                    Label("Remove", systemImage: "minus.circle")
-                }
-            } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.title3)
-                    .frame(minWidth: 44, minHeight: 44)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Options for place \(index + 1)")
         }
         .listRowBackground(isPlaying ? Color.green.opacity(0.12) : nil)
         .accessibilityElement(children: .contain)

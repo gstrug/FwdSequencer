@@ -108,7 +108,7 @@ enum HelpTopic: String {
         case .arranger: return "Arranger"
         case .arrangerPlay: return "Play Arrangement"
         case .arrangerSlot: return "A Place in the Arrangement"
-        case .arrangerAdd: return "Add a Section"
+        case .arrangerAdd: return "Available Sections"
         case .arrangerFill: return "Fill with Sections in Order"
         case .arrangerClear: return "Clear Arrangement"
 
@@ -301,9 +301,9 @@ enum HelpTopic: String {
         case .arrangerPlay:
             return "On: Play follows the arrangement. Off: sections play in order. Saved with the song. Hold and Pattern Trigger Mode play sections on their own while they are on."
         case .arrangerSlot:
-            return "One place in the song's order. Drag the handle to move it, swipe left to remove it, or use ⋯ to place the same section again straight after it. The one playing is shown in green."
+            return "One place in the song's order. Drag the handle to move it, swipe left to remove it. The one playing is shown in green."
         case .arrangerAdd:
-            return "Adds this section to the end of the arrangement."
+            return "Adds a section to the arrangement."
         case .arrangerFill:
             return "Replaces the arrangement with every section once, in order, to rearrange from there."
         case .arrangerClear:

@@ -1188,14 +1188,6 @@ class SongStore: ObservableObject {
         song.arrangement = slots
     }
 
-    /// Place the same section again, straight after this slot.
-    func repeatArrangementSlot(at index: Int) {
-        guard var slots = song.arrangement, slots.indices.contains(index),
-              slots.count < SongValidator.maximumArrangementSlots else { return }
-        slots.insert(ArrangementSlot(sectionID: slots[index].sectionID), at: index + 1)
-        song.arrangement = slots
-    }
-
     /// Start from the sections in their own order, to rearrange from there.
     func fillArrangementWithSections() {
         song.arrangement = song.sections.map { ArrangementSlot(sectionID: $0.id) }
