@@ -78,7 +78,7 @@ nonisolated struct PlayOrderEntry: Equatable {
     let sectionIndex: Int
 }
 
-extension Song {
+nonisolated extension Song {
     /// Whether the arrangement is switched on and has something in it.
     var arrangementIsActive: Bool {
         playsArrangement == true && !arrangementOrder().isEmpty
@@ -110,7 +110,7 @@ extension Song {
     }
 }
 
-extension Song {
+nonisolated extension Song {
     /// Whether anything the sequencer plays from differs between two versions of a song.
     ///
     /// The store re-sends the whole song to the sequencer on every change while it is
@@ -1046,7 +1046,7 @@ nonisolated enum NoteShaper {
 
 // MARK: - Mute and solo, with the Play keyboard as a channel of its own
 
-extension Song {
+nonisolated extension Song {
     /// The Play keyboard's own Solo. It silences every track that isn't soloed, as
     /// soloing a track does.
     var isPlayKeyboardSoloed: Bool { performance?.mixer.isSoloed ?? false }
