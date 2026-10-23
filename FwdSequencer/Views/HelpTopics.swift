@@ -21,7 +21,8 @@ enum HelpTopic: String {
     // Sections
     case sectionChip, sectionMenu, sectionBars, shape, snapshots, hold, addTrack,
          triggerMode, triggerHold, sectionRename, sectionAdd, sectionDuplicate, sectionMove,
-         sectionDelete
+         sectionDelete, arranger, arrangerPlay, arrangerSlot, arrangerAdd, arrangerFill,
+         arrangerClear
 
     // A track
     case trackExpand, trackName, trackMenu, trackInstrument, trackEditInstrument,
@@ -104,6 +105,12 @@ enum HelpTopic: String {
         case .sectionDuplicate: return "Duplicate Section"
         case .sectionMove: return "Move Earlier / Later"
         case .sectionDelete: return "Delete Section"
+        case .arranger: return "Arranger"
+        case .arrangerPlay: return "Play Arrangement"
+        case .arrangerSlot: return "A Place in the Arrangement"
+        case .arrangerAdd: return "Add a Section"
+        case .arrangerFill: return "Fill with Sections in Order"
+        case .arrangerClear: return "Clear Arrangement"
 
         case .trackExpand: return "Expand / Collapse"
         case .trackName: return "Track Name"
@@ -289,6 +296,18 @@ enum HelpTopic: String {
             return "Move the position of the section in a song."
         case .sectionDelete:
             return "Deletes the selected section. A song must always have at least one section."
+        case .arranger:
+            return "Opens the Arranger: set the order your sections play in, using any section as often as you like."
+        case .arrangerPlay:
+            return "On: Play follows the arrangement. Off: sections play in order. Saved with the song. Hold and Pattern Trigger Mode play sections on their own while they are on."
+        case .arrangerSlot:
+            return "One place in the song's order. Drag the handle to move it, swipe left to remove it, or use ⋯ to place the same section again straight after it. The one playing is shown in green."
+        case .arrangerAdd:
+            return "Adds this section to the end of the arrangement."
+        case .arrangerFill:
+            return "Replaces the arrangement with every section once, in order, to rearrange from there."
+        case .arrangerClear:
+            return "Removes every place from the arrangement. Your sections are not changed."
         case .hold:
             return "Hold: Repeats the selected section so you can audition changes while you make them. Shape and Snapshot menu is only available when 'Hold' is on."
 

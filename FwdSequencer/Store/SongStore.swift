@@ -80,6 +80,24 @@ class SongStore: ObservableObject {
     @Published var isPaused: Bool = false
     /// Which section playback is currently in (drives the arrangement playhead).
     @Published var currentSection: Int = 0
+    /// Which place in the play order is sounding: with the arranger on, the slot (the
+    /// same section can be in several); otherwise the same as `currentSection`. Nil
+    /// when stopped.
+    @Published private(set) var playingSlot: Int?
+    /// What the sequencer was last given, in order: maps the position it reports back
+    /// to the section it plays.
+    private var playOrder: [PlayOrderEntry] = []
+    /// The id of the place sounding: an arrangement slot's id while following the
+    /// arranger. Lets the Arranger light the right row when a section is placed twice.
+    var playingEntryID: UUID? {
+        playingSlot.flatMap { playOrder.indices.contains($0) ? playOrder[$0].id : nil }
+    }
+
+    /// Whether playback follows the arranger now. Hold and Pattern Trigger mode work on
+    /// sections themselves, so either one sets the arrangement aside while it is on.
+    var followsArrangement: Bool {
+        song.arrangementIsActive && !triggerMode && !holdsSection
+    }
     /// Which section the editors are bound to (the one the user is editing).
     @Published var selectedSection: Int = 0 {
         didSet {
@@ -133,6 +151,9 @@ class SongStore: ObservableObject {
             // leave the sequencer playing a snapshot that is not in the document.
             if !holdsSection { stopAudition() }
             if holdsSection { captureOriginalSnapshot() }
+            // Hold sets the arrangement aside (and releasing it brings it back), so the
+            // sequencer needs the other play order before it is told what to hold.
+            if (isPlaying || isPaused) && song.arrangementIsActive { updateLiveSong() }
             pushHeldSection()
         }
     }
@@ -159,6 +180,9 @@ class SongStore: ObservableObject {
         didSet {
             UserDefaults.standard.set(triggerMode, forKey: "PatternTriggerMode")
             if !triggerMode, isPlaying { stop() }
+            // Pads trigger sections, not arrangement slots: give the sequencer the plain
+            // sections so a pressed pad has something to switch to.
+            if triggerMode, isPlaying || isPaused, song.arrangementIsActive { updateLiveSong() }
         }
     }
 
@@ -344,9 +368,14 @@ class SongStore: ObservableObject {
             guard self?.audioEngine.telemetrySuppressed == false else { return }
             DispatchQueue.main.async { self?.beatSignal.send(isDownbeat) }
         }
-        sequencer.onSectionChange = { [weak self] index in
+        sequencer.onSectionChange = { [weak self] position in
             DispatchQueue.main.async {
                 guard let self else { return }
+                // The sequencer reports a place in the play order; with the arranger on
+                // that is a slot, and the section is looked up from it.
+                let index = self.playOrder.indices.contains(position)
+                    ? self.playOrder[position].sectionIndex : position
+                self.playingSlot = position
                 self.currentSection = index
                 // Arriving at a section clears it from the queue — the pad stops
                 // flashing because it is the one playing now.
@@ -369,6 +398,7 @@ class SongStore: ObservableObject {
                 self.isPlaying = false
                 self.isPaused = false
                 self.currentSection = 0
+                self.playingSlot = nil
                 self.playback.currentBar = 0
                 self.playback.playingNotes.removeAll()
                 self.playback.activeSteps.removeAll()
@@ -438,7 +468,11 @@ class SongStore: ObservableObject {
         let auditionedSectionID: UUID? = auditioned == nil ? nil
             : (song.sections.indices.contains(selectedSection) ? song.sections[selectedSection].id : nil)
 
-        return song.sections.map { section in
+        // The arranger's order unless Hold or Trigger mode has set it aside. Each
+        // section is built once however often it is placed.
+        let order = song.playOrder(followArrangement: !triggerMode && !holdsSection)
+        playOrder = order
+        let built: [SequencerSection] = song.sections.map { section in
             let sourceParts = section.id == auditionedSectionID ? (auditioned ?? section.parts) : section.parts
             // Indexed once per section rather than scanned per track. This runs on every
             // mutation of `song` while playing — including each touch-move of a fader —
@@ -466,6 +500,12 @@ class SongStore: ObservableObject {
                 )
             }
             return SequencerSection(id: section.id, numberOfBars: section.numberOfBars, tracks: tracks)
+        }
+        return order.map { entry in
+            let section = built[entry.sectionIndex]
+            guard entry.id != section.id else { return section }
+            return SequencerSection(id: entry.id, numberOfBars: section.numberOfBars,
+                                    tracks: section.tracks, sectionID: section.id)
         }
     }
 
@@ -680,6 +720,7 @@ class SongStore: ObservableObject {
         isPlaying = false
         isPaused = false
         currentSection = 0
+        playingSlot = nil
         playback.currentBar = 0
         playback.playingNotes.removeAll()
         playback.activeSteps.removeAll()
@@ -1106,8 +1147,62 @@ class SongStore: ObservableObject {
 
     func deleteSection(at index: Int) {
         guard song.sections.count > 1, song.sections.indices.contains(index) else { return }
-        song.sections.remove(at: index)
+        let removed = song.sections.remove(at: index)
+        // Its places in the arrangement go with it.
+        song.arrangement?.removeAll { $0.sectionID == removed.id }
         selectedSection = min(selectedSection, song.sections.count - 1)
+    }
+
+    // MARK: - Arranger
+
+    /// Put a section at the end of the arrangement. Starting an arrangement switches
+    /// it on: adding the first slot is the moment someone means to use it.
+    func appendToArrangement(sectionAt index: Int) {
+        guard song.sections.indices.contains(index) else { return }
+        var slots = song.arrangement ?? []
+        guard slots.count < SongValidator.maximumArrangementSlots else {
+            notice = "An arrangement can contain up to \(SongValidator.maximumArrangementSlots) slots."
+            return
+        }
+        let wasEmpty = slots.isEmpty
+        slots.append(ArrangementSlot(sectionID: song.sections[index].id))
+        if wasEmpty && song.playsArrangement == nil {
+            var updated = song
+            updated.arrangement = slots
+            updated.playsArrangement = true
+            song = updated
+        } else {
+            song.arrangement = slots
+        }
+    }
+
+    func removeFromArrangement(at offsets: IndexSet) {
+        guard var slots = song.arrangement else { return }
+        slots.remove(atOffsets: offsets)
+        song.arrangement = slots
+    }
+
+    func moveInArrangement(from source: IndexSet, to destination: Int) {
+        guard var slots = song.arrangement else { return }
+        slots.move(fromOffsets: source, toOffset: destination)
+        song.arrangement = slots
+    }
+
+    /// Place the same section again, straight after this slot.
+    func repeatArrangementSlot(at index: Int) {
+        guard var slots = song.arrangement, slots.indices.contains(index),
+              slots.count < SongValidator.maximumArrangementSlots else { return }
+        slots.insert(ArrangementSlot(sectionID: slots[index].sectionID), at: index + 1)
+        song.arrangement = slots
+    }
+
+    /// Start from the sections in their own order, to rearrange from there.
+    func fillArrangementWithSections() {
+        song.arrangement = song.sections.map { ArrangementSlot(sectionID: $0.id) }
+    }
+
+    func clearArrangement() {
+        song.arrangement = []
     }
 
     /// Altering a section requires it to be held.

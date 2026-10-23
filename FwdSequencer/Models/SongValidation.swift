@@ -22,6 +22,8 @@ nonisolated enum SongValidator {
     static let maximumDocumentBytes = 64 * 1_024 * 1_024
     static let maximumPluginStateBytes = 32 * 1_024 * 1_024
     static let maximumNameLength = 200
+    /// Slots in a song's arrangement. Generous: 1,024 sections could each appear four times.
+    static let maximumArrangementSlots = 4_096
     static let maximumPluginLabelLength = 1_000
 
     static func decodeAndValidate(_ data: Data) throws -> Song {
@@ -72,6 +74,20 @@ nonisolated enum SongValidator {
             throw SongValidationError.invalid("A song cannot contain more than 1,024 sections.")
         }
         try requireUnique(song.sections.map(\.id), name: "section")
+
+        // The arranger. Tidied rather than refused: a slot pointing at a section that
+        // no longer exists is dropped, and a repeated slot id is renewed, so a damaged
+        // arrangement never stops the song itself from opening.
+        if var slots = song.arrangement {
+            let known = Set(song.sections.map(\.id))
+            slots.removeAll { !known.contains($0.sectionID) }
+            guard slots.count <= maximumArrangementSlots else {
+                throw SongValidationError.invalid("An arrangement cannot contain more than \(maximumArrangementSlots) slots.")
+            }
+            var seen = Set<UUID>()
+            for i in slots.indices where !seen.insert(slots[i].id).inserted { slots[i].id = UUID() }
+            song.arrangement = slots
+        }
 
         let trackIDs = Set(song.tracks.map(\.id))
         for track in song.tracks {

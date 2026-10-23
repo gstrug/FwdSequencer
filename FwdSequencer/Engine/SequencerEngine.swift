@@ -129,6 +129,13 @@ nonisolated struct SequencerSection {
     let id: UUID
     let numberOfBars: Int
     let tracks: [PlayTrack]
+    /// The song section this plays, when `id` is an arrangement slot's rather than the
+    /// section's own. Lets a live update that switches between the arrangement and
+    /// plain sections (Hold going on or off) stay on the section that is playing.
+    var sectionID: UUID? = nil
+
+    /// The song section this entry plays, whichever kind of id it carries.
+    var playsSectionID: UUID { sectionID ?? id }
 }
 
 /// Mutable playback state is confined to `sequencerQueue`; callbacks are installed
@@ -309,8 +316,9 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         sequencerQueue.async { [weak self] in
             guard let self else { return }
 
-            let currentID = _songSections.indices.contains(sectionIndex)
-                ? _songSections[sectionIndex].id : nil
+            let current = _songSections.indices.contains(sectionIndex)
+                ? _songSections[sectionIndex] : nil
+            let currentID = current?.id
             let oldTempo = _songTempo
 
             _songSections = sections
@@ -319,6 +327,11 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             songLoops = loop
 
             if let currentID, let newIndex = sections.firstIndex(where: { $0.id == currentID }) {
+                sectionIndex = newIndex
+            } else if let current,
+                      let newIndex = sections.firstIndex(where: { $0.playsSectionID == current.playsSectionID }) {
+                // Same section under a different id: the arrangement was switched in or
+                // out. Its first place in the new order is the natural one to carry on.
                 sectionIndex = newIndex
             } else {
                 sectionIndex = min(sectionIndex, max(0, sections.count - 1))

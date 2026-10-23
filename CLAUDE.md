@@ -132,6 +132,18 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   windows, Key & Scale, Number of Bars/Rename, plugin pickers. The
   tutorial was removed 2026-10-22 (Graham: help mode makes it redundant). The help
   text was rewritten by Graham on 2026-10-22; keep his wording when editing it.
+- **Arranger** (2026-10-23): Section menu ▸ Arranger… (`Views/ArrangerView.swift`).
+  `Song.arrangement` is a list of `ArrangementSlot` (own id + section id), any section
+  any number of times, no repeat counts (Graham: just add it twice).
+  `Song.playsArrangement` is the on/off switch, saved with the song. Both optional, so
+  old songs load. The order is worked out once, `Song.playOrder()`, used by both
+  `SongStore.flattenedSections` (slots go to the sequencer under the slot's id, with
+  `SequencerSection.sectionID` naming the section) and `SongMIDIExporter`, so export
+  parity holds. Hold and Pattern Trigger mode set the arrangement aside
+  (`SongStore.followsArrangement`) and play plain sections; switching mid-play keeps
+  the place via `updateSong` matching on `playsSectionID`. `playingSlot` /
+  `playingEntryID` light the playing row. Deleting a section removes its slots; the
+  validator drops slots for missing sections and renews duplicate slot ids.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI
   (`.github/workflows/validate.yml`) runs `swift test` and a simulator build on every
   push/PR.

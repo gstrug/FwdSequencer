@@ -753,6 +753,7 @@ private struct ArrangementStrip: View {
     @ObservedObject private var help = HelpCenter.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var editingSection: SectionTarget? = nil
+    @State private var showArranger = false
     /// Drives the queued chip's pulse. A single flag for the strip rather than one per
     /// chip, so every queued pad would flash in step — there is only ever one, but it
     /// keeps the animation owned in one place.
@@ -797,6 +798,10 @@ private struct ArrangementStrip: View {
                 }
                 .disabled(!songStore.triggerMode && !help.isOn)
                 Divider()
+                Button { help.perform(.arranger) { showArranger = true } } label: {
+                    Label("Arranger…", systemImage: "list.number")
+                }
+                Divider()
                 sectionActions(for: songStore.selectedSection)
             } label: {
                 Label("Section", systemImage: "ellipsis.circle")
@@ -817,6 +822,7 @@ private struct ArrangementStrip: View {
         .sheet(item: $editingSection) { target in
             SectionEditorSheet(sectionIndex: target.index, field: target.field)
         }
+        .sheet(isPresented: $showArranger) { ArrangerView() }
     }
 
     /// The actions for one section. Shared by the Section button and by a long press on

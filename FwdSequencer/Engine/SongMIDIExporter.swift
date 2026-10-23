@@ -101,7 +101,11 @@ nonisolated enum SongMIDIExporter {
 
         let channels = (0..<16).filter { $0 != 9 }
         var absoluteTick = 0
-        for (sectionIndex, section) in song.sections.enumerated() {
+        // The order the song plays in — the arrangement when it is on — so the file
+        // matches what Play sounds (export parity). Indices are play positions, as in
+        // the sequencer, so the Feel randomness lines up too.
+        let playedSections = song.sectionsInPlayOrder()
+        for (sectionIndex, section) in playedSections.enumerated() {
             conductor.append(event(absoluteTick, -8, metaText(0x06, section.name)))
             let ticksPerBar = ticksPerQuarter * 4 * song.timeSignature.numerator
                 / song.timeSignature.denominator
@@ -258,7 +262,7 @@ nonisolated enum SongMIDIExporter {
             // Live playback resets normal traversal at every boundary, while an
             // in-progress Hold/Rest dwell carries into the next section. Cancel all
             // future events at the end of the final section, exactly as finishSong().
-            let hasNextSection = sectionIndex + 1 < song.sections.count
+            let hasNextSection = sectionIndex + 1 < playedSections.count
             for (trackIndex, track) in song.tracks.enumerated() {
                 guard var state = states[track.id] else { continue }
                 let channel = UInt8(channels[trackIndex % channels.count])
@@ -431,7 +435,7 @@ nonisolated enum SongMIDIExporter {
 
     private static func estimatedNoteEvents(in song: Song) -> Int {
         var total: Int64 = 0
-        for section in song.sections {
+        for section in song.sectionsInPlayOrder() {
             let ticksPerBar = ticksPerQuarter * 4 * song.timeSignature.numerator
                 / song.timeSignature.denominator
             let sectionTicks = ticksPerBar * section.numberOfBars

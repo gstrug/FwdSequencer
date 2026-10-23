@@ -55,6 +55,59 @@ nonisolated struct Song: Codable, Identifiable, Equatable {
     // A dedicated instrument for the manual Play dock, independent of the sequencer
     // tracks. Optional, so older saved songs still decode (missing key → nil).
     var performance: SongTrack? = nil
+    /// The arranger: the order sections play in, any section any number of times.
+    /// Optional so older songs still decode; nil or empty means sections play in order.
+    var arrangement: [ArrangementSlot]? = nil
+    /// Whether Play follows the arrangement. Saved with the song, so a song arranged
+    /// this way opens ready to play it. Optional so older songs decode (nil = off).
+    var playsArrangement: Bool? = nil
+}
+
+/// One place in the arrangement. It has its own id, so the same section placed twice
+/// is two different slots: the sequencer and the screen can tell "the first time
+/// round" from "the second".
+nonisolated struct ArrangementSlot: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    var sectionID: UUID
+}
+
+/// One entry in what actually plays: the id the sequencer knows it by (a slot's id
+/// when following the arrangement, otherwise the section's own) and which section.
+nonisolated struct PlayOrderEntry: Equatable {
+    let id: UUID
+    let sectionIndex: Int
+}
+
+extension Song {
+    /// Whether the arrangement is switched on and has something in it.
+    var arrangementIsActive: Bool {
+        playsArrangement == true && !arrangementOrder().isEmpty
+    }
+
+    /// The order the song plays in. Following the arrangement when it is on and has
+    /// slots; otherwise every section once, in order. Slots whose section has gone are
+    /// skipped. Used by both the sequencer and MIDI export, so they cannot disagree.
+    func playOrder(followArrangement: Bool = true) -> [PlayOrderEntry] {
+        if followArrangement, playsArrangement == true {
+            let arranged = arrangementOrder()
+            if !arranged.isEmpty { return arranged }
+        }
+        return sections.indices.map { PlayOrderEntry(id: sections[$0].id, sectionIndex: $0) }
+    }
+
+    /// The sections in the order they play, repeats included.
+    func sectionsInPlayOrder(followArrangement: Bool = true) -> [SongSection] {
+        playOrder(followArrangement: followArrangement).map { sections[$0.sectionIndex] }
+    }
+
+    private func arrangementOrder() -> [PlayOrderEntry] {
+        guard let arrangement, !arrangement.isEmpty else { return [] }
+        var indexByID: [UUID: Int] = [:]
+        for i in sections.indices { indexByID[sections[i].id] = i }
+        return arrangement.compactMap { slot in
+            indexByID[slot.sectionID].map { PlayOrderEntry(id: slot.id, sectionIndex: $0) }
+        }
+    }
 }
 
 extension Song {
@@ -77,6 +130,7 @@ extension Song {
         // Soloing the Play keyboard silences the tracks that aren't soloed.
         if isPlayKeyboardSoloed != other.isPlayKeyboardSoloed { return true }
         if sections != other.sections { return true }
+        if arrangement != other.arrangement || playsArrangement != other.playsArrangement { return true }
         guard tracks.count == other.tracks.count else { return true }
         for (a, b) in zip(tracks, other.tracks) {
             if a.id != b.id

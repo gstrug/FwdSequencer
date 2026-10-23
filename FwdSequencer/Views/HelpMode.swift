@@ -95,6 +95,9 @@ struct HelpMenuPage: Identifiable {
             Item(icon: "hand.tap", label: "Pattern Trigger Mode", topic: .triggerMode),
             Item(icon: "hand.point.up.left", label: "Trigger Holds to Play", topic: .triggerHold),
         ]),
+        ItemGroup(heading: nil, items: [
+            Item(icon: "list.number", label: "Arranger…", topic: .arranger),
+        ]),
         ItemGroup(heading: "The selected section", items: [
             Item(icon: "pencil", label: "Rename…", topic: .sectionRename),
             Item(icon: "plus", label: "Add Section", topic: .sectionAdd),
