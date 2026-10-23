@@ -297,7 +297,7 @@ private struct HelpCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
                     Text("Help is on").font(.headline)
-                    Text("Tap anything outlined to see what it does. Nothing you tap does anything until you tap Done.")
+                    Text("Tap anything with an outline to see what it does.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)

@@ -266,31 +266,31 @@ enum HelpTopic: String {
         case .sectionChip:
             return "Songs can contain multiple sections. Tap a section to select for editing. Long press for its menu. In Pattern Trigger Mode, tap or hold to play the section."
         case .sectionMenu:
-            return "Pattern Trigger Mode: Sections become triggers. Tap to play. Next pad can be queued by tapping while the first pad plays. Trigger Holds to Play: Sections play only while holding the trigger. Rename, Add, Duplicate, Move or Delete the selected section."
+            return "Section Menu: Scroll through the items on this view for help on Section menu items."
         case .sectionBars:
             return "Number of bars for the selected section. Tap to change."
         case .shape:
-            return "Creative options to rework the selected section. Generate or modify notes and steps on the tracks you choose. Available when 'Hold' is on."
+            return "Creative options to rework the selected section. Generate or modify notes and steps on the tracks you choose. Only available when 'Hold' is on."
         case .snapshots:
-            return "Save versions of a section's notes and steps and go back to them. Available when 'Hold' is on."
+            return "Save versions of a section's notes and steps and go back to them. Only available when 'Hold' is on."
         case .addTrack:
-            return "Add Track adds a new track with the built-in sound."
+            return "Add Track: Adds a new track with the default sound."
         case .triggerMode:
-            return "Pattern Trigger Mode: Sections become triggers. Tap a section to play it. Tap another while it plays to queue it next. The Section button is tinted while it is on."
+            return "Enables Pattern Trigger. In this mode section chips become triggers. Tap a section to play it. Tap a second section while the first plays to queue it to follow."
         case .triggerHold:
-            return "Trigger Holds to Play: in Pattern Trigger Mode, a section plays only while you hold its trigger."
+            return "Enables Trigger Holds to Play: In Pattern Trigger Mode, a section plays when touched and stops when released."
         case .sectionRename:
-            return "Rename the section."
+            return "Rename the selected section."
         case .sectionAdd:
             return "Adds a new, empty section at the end of the song."
         case .sectionDuplicate:
-            return "Adds a copy of the section, with its notes and steps, straight after it. It gets the next free number."
+            return "Adds a copy of the selected section with its settings."
         case .sectionMove:
-            return "Moves the section one place earlier or later in the song."
+            return "Move the position of the section in a song."
         case .sectionDelete:
-            return "Deletes the section. A song always keeps at least one."
+            return "Deletes the selected section. A song must always have at least one section."
         case .hold:
-            return "Hold: Repeats the selected section so you can audition changes you make while you listen. Shape and Snapshots only work when 'Hold' is on."
+            return "Hold: Repeats the selected section so you can audition changes while you make them. Shape and Snapshot menu is only available when 'Hold' is on."
 
         // Track
         case .trackExpand:
@@ -298,7 +298,7 @@ enum HelpTopic: String {
         case .trackName:
             return "The track name. Tap to edit; long press to select all."
         case .trackMenu:
-            return "Track Menu: Move, Duplicate or Delete the track. Add or remove effects. Change Feel: chord roll, accent, variation, swing and timing, which make it sound less mechanical. Tinted when any Feel is on."
+            return "Track Menu Help: Scroll through this screen to get help on the Track menu items."
         case .trackInstrument:
             return "The sound played by this track. Tap to choose an AUv3 plugin."
         case .trackEditInstrument:
@@ -320,21 +320,21 @@ enum HelpTopic: String {
         case .trackPlayKeys:
             return "Play: Turn Keys ▸ Tracks on in Settings ▸ MIDI ▸ Controllers & Templates to enable. Your MIDI controller can now play any track where P is active (green)."
         case .trackMove:
-            return "Moves the track one place up or down the list. MIDI links follow position, so Track 1 is always the top track."
+            return "Moves the track up or down in the list. MIDI links are attached to the track position, so Track 1 is always the top track."
         case .trackDuplicate:
-            return "Adds a copy of the track, with its instrument, sound, mixer settings and notes in every section."
+            return "Adds a copy of the entire track with instrument, sound, mixer settings and notes for every section."
         case .trackDelete:
-            return "Deletes the track and its notes in every section. You are asked to confirm."
+            return "Deletes the track. You are asked to confirm."
         case .trackEffectsMenu:
-            return "Opens the track's effects, to add, edit, reorder or bypass them."
+            return "Opens the track's effects menu to add, edit, reorder or bypass them."
         case .feelChordRoll:
-            return "Chord Roll: plays the notes of a chord one after another, like a strum, instead of all at once."
+            return "Chord Roll: Slightly offsets note timing in a chord to add a more natural feel."
         case .feelAccent:
-            return "Accent: plays notes on the beat a little louder, so the rhythm has a pulse."
+            return "Accent: Plays notes on the first beat a little louder to give the rhythm a pulse."
         case .feelVariation:
-            return "Variation: varies each note's loudness and length slightly, so repeats are never identical."
+            return "Variation: varies each note's loudness and length slightly for a more natural feel."
         case .feelSwing:
-            return "Swing: delays every second note, from a light shuffle to a full triplet feel."
+            return "Swing: delays every second note slightly to give a shuffle feel."
         case .feelTiming:
             return "Timing: moves notes slightly early or late at random, like a human player."
         case .trackTime:
@@ -344,7 +344,7 @@ enum HelpTopic: String {
         case .trackSteps:
             return "The track's step sequence display for the active section; the lit step is the one playing. Edit Steps using the Steps menu under an expanded track."
         case .trackKeyboard:
-            return "The heart of FWD Sequencer. Tap keys to add or remove notes in the track pool. Blue notes are selected and in the note pool. Notes in the pool are indexed from lowest to highest, not the order of selection. When notes sound they will display Yellow."
+            return "The heart of FWD Sequencer. Tap keys to add or remove notes in the track pool. Blue notes are added to the note pool. Notes in the pool are indexed from lowest to highest, not the order of selection. When notes sound they will display Yellow."
         case .trackNoteParams:
             return "Note Params: Set how loud (velocity) and how long (gate) each note in the pool plays. Adjust individual notes or apply a preset shape."
         case .trackStepsButton:
@@ -380,23 +380,23 @@ enum HelpTopic: String {
 
         // Steps
         case .stepType:
-            return "Step Type: Move Fwd or back through the pool, Repeat notes, Play specific notes (or chords). Play a Random note, Hold a note or Rest. The sequencer steps continuously through the pool and executes defined rules from top to bottom."
+            return "Step Type: Determines the next move the sequencer should make on this track. The sequencer steps continuously through the pool and executes the rules list from top to bottom."
         case .stepFwd:
-            return "Fwd: moves forward through the note pool by the amount set, and plays that note."
+            return "Fwd: moves forward through the note pool index by the amount set, and plays that note."
         case .stepBack:
-            return "Back: moves back through the note pool by the amount set, and plays that note."
+            return "Back: moves back through the note pool index by the amount set, and plays that note."
         case .stepRepeat:
-            return "Repeat: plays the current note again, the number of times set."
+            return "Repeat: repeats the last note the number of times set."
         case .stepPlay:
-            return "Play: jumps to a note in the pool by its position, or plays several together as a chord."
+            return "Play: jumps to a note in the pool by its index position and plays it. Several notes can be played together as a chord by specifying multiple comma separated notes e.g. 1,3,5."
         case .stepRandom:
-            return "Random: plays a random note from the pool."
+            return "Random: Jumps to a random index in the pool and plays the note."
         case .stepHold:
-            return "Hold: keeps the previous note ringing for the number of steps set."
+            return "Hold: keeps the previous note active for the number of steps set."
         case .stepRest:
-            return "Pause: silence for the number of steps set. The previous note stops."
+            return "Pause: silences notes for the number of steps set. The previous note stops."
         case .stepAmount:
-            return "Depending on the step type this sets, how far the step moves, how many times it repeats, or how many steps it holds or rests."
+            return "Depending on the step type, it sets how far the step moves, how many times it repeats, or how many steps it holds or rests."
         case .stepChord:
             return "Which notes in the pool to play. Type one number, or several like note 1,3,5 for a chord. The numbers indicate the note position, from bottom to top in the note pool."
         case .stepGate:
@@ -408,9 +408,9 @@ enum HelpTopic: String {
         case .stepDelete:
             return "Removes this step."
         case .addStep:
-            return "Adds a new step at the end. Initially set to Fwd."
+            return "Adds a new step at the end of the list. Initially set to Fwd, change it to your preference."
         case .clearSteps:
-            return "Removes every step. With no steps, the notes play in order."
+            return "Removes every step. With no steps, the notes play forward in order."
 
         // Note parameters
         case .notePattern:
@@ -478,29 +478,29 @@ enum HelpTopic: String {
 
         // MIDI
         case .midiController:
-            return "A connected controller. The light flashes when it sends something, so you can tell which one is which."
+            return "A connected controller. The light flashes when it sends MIDI."
         case .midiUse:
-            return "Turn off to make the app ignore this controller completely."
+            return "Turn off to ignore this controller."
         case .midiTemplate:
-            return "The set of links this controller uses: which knob, fader or button does what."
+            return "The set of MIDI links configured for this controller."
         case .midiLoad:
-            return "Load a template for this controller, or switch to None."
+            return "Load a preconfigured template for this controller, or switch to None."
         case .midiSaveAs:
             return "Saves this controller's current links under a new name and switches to the saved copy."
         case .midiKeysPlay:
-            return "This controller's keys play the Play keyboard's instrument. Sustain, pitch bend, mod wheel and aftertouch go with them, unless linked differently in the template."
+            return "Connects this controller to the virtual keyboard's instrument. Sustain, pitch bend, mod wheel and aftertouch are active unless linked differently in the template."
         case .midiKeysTracks:
-            return "This controller's keys send notes to every track armed with P. If Write Notes is on, sends notes to the track with W armed."
+            return "Send this controller's MIDI notes to every track armed with P. If Write Notes is on, sends notes to the track with W armed."
         case .midiTemplates:
-            return "Saved templates. Tap one to see its links; swipe or long press to copy, rename or delete. Factory ones can be copied, not changed."
+            return "Saved templates. Tap one to view its links; swipe or long press to copy, rename or delete. Factory templates can be copied, not changed."
         case .midiWriteNotes:
-            return "On: tracks show W, to arm one track and write notes into it from your controller. Off: tracks show P, to choose which tracks your controller plays."
+            return "On: Shows W. Arm a track and write notes to it from your MIDI keyboard. Off: Shows P. Arm tracks you want your MIDI keyboard to play."
         case .midiClock:
             return "Sends this song's tempo and start and stop to other apps and hardware."
         case .midiLearn:
-            return "Link a control to hardware on your controller: turn on Learn, tap a control on screen, then move or press the one on the controller to link it."
+            return "Link a control to your MIDI controller: turn on MIDI Learn in settings, tap a control on screen, then move or press the hardware control on the MIDI device to link it."
         case .midiControllersPage:
-            return "Opens the MIDI page: connected controllers, their templates and where their keys go, Write Notes and MIDI clock."
+            return "Opens the MIDI page to access connected controllers, their templates and track assignments. Write or Play notes and MIDI clock settings."
         }
     }
 }
