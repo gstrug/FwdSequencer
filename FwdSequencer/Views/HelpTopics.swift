@@ -227,7 +227,7 @@ enum HelpTopic: String {
         case .importSong:
             return "Import Song: bring in a .fwdsong file from Files or another app. It is added as a new song."
         case .songRow:
-            return "Tap to open the song. Long press to Rename, Duplicate, Export or Delete the song. Swipe left to delete, right to export to midi or .fwdsong."
+            return "Tap to open the song. Long press to Rename, Duplicate, Export or Delete the song. Swipe left to delete, right to export to midi or .fwdsong. \"Arranged\" means the song has an arrangement (dimmed when Play Arrangement is off)."
         case .recentlyDeleted:
             return "Deleted songs list. Restore the song or delete it for good."
         case .needsAttention:

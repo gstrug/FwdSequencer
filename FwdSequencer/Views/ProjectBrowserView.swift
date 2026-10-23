@@ -587,9 +587,12 @@ struct SongRow: View {
                 .frame(width: 20)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(song.name)
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(song.name)
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+                    if hasArrangement { arrangementBadge }
+                }
                 // Spelled out rather than icon-only: a metronome or slider glyph on its
                 // own tells you nothing about what the number means.
                 Text(summary)
@@ -604,6 +607,25 @@ struct SongRow: View {
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
+    }
+
+    /// The song has been arranged in the Arranger (Section menu). Shown whether or not
+    /// Play Arrangement is on, so arranged songs can be found; dimmed when it is off.
+    private var hasArrangement: Bool { !(song.arrangement ?? []).isEmpty }
+    private var arrangementIsOn: Bool { song.playsArrangement == true }
+
+    private var arrangementBadge: some View {
+        Label(arrangementIsOn ? "Arranged" : "Arranged · off", systemImage: "list.number")
+            .labelStyle(.titleAndIcon)
+            .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .fixedSize()
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .foregroundStyle(arrangementIsOn ? Color.accentColor : Color.secondary)
+            .background((arrangementIsOn ? Color.accentColor : Color.secondary).opacity(0.15),
+                        in: Capsule())
+            .accessibilityLabel(arrangementIsOn ? "Has an arrangement" : "Has an arrangement, switched off")
     }
 
     private var summary: String {
