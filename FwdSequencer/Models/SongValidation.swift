@@ -24,6 +24,8 @@ nonisolated enum SongValidator {
     static let maximumNameLength = 200
     /// Slots in a song's arrangement. Generous: 1,024 sections could each appear four times.
     static let maximumArrangementSlots = 4_096
+    static let maximumSongParts = 1_024
+    static let maximumSectionsInSongPart = 256
     static let maximumPluginLabelLength = 1_000
 
     static func decodeAndValidate(_ data: Data) throws -> Song {
@@ -75,14 +77,34 @@ nonisolated enum SongValidator {
         }
         try requireUnique(song.sections.map(\.id), name: "section")
 
-        // The arranger. Tidied rather than refused: a slot pointing at a section that
-        // no longer exists is dropped, and a repeated slot id is renewed, so a damaged
-        // arrangement never stops the song itself from opening.
+        // The arranger. Tidied rather than refused: a Song Part loses sections that no
+        // longer exist, a place pointing at a missing part or section is dropped, and a
+        // repeated id is renewed, so a damaged arrangement never stops the song itself
+        // from opening. Empty Song Parts are kept: one may just have been made.
+        let known = Set(song.sections.map(\.id))
+        if var parts = song.songParts {
+            guard parts.count <= maximumSongParts else {
+                throw SongValidationError.invalid("A song cannot contain more than \(maximumSongParts) Song Parts.")
+            }
+            var seenParts = Set<UUID>()
+            parts.removeAll { !seenParts.insert($0.id).inserted }
+            for i in parts.indices {
+                parts[i].sectionIDs.removeAll { !known.contains($0) }
+                guard parts[i].sectionIDs.count <= maximumSectionsInSongPart else {
+                    throw SongValidationError.invalid("A Song Part cannot contain more than \(maximumSectionsInSongPart) sections.")
+                }
+                try validateDisplayName(parts[i].name, context: "A Song Part")
+            }
+            song.songParts = parts
+        }
         if var slots = song.arrangement {
-            let known = Set(song.sections.map(\.id))
-            slots.removeAll { !known.contains($0.sectionID) }
+            let knownParts = Set((song.songParts ?? []).map(\.id))
+            slots.removeAll { slot in
+                if let part = slot.partID { return !knownParts.contains(part) }
+                return !(slot.sectionID.map { known.contains($0) } ?? false)
+            }
             guard slots.count <= maximumArrangementSlots else {
-                throw SongValidationError.invalid("An arrangement cannot contain more than \(maximumArrangementSlots) slots.")
+                throw SongValidationError.invalid("An arrangement cannot contain more than \(maximumArrangementSlots) places.")
             }
             var seen = Set<UUID>()
             for i in slots.indices where !seen.insert(slots[i].id).inserted { slots[i].id = UUID() }

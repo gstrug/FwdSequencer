@@ -22,7 +22,8 @@ enum HelpTopic: String {
     case sectionChip, sectionMenu, sectionBars, shape, snapshots, hold, addTrack,
          triggerMode, triggerHold, sectionRename, sectionAdd, sectionDuplicate, sectionMove,
          sectionDelete, arranger, arrangerPlay, arrangerSlot, arrangerAdd, arrangerFill,
-         arrangerClear
+         arrangerClear, songPartNew, songPartEdit, songPartAdd, songPartName, songPartSection,
+         songPartAddSection, songPartDelete, songOrderStrip, songOrderStripOpen
 
     // A track
     case trackExpand, trackName, trackMenu, trackInstrument, trackEditInstrument,
@@ -111,6 +112,15 @@ enum HelpTopic: String {
         case .arrangerAdd: return "Available Sections"
         case .arrangerFill: return "Fill with Sections in Order"
         case .arrangerClear: return "Clear Arrangement"
+        case .songPartNew: return "New Song Part"
+        case .songPartEdit: return "A Song Part"
+        case .songPartAdd: return "Add Song Part"
+        case .songPartName: return "Song Part Name"
+        case .songPartSection: return "A Section in the Song Part"
+        case .songPartAddSection: return "Available Sections"
+        case .songPartDelete: return "Delete Song Part"
+        case .songOrderStrip: return "Song Order"
+        case .songOrderStripOpen: return "Open the Arranger"
 
         case .trackExpand: return "Expand / Collapse"
         case .trackName: return "Track Name"
@@ -308,6 +318,24 @@ enum HelpTopic: String {
             return "Replaces the arrangement with every section once, in order, to rearrange from there."
         case .arrangerClear:
             return "Removes every place from the arrangement. Your sections are not changed."
+        case .songPartNew:
+            return "Makes a new, empty Song Part and opens it, ready to add sections."
+        case .songPartEdit:
+            return "A group of sections, such as a verse, that plays as one. Tap to change its name or sections; every place it is used in the song order changes too. Swipe left to delete it."
+        case .songPartAdd:
+            return "Adds this Song Part to the end of the song order."
+        case .songPartName:
+            return "Rename this Song Part."
+        case .songPartSection:
+            return "One section in this Song Part. Sections play from top to bottom. Drag the handle to move it, swipe left to remove it."
+        case .songPartAddSection:
+            return "Adds a section to the end of this Song Part. A section can be added more than once."
+        case .songPartDelete:
+            return "Deletes this Song Part and removes it from the song order. Your sections are not changed."
+        case .songOrderStrip:
+            return "The song order, shown while Play Arrangement is on. The place playing is green. Tap a place to go to it when the current section ends; tap it again to cancel. When stopped, a tap plays from there."
+        case .songOrderStripOpen:
+            return "Opens the Arranger."
         case .hold:
             return "Hold: Repeats the selected section so you can audition changes while you make them. Shape and Snapshot menu is only available when 'Hold' is on."
 

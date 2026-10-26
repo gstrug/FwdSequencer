@@ -200,6 +200,10 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// listening, and a longer queue turns it into an arrangement you have to remember.
     /// Queueing again simply replaces it.
     private var queuedSectionID: UUID?
+    /// A place to move to at the next boundary and then carry on from, through the
+    /// song — the arranger's song order strip. Unlike the pattern queue it does not
+    /// become a held section.
+    private var jumpTargetID: UUID?
     /// Stop when the current section ends rather than repeating it. What makes a
     /// triggered one-shot a one-shot while it is still HELD — the queue overrides it, so
     /// a shot with something queued runs on instead of stopping.
@@ -261,17 +265,20 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     func startSong(sections: [SequencerSection], tempo: Double,
                    timeSignature: TimeSignature, trackIDs: [UUID], loop: Bool,
                    randomSeed: UInt64 = 0x465744, heldSection: UUID? = nil,
-                   stopAtSectionEnd: Bool = false) {
+                   stopAtSectionEnd: Bool = false, startAt: UUID? = nil) {
         sequencerQueue.async { [weak self] in
             guard let self else { return }
             stopTimer()
             globalStep = 0
             heldSectionID = heldSection
             queuedSectionID = nil
+            jumpTargetID = nil
             self.stopAtSectionEnd = stopAtSectionEnd
             // Start ON the held section: pressing play with a section held should sound
             // that section, not restart the arrangement from the top.
-            sectionIndex = heldSection.flatMap { id in sections.firstIndex { $0.id == id } } ?? 0
+            sectionIndex = heldSection.flatMap { id in sections.firstIndex { $0.id == id } }
+                ?? startAt.flatMap { id in sections.firstIndex { $0.id == id } }
+                ?? 0
             songLoops = loop
             _songSections = sections
             _songTempo = tempo
@@ -297,6 +304,12 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
     /// Queue a section to take over at the next boundary, or nil to cancel.
     func queueSection(_ sectionID: UUID?) {
         sequencerQueue.async { [weak self] in self?.queuedSectionID = sectionID }
+    }
+
+    /// Move to this entry when the current section ends, then carry on from there; nil
+    /// cancels. Read at the boundary, so it never cuts a bar short.
+    func jump(to id: UUID?) {
+        sequencerQueue.async { [weak self] in self?.jumpTargetID = id }
     }
 
     /// Change whether the section now playing is a one-shot, while it plays.
@@ -432,6 +445,7 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
             // Rewind to the HELD section when one is held — rewinding to the top would
             // jump away from the section being edited.
             sectionIndex = heldSectionID.flatMap { id in self._songSections.firstIndex { $0.id == id } } ?? 0
+            jumpTargetID = nil
             random = SeededRandomGenerator(seed: initialRandomSeed)
             for key in Array(states.keys) { states[key] = TrackState() }
             cancelAllPendingNoteOffs()
@@ -718,6 +732,16 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                         stepsPerBar = max(1, frame.timeSignature.numerator * ticksPerWholeNote / frame.timeSignature.denominator)
                         totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
                     }
+                } else if let jump = jumpTargetID.flatMap({ id in _songSections.firstIndex { $0.id == id } }) {
+                    // A place chosen on the song order strip: move there and carry on
+                    // through the song from it. Chosen while the end of a non-looping
+                    // song approached, it keeps playing rather than stopping.
+                    jumpTargetID = nil
+                    sectionIndex = jump
+                    onSectionChange?(sectionIndex)
+                    frame = currentFrame()
+                    stepsPerBar = max(1, frame.timeSignature.numerator * ticksPerWholeNote / frame.timeSignature.denominator)
+                    totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
                 } else {
                     // End of the last section with looping off → finish and stop.
                     if sectionIndex + 1 >= count && !songLoops {

@@ -115,6 +115,107 @@ final class ArrangementTests: XCTestCase {
         XCTAssertEqual(occurrences(of: "Alpha", in: plain), 1)
     }
 
+    // MARK: Song Parts
+
+    private func part(_ song: inout Song, _ name: String, _ indices: [Int]) -> UUID {
+        let p = SongPart(name: name, sectionIDs: indices.map { song.sections[$0].id })
+        song.songParts = (song.songParts ?? []) + [p]
+        return p.id
+    }
+
+    func testASongPartPlaysItsSectionsWhereverItIsPlaced() {
+        var s = song(["S1", "S2", "S3", "S4", "Ch1", "Ch2"])
+        let verse = part(&s, "Verse", [0, 1, 2, 3])
+        let chorus = part(&s, "Chorus", [4, 5, 4])
+        s.arrangement = [ArrangementSlot(partID: verse), ArrangementSlot(partID: chorus),
+                         ArrangementSlot(partID: verse), ArrangementSlot(sectionID: s.sections[5].id)]
+        s.playsArrangement = true
+        let order = s.playOrder()
+        XCTAssertEqual(order.map(\.sectionIndex), [0, 1, 2, 3, 4, 5, 4, 0, 1, 2, 3, 5])
+        XCTAssertEqual(order.map { $0.slotIndex }, [0, 0, 0, 0, 1, 1, 1, 2, 2, 2, 2, 3])
+        XCTAssertEqual(order.map(\.positionInSlot), [0, 1, 2, 3, 0, 1, 2, 0, 1, 2, 3, 0])
+        XCTAssertEqual(order[4].slotLength, 3)
+        // Every entry is told apart, even the same section twice in one part.
+        XCTAssertEqual(Set(order.map(\.id)).count, order.count)
+        // A single section keeps the place's own id.
+        XCTAssertEqual(order.last?.id, s.arrangement?.last?.id)
+    }
+
+    func testIdsStayTheSameWhenTheSongChanges() {
+        var s = song(["A", "B"])
+        let p = part(&s, "P", [0, 1])
+        s.arrangement = [ArrangementSlot(partID: p)]
+        s.playsArrangement = true
+        let before = s.playOrder().map(\.id)
+        s.tempo = 90
+        s.sections[0].numberOfBars = 8
+        XCTAssertEqual(s.playOrder().map(\.id), before)
+    }
+
+    func testChangingASongPartChangesEveryPlaceItIsUsed() {
+        var s = song(["A", "B", "C"])
+        let p = part(&s, "P", [0])
+        s.arrangement = [ArrangementSlot(partID: p), ArrangementSlot(partID: p)]
+        s.playsArrangement = true
+        XCTAssertEqual(s.playOrder().map(\.sectionIndex), [0, 0])
+        s.songParts?[0].sectionIDs.append(s.sections[2].id)
+        XCTAssertEqual(s.playOrder().map(\.sectionIndex), [0, 2, 0, 2])
+    }
+
+    func testAnEmptySongPartPlaysNothing() {
+        var s = song(["A", "B"])
+        let empty = part(&s, "Empty", [])
+        s.arrangement = [ArrangementSlot(partID: empty), ArrangementSlot(sectionID: s.sections[1].id)]
+        s.playsArrangement = true
+        XCTAssertEqual(s.playOrder().map(\.sectionIndex), [1])
+        s.arrangement = [ArrangementSlot(partID: empty)]
+        // Nothing to play: the sections play in order instead.
+        XCTAssertFalse(s.arrangementIsActive)
+        XCTAssertEqual(s.playOrder().map(\.sectionIndex), [0, 1])
+    }
+
+    func testBuild88ArrangementsStillLoad() throws {
+        let section = UUID(), slot = UUID()
+        let json = """
+        {"id":"\(slot.uuidString)","sectionID":"\(section.uuidString)"}
+        """
+        let decoded = try JSONDecoder().decode(ArrangementSlot.self, from: Data(json.utf8))
+        XCTAssertEqual(decoded, ArrangementSlot(id: slot, sectionID: section, partID: nil))
+    }
+
+    func testValidationTidiesSongParts() throws {
+        var s = song(["A", "B"])
+        let p = part(&s, "P", [0, 1])
+        s.songParts?[0].sectionIDs.append(UUID())
+        let keptEmpty = part(&s, "New", [])
+        s.arrangement = [ArrangementSlot(partID: p), ArrangementSlot(partID: UUID()),
+                         ArrangementSlot(partID: keptEmpty)]
+        let tidy = try SongValidator.validateAndNormalize(s)
+        XCTAssertEqual(tidy.songParts?[0].sectionIDs, [s.sections[0].id, s.sections[1].id])
+        // A just-made empty part survives saving.
+        XCTAssertEqual(tidy.songParts?.count, 2)
+        XCTAssertEqual(tidy.arrangement?.compactMap(\.partID), [p, keptEmpty])
+    }
+
+    func testMIDIExportFollowsSongParts() throws {
+        var s = song(["Alpha", "Beta", "Gamma"])
+        let p = part(&s, "Verse", [0, 1])
+        s.arrangement = [ArrangementSlot(partID: p), ArrangementSlot(sectionID: s.sections[2].id),
+                         ArrangementSlot(partID: p)]
+        s.playsArrangement = true
+        let data = [UInt8](try SongMIDIExporter.data(for: s))
+        XCTAssertEqual(occurrences(of: "Alpha", in: data), 2)
+        XCTAssertEqual(occurrences(of: "Beta", in: data), 2)
+        XCTAssertEqual(occurrences(of: "Gamma", in: data), 1)
+    }
+
+    func testAPartsChangesReachTheSequencer() {
+        var s = song(["A"])
+        let before = s
+        _ = part(&s, "P", [0])
+        XCTAssertTrue(s.playbackDiffers(from: before))
+    }
+
     private func occurrences(of text: String, in bytes: [UInt8]) -> Int {
         let needle = Array(text.utf8)
         guard bytes.count >= needle.count else { return 0 }

@@ -55,38 +55,61 @@ nonisolated struct Song: Codable, Identifiable, Equatable {
     // A dedicated instrument for the manual Play dock, independent of the sequencer
     // tracks. Optional, so older saved songs still decode (missing key → nil).
     var performance: SongTrack? = nil
-    /// The arranger: the order sections play in, any section any number of times.
-    /// Optional so older songs still decode; nil or empty means sections play in order.
+    /// The arranger: the order the song plays in. Each place is a Song Part or a single
+    /// section, any of them any number of times. Optional so older songs still decode;
+    /// nil or empty means sections play in order.
     var arrangement: [ArrangementSlot]? = nil
     /// Whether Play follows the arrangement. Saved with the song, so a song arranged
     /// this way opens ready to play it. Optional so older songs decode (nil = off).
     var playsArrangement: Bool? = nil
+    /// Named groups of sections ("Verse" = Sections 1–4), placed in the arrangement as
+    /// one. Optional so older songs decode.
+    var songParts: [SongPart]? = nil
 }
 
-/// One place in the arrangement. It has its own id, so the same section placed twice
-/// is two different slots: the sequencer and the screen can tell "the first time
-/// round" from "the second".
+/// A named run of sections, played in order, placed in the arrangement as one block.
+/// Change it once and every place it is used changes. A section may appear in it more
+/// than once, and in more than one Song Part.
+nonisolated struct SongPart: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    var name: String = "Song Part"
+    var sectionIDs: [UUID] = []
+}
+
+/// One place in the arrangement: a Song Part (`partID`) or a single section
+/// (`sectionID`). It has its own id, so the same thing placed twice is two places, and
+/// the sequencer and the screen can tell "the first time round" from "the second".
+///
+/// `sectionID` was the only kind when the arranger first shipped (build 88), so those
+/// arrangements decode unchanged.
 nonisolated struct ArrangementSlot: Codable, Identifiable, Equatable {
     var id: UUID = UUID()
-    var sectionID: UUID
+    var sectionID: UUID? = nil
+    var partID: UUID? = nil
 }
 
-/// One entry in what actually plays: the id the sequencer knows it by (a slot's id
-/// when following the arrangement, otherwise the section's own) and which section.
+/// One entry in what actually plays: the id the sequencer knows it by, which section
+/// it plays, and — when following the arrangement — which place it belongs to and its
+/// position within that place (a Song Part plays several sections).
 nonisolated struct PlayOrderEntry: Equatable {
     let id: UUID
     let sectionIndex: Int
+    /// Index into `Song.arrangement`; nil when sections play in order.
+    var slotIndex: Int? = nil
+    var positionInSlot: Int = 0
+    var slotLength: Int = 1
 }
 
 nonisolated extension Song {
-    /// Whether the arrangement is switched on and has something in it.
+    /// Whether the arrangement is switched on and has something to play.
     var arrangementIsActive: Bool {
         playsArrangement == true && !arrangementOrder().isEmpty
     }
 
     /// The order the song plays in. Following the arrangement when it is on and has
-    /// slots; otherwise every section once, in order. Slots whose section has gone are
-    /// skipped. Used by both the sequencer and MIDI export, so they cannot disagree.
+    /// something to play; otherwise every section once, in order. Places whose part or
+    /// section has gone are skipped. Used by both the sequencer and MIDI export, so they
+    /// cannot disagree.
     func playOrder(followArrangement: Bool = true) -> [PlayOrderEntry] {
         if followArrangement, playsArrangement == true {
             let arranged = arrangementOrder()
@@ -100,13 +123,59 @@ nonisolated extension Song {
         playOrder(followArrangement: followArrangement).map { sections[$0.sectionIndex] }
     }
 
+    func songPart(_ id: UUID?) -> SongPart? {
+        guard let id else { return nil }
+        return songParts?.first { $0.id == id }
+    }
+
+    /// The section indices one place plays, in order. Empty when its part or section
+    /// has gone.
+    func sectionIndices(for slot: ArrangementSlot) -> [Int] {
+        var indexByID: [UUID: Int] = [:]
+        for i in sections.indices { indexByID[sections[i].id] = i }
+        return sectionIndices(for: slot, indexByID: indexByID)
+    }
+
+    private func sectionIndices(for slot: ArrangementSlot, indexByID: [UUID: Int]) -> [Int] {
+        if let partID = slot.partID {
+            return songPart(partID)?.sectionIDs.compactMap { indexByID[$0] } ?? []
+        }
+        return slot.sectionID.flatMap { indexByID[$0] }.map { [$0] } ?? []
+    }
+
     private func arrangementOrder() -> [PlayOrderEntry] {
         guard let arrangement, !arrangement.isEmpty else { return [] }
         var indexByID: [UUID: Int] = [:]
         for i in sections.indices { indexByID[sections[i].id] = i }
-        return arrangement.compactMap { slot in
-            indexByID[slot.sectionID].map { PlayOrderEntry(id: slot.id, sectionIndex: $0) }
+        var order: [PlayOrderEntry] = []
+        for (slotIndex, slot) in arrangement.enumerated() {
+            let indices = sectionIndices(for: slot, indexByID: indexByID)
+            for (position, sectionIndex) in indices.enumerated() {
+                // A single section is known by the place's own id; a Song Part's
+                // sections each get an id derived from it, stable across updates so the
+                // sequencer keeps its place when the song changes while playing.
+                let id = slot.partID == nil ? slot.id : slot.id.derived(position)
+                order.append(PlayOrderEntry(id: id, sectionIndex: sectionIndex,
+                                            slotIndex: slotIndex, positionInSlot: position,
+                                            slotLength: indices.count))
+            }
         }
+        return order
+    }
+}
+
+nonisolated extension UUID {
+    /// A different id worked out from this one and a number, the same every time.
+    func derived(_ number: Int) -> UUID {
+        var bytes = uuid
+        let n = UInt32(truncatingIfNeeded: number &+ 1)
+        bytes.12 ^= UInt8(truncatingIfNeeded: n >> 24)
+        bytes.13 ^= UInt8(truncatingIfNeeded: n >> 16)
+        bytes.14 ^= UInt8(truncatingIfNeeded: n >> 8)
+        bytes.15 ^= UInt8(truncatingIfNeeded: n)
+        // Flipped so a derived id can never equal its source, even for number -1.
+        bytes.11 ^= 0xA5
+        return UUID(uuid: bytes)
     }
 }
 
@@ -130,7 +199,8 @@ nonisolated extension Song {
         // Soloing the Play keyboard silences the tracks that aren't soloed.
         if isPlayKeyboardSoloed != other.isPlayKeyboardSoloed { return true }
         if sections != other.sections { return true }
-        if arrangement != other.arrangement || playsArrangement != other.playsArrangement { return true }
+        if arrangement != other.arrangement || playsArrangement != other.playsArrangement
+            || songParts != other.songParts { return true }
         guard tracks.count == other.tracks.count else { return true }
         for (a, b) in zip(tracks, other.tracks) {
             if a.id != b.id

@@ -87,11 +87,20 @@ class SongStore: ObservableObject {
     /// What the sequencer was last given, in order: maps the position it reports back
     /// to the section it plays.
     private var playOrder: [PlayOrderEntry] = []
-    /// The id of the place sounding: an arrangement slot's id while following the
-    /// arranger. Lets the Arranger light the right row when a section is placed twice.
-    var playingEntryID: UUID? {
-        playingSlot.flatMap { playOrder.indices.contains($0) ? playOrder[$0].id : nil }
+    /// What is sounding, as the sequencer was given it: which place in the arrangement
+    /// (when following it) and which section within a Song Part.
+    var playingEntry: PlayOrderEntry? {
+        playingSlot.flatMap { playOrder.indices.contains($0) ? playOrder[$0] : nil }
     }
+    /// The arrangement place sounding, while playback follows the arrangement. Lets the
+    /// Arranger and the song order strip light the right one when it is placed twice.
+    var playingArrangementSlot: Int? {
+        guard isPlaying || isPaused, followsArrangement else { return nil }
+        return playingEntry?.slotIndex
+    }
+    /// An arrangement place tapped on the song order strip, waiting for the section
+    /// playing now to end. One deep, like the pattern queue.
+    @Published private(set) var queuedArrangementSlot: Int?
 
     /// Whether playback follows the arranger now. Hold and Pattern Trigger mode work on
     /// sections themselves, so either one sets the arrangement aside while it is on.
@@ -377,6 +386,11 @@ class SongStore: ObservableObject {
                     ? self.playOrder[position].sectionIndex : position
                 self.playingSlot = position
                 self.currentSection = index
+                if let queued = self.queuedArrangementSlot,
+                   self.playOrder.indices.contains(position),
+                   self.playOrder[position].slotIndex == queued {
+                    self.queuedArrangementSlot = nil
+                }
                 // Arriving at a section clears it from the queue — the pad stops
                 // flashing because it is the one playing now.
                 if self.queuedSection == index { self.queuedSection = nil }
@@ -399,6 +413,7 @@ class SongStore: ObservableObject {
                 self.isPaused = false
                 self.currentSection = 0
                 self.playingSlot = nil
+                self.queuedArrangementSlot = nil
                 self.playback.currentBar = 0
                 self.playback.playingNotes.removeAll()
                 self.playback.activeSteps.removeAll()
@@ -667,8 +682,9 @@ class SongStore: ObservableObject {
 
     // MARK: - Playback
 
-    func play() {
+    func play(startingAt startID: UUID? = nil) {
         queuedSection = nil
+        queuedArrangementSlot = nil
         activate()
         for track in song.tracks where !audioEngine.hasInstrument(for: track.id) {
             audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
@@ -689,7 +705,8 @@ class SongStore: ObservableObject {
             loop: loopEnabled,
             randomSeed: song.randomSeed ?? Self.seed(from: song.id),
             heldSection: holdsSection && song.sections.indices.contains(selectedSection)
-                ? song.sections[selectedSection].id : nil
+                ? song.sections[selectedSection].id : nil,
+            startAt: startID
         )
     }
 
@@ -721,12 +738,14 @@ class SongStore: ObservableObject {
         isPaused = false
         currentSection = 0
         playingSlot = nil
+        queuedArrangementSlot = nil
         playback.currentBar = 0
         playback.playingNotes.removeAll()
         playback.activeSteps.removeAll()
     }
 
     func rewind() {
+        queuedArrangementSlot = nil
         sequencer.rewind()
         currentSection = 0
         playback.currentBar = 0
@@ -1148,8 +1167,21 @@ class SongStore: ObservableObject {
     func deleteSection(at index: Int) {
         guard song.sections.count > 1, song.sections.indices.contains(index) else { return }
         let removed = song.sections.remove(at: index)
-        // Its places in the arrangement go with it.
-        song.arrangement?.removeAll { $0.sectionID == removed.id }
+        // Its places in the arrangement go with it, and it leaves every Song Part. A part
+        // left with nothing in it goes too, with its places.
+        var updated = song
+        updated.arrangement?.removeAll { $0.sectionID == removed.id }
+        if var parts = updated.songParts {
+            var emptied: Set<UUID> = []
+            for i in parts.indices where parts[i].sectionIDs.contains(removed.id) {
+                parts[i].sectionIDs.removeAll { $0 == removed.id }
+                if parts[i].sectionIDs.isEmpty { emptied.insert(parts[i].id) }
+            }
+            parts.removeAll { emptied.contains($0.id) }
+            updated.songParts = parts
+            updated.arrangement?.removeAll { $0.partID.map { emptied.contains($0) } ?? false }
+        }
+        song = updated
         selectedSection = min(selectedSection, song.sections.count - 1)
     }
 
@@ -1159,13 +1191,23 @@ class SongStore: ObservableObject {
     /// it on: adding the first slot is the moment someone means to use it.
     func appendToArrangement(sectionAt index: Int) {
         guard song.sections.indices.contains(index) else { return }
+        append(ArrangementSlot(sectionID: song.sections[index].id))
+    }
+
+    /// Put a Song Part at the end of the arrangement.
+    func appendToArrangement(part id: UUID) {
+        guard song.songPart(id) != nil else { return }
+        append(ArrangementSlot(partID: id))
+    }
+
+    private func append(_ slot: ArrangementSlot) {
         var slots = song.arrangement ?? []
         guard slots.count < SongValidator.maximumArrangementSlots else {
             notice = "An arrangement can contain up to \(SongValidator.maximumArrangementSlots) slots."
             return
         }
         let wasEmpty = slots.isEmpty
-        slots.append(ArrangementSlot(sectionID: song.sections[index].id))
+        slots.append(slot)
         if wasEmpty && song.playsArrangement == nil {
             var updated = song
             updated.arrangement = slots
@@ -1195,6 +1237,82 @@ class SongStore: ObservableObject {
 
     func clearArrangement() {
         song.arrangement = []
+    }
+
+    // MARK: Song Parts
+
+    /// Make a new, empty Song Part and return its id, to open it for editing.
+    @discardableResult
+    func addSongPart() -> UUID? {
+        var parts = song.songParts ?? []
+        guard parts.count < SongValidator.maximumSongParts else {
+            notice = "A song can contain up to \(SongValidator.maximumSongParts) Song Parts."
+            return nil
+        }
+        let name = SongNaming.uniqueName("Song Part \(parts.count + 1)", among: parts.map(\.name))
+        let part = SongPart(name: name)
+        parts.append(part)
+        song.songParts = parts
+        return part.id
+    }
+
+    func renameSongPart(_ id: UUID, to name: String) {
+        guard let i = song.songParts?.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = String(name.trimmingCharacters(in: .whitespacesAndNewlines)
+            .prefix(SongValidator.maximumNameLength))
+        guard !trimmed.isEmpty, song.songParts?[i].name != trimmed else { return }
+        song.songParts?[i].name = trimmed
+    }
+
+    /// Delete Song Parts and their places in the arrangement. Sections are untouched.
+    func deleteSongParts(_ ids: Set<UUID>) {
+        guard !ids.isEmpty else { return }
+        var updated = song
+        updated.songParts?.removeAll { ids.contains($0.id) }
+        updated.arrangement?.removeAll { $0.partID.map { ids.contains($0) } ?? false }
+        song = updated
+    }
+
+    func addSection(at sectionIndex: Int, toPart id: UUID) {
+        guard song.sections.indices.contains(sectionIndex),
+              let i = song.songParts?.firstIndex(where: { $0.id == id }),
+              (song.songParts?[i].sectionIDs.count ?? 0) < SongValidator.maximumSectionsInSongPart
+        else { return }
+        song.songParts?[i].sectionIDs.append(song.sections[sectionIndex].id)
+    }
+
+    func removeSections(at offsets: IndexSet, fromPart id: UUID) {
+        guard let i = song.songParts?.firstIndex(where: { $0.id == id }) else { return }
+        song.songParts?[i].sectionIDs.remove(atOffsets: offsets)
+    }
+
+    func moveSections(from source: IndexSet, to destination: Int, inPart id: UUID) {
+        guard let i = song.songParts?.firstIndex(where: { $0.id == id }) else { return }
+        song.songParts?[i].sectionIDs.move(fromOffsets: source, toOffset: destination)
+    }
+
+    /// Tap on the song order strip. Playing: move to that place when the section now
+    /// sounding ends, then carry on through the song (tap it again to cancel). Stopped:
+    /// start playing from it.
+    func queueArrangementSlot(_ slotIndex: Int) {
+        guard followsArrangement,
+              let entry = firstEntry(forSlot: slotIndex) else { return }
+        if isPlaying {
+            if queuedArrangementSlot == slotIndex {
+                queuedArrangementSlot = nil
+                sequencer.jump(to: nil)
+            } else {
+                queuedArrangementSlot = slotIndex
+                sequencer.jump(to: entry.id)
+            }
+        } else {
+            play(startingAt: entry.id)
+        }
+    }
+
+    /// The first entry the sequencer plays for an arrangement place.
+    private func firstEntry(forSlot slotIndex: Int) -> PlayOrderEntry? {
+        song.playOrder(followArrangement: true).first { $0.slotIndex == slotIndex }
     }
 
     /// Altering a section requires it to be held.

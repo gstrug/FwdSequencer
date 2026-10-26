@@ -760,6 +760,18 @@ private struct ArrangementStrip: View {
     @State private var queuePulse = false
 
     var body: some View {
+        VStack(spacing: 0) {
+            // The song order, while Play Arrangement is on: where you are in the song,
+            // and a tap queues a place.
+            if songStore.song.arrangementIsActive {
+                SongOrderStrip(openArranger: { showArranger = true })
+                Divider()
+            }
+            chipRow
+        }
+    }
+
+    private var chipRow: some View {
         HStack(spacing: 8) {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
@@ -947,6 +959,102 @@ private struct ArrangementStrip: View {
             songStore.selectedSection = idx
             editingSection = SectionTarget(index: idx, field: .bars)
         }
+    }
+}
+
+// MARK: - Song order strip
+
+/// The arrangement's places along the top of the section chips, sized by length, while
+/// Play Arrangement is on. The place playing is green, with the section sounding lit
+/// inside a Song Part. A tap goes to a place when the section playing ends (tap again
+/// to cancel); stopped, it plays from there. Dimmed while Hold or Pattern Trigger Mode
+/// sets the arrangement aside.
+private struct SongOrderStrip: View {
+    @EnvironmentObject var songStore: SongStore
+    @ObservedObject private var help = HelpCenter.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let openArranger: () -> Void
+    @State private var pulse = false
+
+    var body: some View {
+        let rows = ArrangerView.rows(of: songStore.song)
+        let totalBars = max(1, rows.reduce(0) { $0 + $1.bars })
+        let active = songStore.followsArrangement
+        HStack(spacing: 6) {
+            Button { help.perform(.songOrderStripOpen, openArranger) } label: {
+                Image(systemName: "list.number")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Open the Arranger")
+            .helpTag(.songOrderStripOpen)
+
+            GeometryReader { geo in
+                let spacing: CGFloat = 3
+                let usable = max(0, geo.size.width - spacing * CGFloat(max(0, rows.count - 1)))
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: spacing) {
+                        ForEach(rows, id: \.slot.id) { row in
+                            segment(row, width: max(64, usable * CGFloat(row.bars) / CGFloat(totalBars)))
+                        }
+                    }
+                }
+            }
+            .frame(height: 40)
+            .opacity(active ? 1 : 0.4)
+            .disabled(!active && !help.isOn)
+            .helpTag(.songOrderStrip)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 2)
+        .background(.regularMaterial)
+        .onAppear { pulse = true }
+    }
+
+    @ViewBuilder
+    private func segment(_ row: ArrangerView.Row, width: CGFloat) -> some View {
+        let isPlaying = songStore.playingArrangementSlot == row.slotIndex
+        let isQueued = songStore.queuedArrangementSlot == row.slotIndex
+        let lit = isPlaying ? songStore.playingEntry?.positionInSlot : nil
+        Button { songStore.queueArrangementSlot(row.slotIndex) } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(row.name)
+                    .font(.caption.bold())
+                    .lineLimit(1)
+                if row.isPart {
+                    SectionSegments(sections: row.sections, lit: lit)
+                        .frame(height: 4)
+                } else {
+                    Color.clear.frame(height: 4)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 5)
+            .frame(width: width, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isPlaying ? Color.green.opacity(0.28) : Color.secondary.opacity(0.14))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isPlaying ? Color.green : Color.clear, lineWidth: 1.5)
+            )
+            // Queued: pulsing orange, as for a queued pattern pad.
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(Color.orange, lineWidth: 2)
+                    .opacity(isQueued ? (pulse ? 1 : 0.2) : 0)
+                    .animation(reduceMotion ? nil
+                               : .easeInOut(duration: 0.45).repeatForever(autoreverses: true),
+                               value: pulse)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(row.name)
+        .accessibilityValue(Text(isPlaying ? "Playing" : (isQueued ? "Queued" : "")))
+        .accessibilityHint(Text("Plays this place next"))
     }
 }
 

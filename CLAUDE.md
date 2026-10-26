@@ -132,18 +132,24 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   windows, Key & Scale, Number of Bars/Rename, plugin pickers. The
   tutorial was removed 2026-10-22 (Graham: help mode makes it redundant). The help
   text was rewritten by Graham on 2026-10-22; keep his wording when editing it.
-- **Arranger** (2026-10-23): Section menu ▸ Arranger… (`Views/ArrangerView.swift`).
-  `Song.arrangement` is a list of `ArrangementSlot` (own id + section id), any section
-  any number of times, no repeat counts (Graham: just add it twice).
-  `Song.playsArrangement` is the on/off switch, saved with the song. Both optional, so
-  old songs load. The order is worked out once, `Song.playOrder()`, used by both
-  `SongStore.flattenedSections` (slots go to the sequencer under the slot's id, with
+- **Arranger** (2026-10-23, Song Parts 2026-10-26): Section menu ▸ Arranger…
+  (`Views/ArrangerView.swift`). `Song.songParts` = named groups of sections
+  (`SongPart`, a section may repeat in one). `Song.arrangement` = places
+  (`ArrangementSlot`: `partID` or `sectionID`, own id), no repeat counts (Graham: add
+  it twice). `Song.playsArrangement` = on/off, saved with the song. All optional, old
+  songs load; build-88 slots (sectionID only) decode unchanged. The order is worked out
+  once, `Song.playOrder()` → `PlayOrderEntry` (id, section, slotIndex, position in the
+  part); a part's sections get ids `slot.id.derived(n)`, stable across edits. Used by
+  `SongStore.flattenedSections` (entries go to the sequencer under those ids, with
   `SequencerSection.sectionID` naming the section) and `SongMIDIExporter`, so export
-  parity holds. Hold and Pattern Trigger mode set the arrangement aside
-  (`SongStore.followsArrangement`) and play plain sections; switching mid-play keeps
-  the place via `updateSong` matching on `playsSectionID`. `playingSlot` /
-  `playingEntryID` light the playing row. Deleting a section removes its slots; the
-  validator drops slots for missing sections and renews duplicate slot ids.
+  parity holds. Hold and Pattern Trigger set the arrangement aside
+  (`SongStore.followsArrangement`) and play plain sections; switching mid-play keeps the
+  place via `updateSong` matching `playsSectionID`. **Song order strip** above the
+  section chips while it is active (`SongOrderStrip` in SongView): tap a place to queue
+  it (`queueArrangementSlot` → engine `jump(to:)`, taken at the next section boundary,
+  then carries on — unlike the pattern queue it is not held); stopped, a tap plays from
+  there (`play(startingAt:)`). Deleting a section removes it from parts and the order;
+  a part left empty goes too. The validator drops missing references, keeps empty parts.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI
   (`.github/workflows/validate.yml`) runs `swift test` and a simulator build on every
   push/PR.
