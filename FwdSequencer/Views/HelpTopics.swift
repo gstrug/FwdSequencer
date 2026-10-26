@@ -113,8 +113,8 @@ enum HelpTopic: String {
         case .arrangerFill: return "Fill with Sections in Order"
         case .arrangerClear: return "Clear Arrangement"
         case .songPartNew: return "New Song Part"
-        case .songPartEdit: return "A Song Part"
-        case .songPartAdd: return "Add Song Part"
+        case .songPartEdit: return "Song Part Options (⋯)"
+        case .songPartAdd: return "A Song Part"
         case .songPartName: return "Song Part Name"
         case .songPartSection: return "A Section in the Song Part"
         case .songPartAddSection: return "Available Sections"
@@ -319,11 +319,11 @@ enum HelpTopic: String {
         case .arrangerClear:
             return "Removes every place from the arrangement. Your sections are not changed."
         case .songPartNew:
-            return "Makes a new, empty Song Part and opens it, ready to add sections."
+            return "Makes a new, empty Song Part and opens it, ready to add sections. It then appears under Available, to add to the song order."
         case .songPartEdit:
-            return "A group of sections, such as a verse, that plays as one. Tap to change its name or sections; every place it is used in the song order changes too. Swipe left to delete it."
+            return "Song Part options: Edit Sections, Rename, Duplicate (a copy, such as Verse 2 from Verse 1, to change without starting over) or Delete. Changing a Song Part changes every place it is used in the song order."
         case .songPartAdd:
-            return "Adds this Song Part to the end of the song order."
+            return "A Song Part: a group of sections, such as a verse, that plays as one. Tap to add it to the end of the song order."
         case .songPartName:
             return "Rename this Song Part."
         case .songPartSection:

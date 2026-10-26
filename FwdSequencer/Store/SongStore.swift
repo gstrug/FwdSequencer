@@ -1256,6 +1256,20 @@ class SongStore: ObservableObject {
         return part.id
     }
 
+    /// Copy a Song Part, sections and all, straight after it: "Verse 1" → "Verse 2"
+    /// (the next free number), ready to rename or change without starting over.
+    @discardableResult
+    func duplicateSongPart(_ id: UUID) -> UUID? {
+        guard var parts = song.songParts, let i = parts.firstIndex(where: { $0.id == id }),
+              parts.count < SongValidator.maximumSongParts else { return nil }
+        var copy = parts[i]
+        copy.id = UUID()
+        copy.name = SongNaming.uniqueName(copy.name, among: parts.map(\.name))
+        parts.insert(copy, at: i + 1)
+        song.songParts = parts
+        return copy.id
+    }
+
     func renameSongPart(_ id: UUID, to name: String) {
         guard let i = song.songParts?.firstIndex(where: { $0.id == id }) else { return }
         let trimmed = String(name.trimmingCharacters(in: .whitespacesAndNewlines)

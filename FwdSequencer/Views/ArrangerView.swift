@@ -21,6 +21,9 @@ struct ArrangerView: View {
     @State private var confirmClear = false
     /// The Song Part open for editing, pushed onto the stack.
     @State private var path: [UUID] = []
+    /// The Song Part being renamed from its ⋯ menu.
+    @State private var renamingPart: UUID?
+    @State private var renameDraft = ""
 
     private var song: Song { songStore.song }
     private var slots: [ArrangementSlot] { songStore.song.arrangement ?? [] }
@@ -51,8 +54,7 @@ struct ArrangerView: View {
                     }
                 }
 
-                songPartsSection
-                availableSectionsSection
+                availableSection
 
                 Section {
                     Button {
@@ -90,80 +92,39 @@ struct ArrangerView: View {
             } message: {
                 Text("Your sections and Song Parts are not changed.")
             }
+            .alert("Rename Song Part", isPresented: Binding(
+                get: { renamingPart != nil },
+                set: { if !$0 { renamingPart = nil } })) {
+                TextField("Name", text: $renameDraft)
+                Button("Cancel", role: .cancel) { renamingPart = nil }
+                Button("Rename") {
+                    if let id = renamingPart { songStore.renameSongPart(id, to: renameDraft) }
+                    renamingPart = nil
+                }
+            }
         }
     }
 
-    // MARK: Song Parts
+    // MARK: Available: Song Parts and sections
 
-    private var songPartsSection: some View {
+    /// Song Parts first, then single sections. A tap adds one to the end of the song
+    /// order; a Song Part's ⋯ edits, renames, duplicates or deletes it.
+    private var availableSection: some View {
         Section {
-            ForEach(parts) { part in
-                HStack(spacing: 12) {
-                    Button {
-                        help.perform(.songPartEdit) { path.append(part.id) }
-                    } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(part.name)
-                                .font(.body.weight(.semibold))
-                                .foregroundStyle(.primary)
-                            Text(partContents(part))
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .helpTag(.songPartEdit, instance: part.id.uuidString)
-                    Button {
-                        help.perform(.songPartAdd) { songStore.appendToArrangement(part: part.id) }
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.title2)
-                            .frame(minWidth: 44, minHeight: 44)
-                    }
-                    .buttonStyle(.borderless)
-                    .disabled(!help.isOn && part.sectionIDs.isEmpty)
-                    .accessibilityLabel("Add \(part.name) to the song order")
-                    .helpTag(.songPartAdd, instance: part.id.uuidString)
-                }
-            }
-            .onDelete { offsets in
-                songStore.deleteSongParts(Set(offsets.map { parts[$0].id }))
-            }
             Button {
                 help.perform(.songPartNew) {
                     if let id = songStore.addSongPart() { path.append(id) }
                 }
             } label: {
                 Label("New Song Part", systemImage: "plus.rectangle.on.rectangle")
+                    .frame(minHeight: 36)
             }
             .helpTag(.songPartNew)
-        } header: {
-            Text("Song Parts")
-        } footer: {
-            Text("A Song Part is a group of sections, such as a verse, placed in the song order as one. Tap one to change it; every place it is used changes too.")
-        }
-    }
 
-    private func partContents(_ part: SongPart) -> String {
-        let names = part.sectionIDs.compactMap { id in song.sections.first { $0.id == id }?.name }
-        guard !names.isEmpty else { return "Empty — tap to add sections" }
-        let bars = barCount(of: part)
-        return names.joined(separator: " · ") + " — \(bars) bar\(bars == 1 ? "" : "s")"
-    }
+            ForEach(parts) { part in
+                partRow(part)
+            }
 
-    private func barCount(of part: SongPart) -> Int {
-        part.sectionIDs.reduce(0) { total, id in
-            total + (song.sections.first { $0.id == id }?.numberOfBars ?? 0)
-        }
-    }
-
-    // MARK: Single sections
-
-    private var availableSectionsSection: some View {
-        Section {
             ForEach(Array(song.sections.enumerated()), id: \.element.id) { index, section in
                 Button {
                     help.perform(.arrangerAdd) { songStore.appendToArrangement(sectionAt: index) }
@@ -183,10 +144,81 @@ struct ArrangerView: View {
                 .helpTag(.arrangerAdd, instance: section.id.uuidString)
             }
         } header: {
-            Text("Available Sections")
+            Text("Available")
         } footer: {
-            Text("Tap a section to add it on its own, such as an intro or ending.")
+            Text("Tap a Song Part or a section to add it to the end of the song order. A Song Part is a group of sections, such as a verse, that plays as one; change it and every place it is used changes too.")
         }
+    }
+
+    private func partRow(_ part: SongPart) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                help.perform(.songPartAdd) { songStore.appendToArrangement(part: part.id) }
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "plus.circle.fill")
+                        .foregroundStyle(part.sectionIDs.isEmpty ? Color.secondary : Color.accentColor)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "rectangle.stack")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            Text(part.name)
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(.primary)
+                        }
+                        Text(partContents(part))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(minHeight: 40)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!help.isOn && part.sectionIDs.isEmpty)
+            .helpTag(.songPartAdd, instance: part.id.uuidString)
+
+            Menu {
+                Button { path.append(part.id) } label: {
+                    Label("Edit Sections…", systemImage: "list.bullet")
+                }
+                Button {
+                    renameDraft = part.name
+                    renamingPart = part.id
+                } label: {
+                    Label("Rename…", systemImage: "pencil")
+                }
+                Button { songStore.duplicateSongPart(part.id) } label: {
+                    Label("Duplicate", systemImage: "plus.square.on.square")
+                }
+                Divider()
+                Button(role: .destructive) { songStore.deleteSongParts([part.id]) } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+                    .font(.title3)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Options for \(part.name)")
+            .helpTag(.songPartEdit, instance: part.id.uuidString)
+        }
+    }
+
+    private func partContents(_ part: SongPart) -> String {
+        let names = part.sectionIDs.compactMap { id in song.sections.first { $0.id == id }?.name }
+        guard !names.isEmpty else { return "Empty — use ⋯ ▸ Edit Sections to add some" }
+        let bars = part.sectionIDs.reduce(0) { total, id in
+            total + (song.sections.first { $0.id == id }?.numberOfBars ?? 0)
+        }
+        let used = slots.filter { $0.partID == part.id }.count
+        var text = names.joined(separator: " · ") + " — \(bars) bar\(bars == 1 ? "" : "s")"
+        if used > 0 { text += " · used \(used)×" }
+        return text
     }
 
     private func addDetail(_ section: SongSection) -> String {
@@ -226,7 +258,7 @@ struct ArrangerView: View {
         let rows = Self.rows(of: song)
         return Section {
             if rows.isEmpty {
-                Text("Nothing arranged yet. Tap ＋ on a Song Part or a section above, in the order they should play.")
+                Text("Nothing arranged yet. Tap Song Parts or sections above, in the order they should play.")
                     .foregroundStyle(.secondary)
             }
             ForEach(rows, id: \.slot.id) { row in

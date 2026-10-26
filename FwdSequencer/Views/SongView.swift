@@ -999,6 +999,9 @@ private struct SongOrderStrip: View {
                             segment(row, width: max(64, usable * CGFloat(row.bars) / CGFloat(totalBars)))
                         }
                     }
+                    // Rebuilt whenever the order or a name changes, so a place that was
+                    // removed or renamed can never be left drawn.
+                    .id(rows.map { "\($0.slot.id)\($0.name)" }.joined())
                 }
             }
             .frame(height: 40)
