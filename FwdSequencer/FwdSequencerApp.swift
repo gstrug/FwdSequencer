@@ -14,7 +14,10 @@ private func logBuildIdentity() {
 
 @main
 struct FwdSequencerApp: App {
-    init() { logBuildIdentity() }
+    init() {
+        logBuildIdentity()
+        SelectAllOnEdit.install()
+    }
 
     @StateObject var songStore = SongStore()
 
