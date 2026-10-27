@@ -13,11 +13,11 @@ jobs:
         run: |
           swiftc -O diag/SamplerVoiceTest.swift -o /tmp/voices
           set +e
-          python3 diag/strip_mods.py /tmp/gu.sf2 /tmp/gu_nomods.sf2 >> /tmp/out.txt
+          python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/gu_fixed.sf2 >> /tmp/out.txt
           apple=/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls
-          for bank in "$apple" /tmp/gu.sf2 /tmp/gu_nomods.sf2; do
+          for bank in /tmp/gu_fixed.sf2; do
             echo "== $(basename $bank)" >> /tmp/out.txt
-            for i in 0 3 6 8 9; do
+            for i in 0 1 2 3 4 5 6 7 8 9; do
               /tmp/voices "$bank" $i >> /tmp/out.txt 2>&1
               code=$?
               [ $code -ne 0 ] && echo "scenario $i crashed (exit $code)" >> /tmp/out.txt
