@@ -29,8 +29,14 @@ nonisolated struct ImportedPart: Equatable, Identifiable {
     var name: String
     var channel: Int        // 1–16
     var notes: [ImportedNote]
+    /// The file's instrument for this part: its first program change (0–127).
+    var program: Int? = nil
 
     var isDrums: Bool { channel == 10 }
+    /// The General MIDI instrument the file chose, by name ("Drums" on channel 10).
+    var instrumentName: String? {
+        isDrums ? "Drums" : program.map(GeneralMIDI.name(of:))
+    }
     var lowestPitch: Int { notes.map(\.pitch).min() ?? 0 }
     var highestPitch: Int { notes.map(\.pitch).max() ?? 0 }
 }
@@ -90,13 +96,16 @@ nonisolated enum MIDIFileReader {
             let end = min(bytes.count, start + length)
             offset = start + length
             let track = try readTrack(bytes, from: start, to: end, file: &file)
-            let name = track.name ?? "Track \(trackIndex + 1)"
             let channels = Set(track.notes.map { $0.channel }).sorted()
             for channel in channels {
                 let notes = track.notes.filter { $0.channel == channel }.map { $0.note }
                     .sorted { ($0.start, $0.pitch) < ($1.start, $1.pitch) }
-                let label = channels.count > 1 ? "\(name) (ch \(channel))" : name
-                file.parts.append(ImportedPart(id: nextID, name: label, channel: channel, notes: notes))
+                var part = ImportedPart(id: nextID, name: "", channel: channel, notes: notes,
+                                        program: track.programs[channel])
+                part.name = partName(trackName: track.name, instrument: part.instrumentName,
+                                     trackNumber: trackIndex + 1,
+                                     channel: channels.count > 1 ? channel : nil)
+                file.parts.append(part)
                 nextID += 1
             }
         }
@@ -107,6 +116,23 @@ nonisolated enum MIDIFileReader {
     private struct Track {
         var name: String?
         var notes: [(channel: Int, note: ImportedNote)] = []
+        /// The first program change on each channel.
+        var programs: [Int: Int] = [:]
+    }
+
+    /// Named so the original instrument can be told apart: the General MIDI
+    /// instrument the file chose, with the file's own track name after it when it has
+    /// one ("Fretless Bass · Verse bass"). Without either, "Track N", with the channel
+    /// when one track was split.
+    static func partName(trackName: String?, instrument: String?, trackNumber: Int, channel: Int?) -> String {
+        if let instrument {
+            if let trackName, trackName.caseInsensitiveCompare(instrument) != .orderedSame {
+                return "\(instrument) · \(trackName)"
+            }
+            return instrument
+        }
+        let base = trackName ?? "Track \(trackNumber)"
+        return channel.map { "\(base) (ch \($0))" } ?? base
     }
 
     private static func readTrack(_ b: [UInt8], from start: Int, to end: Int,
@@ -183,7 +209,9 @@ nonisolated enum MIDIFileReader {
                 let d1 = Int(b[i] & 0x7F)
                 let d2 = dataCount == 2 ? Int(b[i + 1] & 0x7F) : 0
                 i += dataCount
-                if kind == 0x90 && d2 > 0 {
+                if kind == 0xC0 {
+                    if track.programs[channel] == nil { track.programs[channel] = d1 }
+                } else if kind == 0x90 && d2 > 0 {
                     open[channel * 128 + d1, default: []].append((tick, d2))
                 } else if kind == 0x80 || (kind == 0x90 && d2 == 0) {
                     close(channel: channel, pitch: d1, at: tick)
@@ -402,4 +430,48 @@ nonisolated struct MIDIImportPlan {
                                         ticksPerQuarter: file.ticksPerQuarter,
                                         timeSignature: timeSignature, division: division)
     }
+}
+
+// MARK: - General MIDI instrument names
+
+nonisolated enum GeneralMIDI {
+    static func name(of program: Int) -> String {
+        names.indices.contains(program) ? names[program] : "Program \(program + 1)"
+    }
+
+    /// The 128 General MIDI Level 1 instruments, by program number from 0.
+    static let names: [String] = [
+        "Acoustic Grand Piano", "Bright Acoustic Piano", "Electric Grand Piano", "Honky-tonk Piano",
+        "Electric Piano 1", "Electric Piano 2", "Harpsichord", "Clavinet",
+        "Celesta", "Glockenspiel", "Music Box", "Vibraphone",
+        "Marimba", "Xylophone", "Tubular Bells", "Dulcimer",
+        "Drawbar Organ", "Percussive Organ", "Rock Organ", "Church Organ",
+        "Reed Organ", "Accordion", "Harmonica", "Tango Accordion",
+        "Acoustic Guitar (nylon)", "Acoustic Guitar (steel)", "Electric Guitar (jazz)", "Electric Guitar (clean)",
+        "Electric Guitar (muted)", "Overdriven Guitar", "Distortion Guitar", "Guitar Harmonics",
+        "Acoustic Bass", "Electric Bass (finger)", "Electric Bass (pick)", "Fretless Bass",
+        "Slap Bass 1", "Slap Bass 2", "Synth Bass 1", "Synth Bass 2",
+        "Violin", "Viola", "Cello", "Contrabass",
+        "Tremolo Strings", "Pizzicato Strings", "Orchestral Harp", "Timpani",
+        "String Ensemble 1", "String Ensemble 2", "Synth Strings 1", "Synth Strings 2",
+        "Choir Aahs", "Voice Oohs", "Synth Voice", "Orchestra Hit",
+        "Trumpet", "Trombone", "Tuba", "Muted Trumpet",
+        "French Horn", "Brass Section", "Synth Brass 1", "Synth Brass 2",
+        "Soprano Sax", "Alto Sax", "Tenor Sax", "Baritone Sax",
+        "Oboe", "English Horn", "Bassoon", "Clarinet",
+        "Piccolo", "Flute", "Recorder", "Pan Flute",
+        "Blown Bottle", "Shakuhachi", "Whistle", "Ocarina",
+        "Lead 1 (square)", "Lead 2 (sawtooth)", "Lead 3 (calliope)", "Lead 4 (chiff)",
+        "Lead 5 (charang)", "Lead 6 (voice)", "Lead 7 (fifths)", "Lead 8 (bass + lead)",
+        "Pad 1 (new age)", "Pad 2 (warm)", "Pad 3 (polysynth)", "Pad 4 (choir)",
+        "Pad 5 (bowed)", "Pad 6 (metallic)", "Pad 7 (halo)", "Pad 8 (sweep)",
+        "FX 1 (rain)", "FX 2 (soundtrack)", "FX 3 (crystal)", "FX 4 (atmosphere)",
+        "FX 5 (brightness)", "FX 6 (goblins)", "FX 7 (echoes)", "FX 8 (sci-fi)",
+        "Sitar", "Banjo", "Shamisen", "Koto",
+        "Kalimba", "Bagpipe", "Fiddle", "Shanai",
+        "Tinkle Bell", "Agogo", "Steel Drums", "Woodblock",
+        "Taiko Drum", "Melodic Tom", "Synth Drum", "Reverse Cymbal",
+        "Guitar Fret Noise", "Breath Noise", "Seashore", "Bird Tweet",
+        "Telephone Ring", "Helicopter", "Applause", "Gunshot",
+    ]
 }

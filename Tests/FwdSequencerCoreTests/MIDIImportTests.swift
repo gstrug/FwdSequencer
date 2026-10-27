@@ -46,6 +46,23 @@ final class MIDIImportTests: XCTestCase {
         XCTAssertEqual(file.parts.map { $0.notes.map(\.pitch) }, [[60], [40]])
     }
 
+    func testPartsAreNamedAfterTheFilesInstrument() throws {
+        let file = try MIDIFileReader.read(smf([
+            0x00, 0xFF, 0x03, 0x04, 0x42, 0x61, 0x73, 0x73,   // track name "Bass"
+            0x00, 0xC0, 35,                                   // ch 1: Fretless Bass
+            0x00, 0xC1, 0,                                    // ch 2: Acoustic Grand Piano
+            0x00, 0x90, 40, 100, 0x00, 0x91, 60, 100, 0x00, 0x99, 36, 100,
+            0x60, 0x80, 40, 0, 0x00, 0x81, 60, 0, 0x00, 0x89, 36, 0,
+        ]))
+        XCTAssertEqual(file.parts.map(\.name),
+                       ["Fretless Bass · Bass", "Acoustic Grand Piano · Bass", "Drums · Bass"])
+        XCTAssertEqual(file.parts.map(\.program), [35, 0, nil])
+        XCTAssertEqual(MIDIFileReader.partName(trackName: "Fretless Bass", instrument: "Fretless Bass",
+                                               trackNumber: 1, channel: nil), "Fretless Bass")
+        XCTAssertEqual(MIDIFileReader.partName(trackName: nil, instrument: nil,
+                                               trackNumber: 3, channel: 2), "Track 3 (ch 2)")
+    }
+
     func testNotMIDIIsRefused() {
         XCTAssertThrowsError(try MIDIFileReader.read(Data("hello".utf8)))
     }
