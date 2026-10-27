@@ -164,7 +164,14 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   ends the previous note; velocities bucketed by 8). `MIDIImportPlan` gives every part
   one origin and length. `SongStore.importMIDI` converts all first, snapshots existing
   target tracks ("Before MIDI import"), sets scale chromatic. Round-trip test: what the
-  exporter writes imports back to the same steps.
+  exporter writes imports back to the same steps. Parts are named after the file's GM
+  program ("Fretless Bass · Verse bass", "Drums" on ch 10); new tracks start on that
+  built-in sound ("Use the File's Instruments").
+- **Built-in sound** (2026-10-27): `SongTrack.builtInSound` (nil = program 0, 0–127, or
+  `GeneralMIDI.drumKit` = 128, the percussion bank 0x78). `AudioEngineManager` keeps
+  `builtInSounds[trackID]` so any sampler made later (plugin removed / failed) starts on
+  it; `setBuiltInSound`. Track ⋯ menu ▸ Built-in Sound (families of 8), shown when the
+  track has no plugin. Relies on Apple's gs_instruments.dls being on the device.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI
   (`.github/workflows/validate.yml`) runs `swift test` and a simulator build on every
   push/PR.

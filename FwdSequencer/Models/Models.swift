@@ -261,6 +261,10 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     /// AUv3 effects between this track's instrument and its mixer, in signal order.
     /// Optional so songs saved before effects existed decode unchanged.
     var effects: [PluginSlot]? = nil
+    /// The General MIDI sound the built-in sampler plays when the track has no plugin:
+    /// a program 0–127, or GeneralMIDI.drumKit. Optional so older songs decode; nil is
+    /// program 0, the grand piano they always had.
+    var builtInSound: Int? = nil
 
     /// How many effects the UI offers. Deliberately a constant rather than a shape in
     /// the data: everything under it is built for a list, so raising it is this line —

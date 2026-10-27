@@ -1707,6 +1707,40 @@ private struct SongTrackRowView: View {
             Label("Duplicate Track", systemImage: "plus.square.on.square")
         }
         .disabled(!help.isOn && trackCount >= SongStore.maximumEditableTrackCount)
+
+        // The built-in General MIDI sound, used while the track has no plugin.
+        if track.pluginInfo == nil || help.isOn {
+            builtInSoundMenu
+        }
+    }
+
+    /// Every General MIDI instrument, by family, plus the drum kit.
+    private var builtInSoundMenu: some View {
+        Menu {
+            ForEach(Array(GeneralMIDI.families.enumerated()), id: \.offset) { family, name in
+                Menu(name) {
+                    ForEach(family * 8 ..< family * 8 + 8, id: \.self) { program in
+                        soundButton(program)
+                    }
+                }
+            }
+            Divider()
+            soundButton(GeneralMIDI.drumKit)
+        } label: {
+            Label("Built-in Sound: \(GeneralMIDI.soundName(track.builtInSound))", systemImage: "pianokeys")
+        }
+    }
+
+    private func soundButton(_ sound: Int) -> some View {
+        Button {
+            help.perform(.trackBuiltInSound) { songStore.setBuiltInSound(sound, forTrack: track.id) }
+        } label: {
+            if (track.builtInSound ?? 0) == sound {
+                Label(GeneralMIDI.soundName(sound), systemImage: "checkmark")
+            } else {
+                Text(GeneralMIDI.soundName(sound))
+            }
+        }
     }
 
     /// The same actions plus expand and delete, for a collapsed row — which has no menu

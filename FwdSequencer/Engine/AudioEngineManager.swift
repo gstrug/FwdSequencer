@@ -67,6 +67,8 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     private var midiClient = MIDIClientRef()
     private var midiClockSource = MIDIEndpointRef()
     private var samplers: [UUID: AVAudioUnitSampler] = [:]
+    /// Each track's General MIDI sound for its built-in sampler (see setBuiltInSound).
+    private var builtInSounds: [UUID: Int] = [:]
     private var auv3Units: [UUID: AVAudioUnit] = [:]
     /// AUv3 effects per track, in signal order between the instrument and the mixer.
     /// An array rather than a single optional so raising SongTrack.maximumEffects is a
@@ -678,8 +680,9 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         recordingLock.unlock()
     }
 
-    func addTrack(id: UUID, volume: Float = 0.8, pan: Float = 0.0) {
+    func addTrack(id: UUID, volume: Float = 0.8, pan: Float = 0.0, builtInSound: Int = 0) {
         withLock {
+            builtInSounds[id] = builtInSound
             guard samplers[id] == nil, auv3Units[id] == nil else { return }
             let sampler = AVAudioUnitSampler()
             let mixerNode = AVAudioMixerNode()
@@ -690,7 +693,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             mixerNode.pan = pan
             engine.connect(sampler, to: mixerNode, format: nil)
             engine.connect(mixerNode, to: engine.mainMixerNode, format: nil)
-            loadGMBank(sampler)
+            loadGMBank(sampler, sound: builtInSound)
             samplers[id] = sampler
             trackMixers[id] = mixerNode
             settledInstruments.insert(id)   // GM sampler is in-process, always safe
@@ -1233,7 +1236,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             retireInstrument(for: trackID, mixer: mixer)
             let sampler = AVAudioUnitSampler()
             engine.attach(sampler)
-            loadGMBank(sampler)
+            loadGMBank(sampler, sound: builtInSounds[trackID] ?? 0)
             samplers[trackID] = sampler
             rebuildChainLocked(for: trackID)
             _ = startEngineIfNeeded()
@@ -1278,11 +1281,25 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         return AudioLevel(peak: peak, rms: sqrt(sum / Float(count * channels)))
     }
 
-    private func loadGMBank(_ sampler: AVAudioUnitSampler) {
+    /// Change the General MIDI sound a track's built-in sampler plays (a program, or
+    /// GeneralMIDI.drumKit). Remembered, so a sampler made later for the track — a
+    /// plugin removed, or one that failed to load — starts on it too.
+    func setBuiltInSound(_ sound: Int, for trackID: UUID) {
+        withLock {
+            builtInSounds[trackID] = sound
+            if let sampler = samplers[trackID] { loadGMBank(sampler, sound: sound) }
+        }
+    }
+
+    private func loadGMBank(_ sampler: AVAudioUnitSampler, sound: Int = 0) {
         // Locate the DLS file via the CoreAudio bundle rather than a hardcoded path
         if let bundle = Bundle(identifier: "com.apple.audio.CoreAudio"),
            let url = bundle.url(forResource: "gs_instruments", withExtension: "dls") {
-            try? sampler.loadSoundBankInstrument(at: url, program: 0, bankMSB: 0x79, bankLSB: 0)
+            // Melodic sounds are bank 0x79; the drum kit is the percussion bank, 0x78.
+            let drums = sound == GeneralMIDI.drumKit
+            try? sampler.loadSoundBankInstrument(at: url,
+                                                 program: UInt8(drums ? 0 : min(127, max(0, sound))),
+                                                 bankMSB: drums ? 0x78 : 0x79, bankLSB: 0)
             return
         }
         // Fallback: let the sampler use whatever default sounds it has built in

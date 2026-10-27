@@ -25,7 +25,7 @@ enum HelpTopic: String {
          arrangerClear, songPartNew, songPartEdit, songPartAdd, songPartName, songPartSection,
          songPartAddSection, songPartDelete, songOrderStrip, songOrderStripOpen,
          sectionImportMIDI, midiImportPart, midiImportStepSize, midiImportStart, midiImportFit,
-         midiImportTempo, midiImportButton
+         midiImportTempo, midiImportButton, midiImportInstruments, trackBuiltInSound
 
     // A track
     case trackExpand, trackName, trackMenu, trackInstrument, trackEditInstrument,
@@ -130,6 +130,8 @@ enum HelpTopic: String {
         case .midiImportFit: return "Set Section Length to Fit"
         case .midiImportTempo: return "Use the File's Tempo"
         case .midiImportButton: return "Import"
+        case .midiImportInstruments: return "Use the File's Instruments"
+        case .trackBuiltInSound: return "Built-in Sound"
 
         case .trackExpand: return "Expand / Collapse"
         case .trackName: return "Track Name"
@@ -359,6 +361,10 @@ enum HelpTopic: String {
             return "Sets the song's tempo to the file's."
         case .midiImportButton:
             return "Imports the chosen parts into the section."
+        case .midiImportInstruments:
+            return "On: each new track starts on the General MIDI sound the file chose for it, and drum parts on the drum kit, using the app's built-in sounds. A plugin loaded later takes over."
+        case .trackBuiltInSound:
+            return "The General MIDI sound this track plays while it has no plugin: any of the 128 instruments, or the drum kit."
         case .hold:
             return "Hold: Repeats the selected section so you can audition changes while you make them. Shape and Snapshot menu is only available when 'Hold' is on."
 

@@ -66,6 +66,7 @@ private struct MIDIImportSheet: View {
     @State private var startAtFirstNote = true
     @State private var fitLength = true
     @State private var setTempo = false
+    @State private var useFileInstruments = true
     @State private var failure: String?
 
     private var parts: [ImportedPart] { request.file.parts.filter { !$0.notes.isEmpty } }
@@ -121,6 +122,10 @@ private struct MIDIImportSheet: View {
                         }
                     }
                     .helpTag(.midiImportFit)
+                    if parts.contains(where: { GeneralMIDI.sound(for: $0) != nil }) {
+                        Toggle("Use the File's Instruments", isOn: $useFileInstruments)
+                            .helpTag(.midiImportInstruments)
+                    }
                     if let tempo = request.file.tempo {
                         Toggle("Use the File's Tempo (\(Int(tempo.rounded())) BPM)", isOn: $setTempo)
                             .helpTag(.midiImportTempo)
@@ -236,7 +241,8 @@ private struct MIDIImportSheet: View {
         do {
             try songStore.importMIDI(request.file, intoSection: request.sectionID, targets: targets,
                                      division: division, startAtFirstNote: startAtFirstNote,
-                                     fitLength: fitLength, setTempo: setTempo)
+                                     fitLength: fitLength, setTempo: setTempo,
+                                     useFileInstruments: useFileInstruments)
             dismiss()
         } catch {
             failure = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription

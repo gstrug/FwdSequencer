@@ -238,7 +238,8 @@ class SongStore: ObservableObject {
         selectedSection = index
         activate()
         for track in song.tracks where !audioEngine.hasInstrument(for: track.id) {
-            audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
+            audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan,
+                                 builtInSound: track.builtInSound ?? 0)
             if let plugin = track.pluginInfo {
                 loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
             }
@@ -574,7 +575,8 @@ class SongStore: ObservableObject {
         activate()
 
         for track in song.tracks {
-            audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
+            audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan,
+                                 builtInSound: track.builtInSound ?? 0)
             if let plugin = track.pluginInfo {
                 loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
             }
@@ -584,7 +586,8 @@ class SongStore: ObservableObject {
 
         // The manual Play-dock instrument, if this song has one.
         if let perf = song.performance {
-            audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan)
+            audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan,
+                                 builtInSound: perf.builtInSound ?? 0)
             if let plugin = perf.pluginInfo {
                 loadPlugin(plugin, for: perf.id, stateData: perf.pluginStateData)
             }
@@ -693,7 +696,8 @@ class SongStore: ObservableObject {
         queuedArrangementSlot = nil
         activate()
         for track in song.tracks where !audioEngine.hasInstrument(for: track.id) {
-            audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
+            audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan,
+                                 builtInSound: track.builtInSound ?? 0)
             if let plugin = track.pluginInfo {
                 loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
             }
@@ -848,7 +852,8 @@ class SongStore: ObservableObject {
                 audioEngine.addTrack(
                     id: performance.id,
                     volume: performance.mixer.volume,
-                    pan: performance.mixer.pan
+                    pan: performance.mixer.pan,
+                    builtInSound: performance.builtInSound ?? 0
                 )
             }
             return
@@ -873,7 +878,8 @@ class SongStore: ObservableObject {
         perf.pluginStateData = nil
         song.performance = perf
         if !audioEngine.hasInstrument(for: perf.id) {
-            audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan)
+            audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan,
+                                 builtInSound: perf.builtInSound ?? 0)
         }
         if let info {
             loadPlugin(info, for: perf.id)
@@ -909,7 +915,8 @@ class SongStore: ObservableObject {
                 song.sections[i].variations[variationIndex].parts.append(Part(trackID: track.id))
             }
         }
-        audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
+        audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan,
+                                 builtInSound: track.builtInSound ?? 0)
         // With Write Notes from Keys on, a new track is armed straight away.
         MIDIControlCenter.shared.trackAdded(track.id)
     }
@@ -963,7 +970,8 @@ class SongStore: ObservableObject {
             }
         }
 
-        audioEngine.addTrack(id: copy.id, volume: copy.mixer.volume, pan: copy.mixer.pan)
+        audioEngine.addTrack(id: copy.id, volume: copy.mixer.volume, pan: copy.mixer.pan,
+                                 builtInSound: copy.builtInSound ?? 0)
         if let plugin = copy.pluginInfo {
             loadPlugin(plugin, for: copy.id, stateData: copy.pluginStateData)
         }
@@ -1191,6 +1199,15 @@ class SongStore: ObservableObject {
         selectedSection = min(selectedSection, song.sections.count - 1)
     }
 
+    // MARK: - Built-in sound
+
+    /// The General MIDI sound a track plays when it has no plugin.
+    func setBuiltInSound(_ sound: Int, forTrack id: UUID) {
+        guard let index = song.tracks.firstIndex(where: { $0.id == id }) else { return }
+        song.tracks[index].builtInSound = sound == 0 ? nil : sound
+        audioEngine.setBuiltInSound(sound, for: id)
+    }
+
     // MARK: - MIDI import
 
     /// Where one part of an imported MIDI file goes.
@@ -1206,7 +1223,8 @@ class SongStore: ObservableObject {
     /// in the section are saved first as a snapshot, "Before MIDI import".
     func importMIDI(_ file: ImportedMIDIFile, intoSection sectionID: UUID,
                     targets: [Int: MIDIImportTarget], division: TempoDivision,
-                    startAtFirstNote: Bool, fitLength: Bool, setTempo: Bool) throws {
+                    startAtFirstNote: Bool, fitLength: Bool, setTempo: Bool,
+                    useFileInstruments: Bool = true) throws {
         guard let sectionIndex = song.sections.firstIndex(where: { $0.id == sectionID }) else { return }
         let chosen = file.parts.filter { part in
             guard !part.notes.isEmpty, let target = targets[part.id] else { return false }
@@ -1247,6 +1265,9 @@ class SongStore: ObservableObject {
                 if let index = song.tracks.indices.last {
                     song.tracks[index].name = String(part.name.prefix(SongValidator.maximumNameLength))
                     trackFor[part.id] = song.tracks[index].id
+                    if useFileInstruments, let sound = GeneralMIDI.sound(for: part) {
+                        setBuiltInSound(sound, forTrack: song.tracks[index].id)
+                    }
                 }
             default: break
             }
@@ -1660,7 +1681,8 @@ class SongStore: ObservableObject {
         pluginStatuses.removeAll()
         isLoading = false
         for track in song.tracks {
-            audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan)
+            audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan,
+                                 builtInSound: track.builtInSound ?? 0)
             if let plugin = track.pluginInfo {
                 loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
             }
@@ -1668,7 +1690,8 @@ class SongStore: ObservableObject {
             }
 
         if let perf = song.performance {
-            audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan)
+            audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan,
+                                 builtInSound: perf.builtInSound ?? 0)
             if let plugin = perf.pluginInfo {
                 loadPlugin(plugin, for: perf.id, stateData: perf.pluginStateData)
             }

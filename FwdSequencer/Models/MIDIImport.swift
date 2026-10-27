@@ -439,6 +439,25 @@ nonisolated enum GeneralMIDI {
         names.indices.contains(program) ? names[program] : "Program \(program + 1)"
     }
 
+    /// A built-in sound that is the General MIDI drum kit rather than a program.
+    static let drumKit = 128
+
+    /// A track's built-in sound by name: an instrument, or "Drum Kit".
+    static func soundName(_ sound: Int?) -> String {
+        sound == drumKit ? "Drum Kit" : name(of: sound ?? 0)
+    }
+
+    /// The 16 General MIDI families, eight programs each, in program order.
+    static let families = ["Piano", "Chromatic Percussion", "Organ", "Guitar", "Bass", "Strings",
+                           "Ensemble", "Brass", "Reed", "Pipe", "Synth Lead", "Synth Pad",
+                           "Synth Effects", "Ethnic", "Percussive", "Sound Effects"]
+
+    /// The built-in sound for a part of an imported file: the drum kit on channel 10,
+    /// otherwise its program, if the file chose one.
+    static func sound(for part: ImportedPart) -> Int? {
+        part.isDrums ? drumKit : part.program
+    }
+
     /// The 128 General MIDI Level 1 instruments, by program number from 0.
     static let names: [String] = [
         "Acoustic Grand Piano", "Bright Acoustic Piano", "Electric Grand Piano", "Honky-tonk Piano",

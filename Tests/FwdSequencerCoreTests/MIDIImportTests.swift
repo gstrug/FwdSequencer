@@ -63,6 +63,23 @@ final class MIDIImportTests: XCTestCase {
                                                trackNumber: 3, channel: 2), "Track 3 (ch 2)")
     }
 
+    func testBuiltInSoundsComeFromTheFile() throws {
+        let piano = ImportedPart(id: 0, name: "", channel: 1, notes: [], program: 33)
+        let drums = ImportedPart(id: 1, name: "", channel: 10, notes: [], program: 0)
+        let unknown = ImportedPart(id: 2, name: "", channel: 2, notes: [])
+        XCTAssertEqual(GeneralMIDI.sound(for: piano), 33)
+        XCTAssertEqual(GeneralMIDI.sound(for: drums), GeneralMIDI.drumKit)
+        XCTAssertNil(GeneralMIDI.sound(for: unknown))
+        XCTAssertEqual(GeneralMIDI.soundName(nil), "Acoustic Grand Piano")
+        XCTAssertEqual(GeneralMIDI.soundName(GeneralMIDI.drumKit), "Drum Kit")
+        XCTAssertEqual(GeneralMIDI.families.count * 8, GeneralMIDI.names.count)
+
+        var song = Song()
+        song.tracks = [SongTrack(name: "A")]
+        song.tracks[0].builtInSound = 999
+        XCTAssertNil(try SongValidator.validateAndNormalize(song).tracks[0].builtInSound)
+    }
+
     func testNotMIDIIsRefused() {
         XCTAssertThrowsError(try MIDIFileReader.read(Data("hello".utf8)))
     }

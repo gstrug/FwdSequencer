@@ -111,6 +111,11 @@ nonisolated enum SongValidator {
             song.arrangement = slots
         }
 
+        // A built-in sound out of range falls back to the piano rather than refusing.
+        for i in song.tracks.indices where !(0...GeneralMIDI.drumKit).contains(song.tracks[i].builtInSound ?? 0) {
+            song.tracks[i].builtInSound = nil
+        }
+
         let trackIDs = Set(song.tracks.map(\.id))
         for track in song.tracks {
             try validateDisplayName(track.name, context: "A track")

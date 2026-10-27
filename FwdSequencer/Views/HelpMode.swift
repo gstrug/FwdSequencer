@@ -112,6 +112,7 @@ struct HelpMenuPage: Identifiable {
         ItemGroup(heading: nil, items: [
             Item(icon: "chevron.up.chevron.down", label: "Move Up / Move Down", topic: .trackMove),
             Item(icon: "plus.square.on.square", label: "Duplicate Track", topic: .trackDuplicate),
+            Item(icon: "pianokeys", label: "Built-in Sound", topic: .trackBuiltInSound),
         ]),
         ItemGroup(heading: "Feel", items: [
             Item(icon: "hand.draw", label: "Chord Roll", topic: .feelChordRoll),
