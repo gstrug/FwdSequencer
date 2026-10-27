@@ -1291,15 +1291,30 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
+    /// The General MIDI sound bank: GeneralUser GS by S. Christian Collins, bundled with
+    /// the app (Resources/GeneralUser-GS.sf2; licence beside it allows use in software,
+    /// commercial included). iPadOS has no General MIDI set of its own — Apple's
+    /// gs_instruments.dls is only on the Mac — so without this every track played the
+    /// sampler's one plain tone. The Mac's set remains a fallback.
+    private static let gmBankURL: URL? = {
+        if let url = Bundle.main.url(forResource: "GeneralUser-GS", withExtension: "sf2") { return url }
+        if let bundle = Bundle(identifier: "com.apple.audio.CoreAudio") {
+            return bundle.url(forResource: "gs_instruments", withExtension: "dls")
+        }
+        return nil
+    }()
+
     private func loadGMBank(_ sampler: AVAudioUnitSampler, sound: Int = 0) {
-        // Locate the DLS file via the CoreAudio bundle rather than a hardcoded path
-        if let bundle = Bundle(identifier: "com.apple.audio.CoreAudio"),
-           let url = bundle.url(forResource: "gs_instruments", withExtension: "dls") {
+        if let url = Self.gmBankURL {
             // Melodic sounds are bank 0x79; the drum kit is the percussion bank, 0x78.
             let drums = sound == GeneralMIDI.drumKit
-            try? sampler.loadSoundBankInstrument(at: url,
-                                                 program: UInt8(drums ? 0 : min(127, max(0, sound))),
-                                                 bankMSB: drums ? 0x78 : 0x79, bankLSB: 0)
+            do {
+                try sampler.loadSoundBankInstrument(at: url,
+                                                    program: UInt8(drums ? 0 : min(127, max(0, sound))),
+                                                    bankMSB: drums ? 0x78 : 0x79, bankLSB: 0)
+            } catch {
+                NSLog("[FWD] Built-in sound %d could not be loaded: %@", sound, error.localizedDescription)
+            }
             return
         }
         // Fallback: let the sampler use whatever default sounds it has built in
