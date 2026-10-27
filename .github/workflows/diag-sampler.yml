@@ -14,7 +14,7 @@ jobs:
           swiftc -O diag/SamplerVoiceTest.swift -o /tmp/voices
           set +e
           python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/gu_fixed.sf2 --no-start-offsets >> /tmp/out.txt
-          for n in $(seq 0 128); do
+          for n in $(seq 111 128); do
             /tmp/voices /tmp/gu_fixed.sf2 sweep $n >> /tmp/out.txt 2>&1 || echo "$n CRASH" >> /tmp/out.txt
           done
           out=$(cat /tmp/out.txt)
