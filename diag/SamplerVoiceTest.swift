@@ -46,6 +46,14 @@ func render(program: Int, notes: [Note]) throws -> (dropouts: [(Double, Double)]
     try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 512)
     try engine.start()
     try sampler.loadSoundBankInstrument(at: sf2, program: UInt8(program), bankMSB: 0x79, bankLSB: 0)
+    if program == 94, let state = sampler.auAudioUnit.fullState {
+        func walk(_ value: Any, _ path: String) {
+            if let d = value as? [String: Any] { for (k, v) in d { walk(v, path + "/" + k) } }
+            else if let a = value as? [Any] { for (i, v) in a.prefix(3).enumerated() { walk(v, path + "[\(i)]") } }
+            else if path.lowercased().contains("voice") || path.lowercased().contains("poly") { print("state\(path) = \(value)") }
+        }
+        walk(state, "")
+    }
 
     struct Event { var time: Double; var on: Bool; var note: Note }
     var events = notes.flatMap { [Event(time: $0.start, on: true, note: $0), Event(time: $0.end, on: false, note: $0)] }
@@ -83,18 +91,6 @@ func render(program: Int, notes: [Note]) throws -> (dropouts: [(Double, Double)]
     let elapsed = Date().timeIntervalSince(clock)
     engine.stop()
     return (dropouts, held, elapsed / total)
-}
-
-// What the sampler exposes about voices, to see whether the limit can be raised.
-do {
-    let sampler = AVAudioUnitSampler()
-    let info = sampler.auAudioUnit.fullState ?? [:]
-    func walk(_ value: Any, _ path: String) {
-        if let d = value as? [String: Any] { for (k, v) in d { walk(v, path + "/" + k) } }
-        else if let a = value as? [Any] { for (i, v) in a.enumerated() { walk(v, path + "[\(i)]") } }
-        else if path.lowercased().contains("voice") || path.lowercased().contains("poly") { print("state\(path) = \(value)") }
-    }
-    walk(info, "")
 }
 
 for (name, program, notes) in scenarios {

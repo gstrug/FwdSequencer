@@ -10,4 +10,12 @@ jobs:
       - name: Fetch GeneralUser GS
         run: curl -sSL -o /tmp/gu.sf2 https://github.com/mrbumpy409/GeneralUser-GS/raw/main/GeneralUser-GS.sf2 && ls -la /tmp/gu.sf2
       - name: Render
-        run: swiftc -O diag/SamplerVoiceTest.swift -o /tmp/voices && /tmp/voices /tmp/gu.sf2
+        run: |
+          swiftc -O diag/SamplerVoiceTest.swift -o /tmp/voices
+          set +e
+          /tmp/voices /tmp/gu.sf2 > /tmp/out.txt 2>&1
+          echo "exit $?" >> /tmp/out.txt
+          out=$(cat /tmp/out.txt)
+          out="${out//'%'/'%25'}"
+          out="${out//$'\n'/'%0A'}"
+          echo "::notice title=Results::$out"
