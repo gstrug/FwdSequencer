@@ -966,7 +966,7 @@ private struct ArrangementStrip: View {
 
 /// The arrangement's places along the top of the section chips, sized by length, while
 /// Play Arrangement is on. The place playing is green, with the section sounding lit
-/// inside a Song Part. A tap goes to a place when the section playing ends (tap again
+/// inside a Song Part. A tap goes to a place when the place playing ends (tap again
 /// to cancel); stopped, it plays from there. Dimmed while Hold or Pattern Trigger Mode
 /// sets the arrangement aside.
 private struct SongOrderStrip: View {

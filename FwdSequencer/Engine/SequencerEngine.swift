@@ -133,6 +133,10 @@ nonisolated struct SequencerSection {
     /// section's own. Lets a live update that switches between the arrangement and
     /// plain sections (Hold going on or off) stay on the section that is playing.
     var sectionID: UUID? = nil
+    /// Whether this is the last section of its place in the arrangement. A Song Part
+    /// plays several sections as one place, and a jump chosen on the song order strip
+    /// waits for the whole place to end, not just the section playing.
+    var endsPlace: Bool = true
 
     /// The song section this entry plays, whichever kind of id it carries.
     var playsSectionID: UUID { sectionID ?? id }
@@ -732,9 +736,11 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
                         stepsPerBar = max(1, frame.timeSignature.numerator * ticksPerWholeNote / frame.timeSignature.denominator)
                         totalSteps  = stepsPerBar * max(1, frame.numberOfBars)
                     }
-                } else if let jump = jumpTargetID.flatMap({ id in _songSections.firstIndex { $0.id == id } }) {
-                    // A place chosen on the song order strip: move there and carry on
-                    // through the song from it. Chosen while the end of a non-looping
+                } else if _songSections.indices.contains(sectionIndex), _songSections[sectionIndex].endsPlace,
+                          let jump = jumpTargetID.flatMap({ id in _songSections.firstIndex { $0.id == id } }) {
+                    // A place chosen on the song order strip: once the place playing has
+                    // ended (all of a Song Part), move there and carry on through the
+                    // song from it. Chosen while the end of a non-looping
                     // song approached, it keeps playing rather than stopping.
                     jumpTargetID = nil
                     sectionIndex = jump

@@ -520,7 +520,8 @@ class SongStore: ObservableObject {
             let section = built[entry.sectionIndex]
             guard entry.id != section.id else { return section }
             return SequencerSection(id: entry.id, numberOfBars: section.numberOfBars,
-                                    tracks: section.tracks, sectionID: section.id)
+                                    tracks: section.tracks, sectionID: section.id,
+                                    endsPlace: entry.positionInSlot >= entry.slotLength - 1)
         }
     }
 
@@ -1305,8 +1306,8 @@ class SongStore: ObservableObject {
         song.songParts?[i].sectionIDs.move(fromOffsets: source, toOffset: destination)
     }
 
-    /// Tap on the song order strip. Playing: move to that place when the section now
-    /// sounding ends, then carry on through the song (tap it again to cancel). Stopped:
+    /// Tap on the song order strip. Playing: move to that place when the place now
+    /// playing ends (all of a Song Part), then carry on through the song (tap it again to cancel). Stopped:
     /// start playing from it.
     func queueArrangementSlot(_ slotIndex: Int) {
         guard followsArrangement,

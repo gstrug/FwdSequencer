@@ -333,7 +333,7 @@ enum HelpTopic: String {
         case .songPartDelete:
             return "Deletes this Song Part and removes it from the song order. Your sections are not changed."
         case .songOrderStrip:
-            return "The song order, shown while Play Arrangement is on. The place playing is green. Tap a place to go to it when the current section ends; tap it again to cancel. When stopped, a tap plays from there."
+            return "The song order, shown while Play Arrangement is on. The place playing is green. Tap a place to go to it when the one playing ends (all of a Song Part); tap it again to cancel. When stopped, a tap plays from there."
         case .songOrderStripOpen:
             return "Opens the Arranger."
         case .hold:
