@@ -7,7 +7,6 @@ import Foundation
 
 setvbuf(stdout, nil, _IONBF, 0)
 let sf2 = URL(fileURLWithPath: CommandLine.arguments[1])
-print("bank bytes:", (try? FileManager.default.attributesOfItem(atPath: sf2.path)[.size]) ?? "missing")
 let sampleRate = 44_100.0
 let tempo = 100.0
 let beat = 60.0 / tempo
@@ -40,18 +39,14 @@ let scenarios: [(String, Int, [Note])] = [
 ]
 
 func render(program: Int, notes: [Note]) throws -> (dropouts: [(Double, Double)], heldSeconds: Double, renderRatio: Double) {
-    print("render program", program)
     let engine = AVAudioEngine()
     let sampler = AVAudioUnitSampler()
     engine.attach(sampler)
     let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
     engine.connect(sampler, to: engine.mainMixerNode, format: format)
     try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 512)
-    print(" connected")
     try engine.start()
-    print(" started")
     try sampler.loadSoundBankInstrument(at: sf2, program: UInt8(program), bankMSB: 0x79, bankLSB: 0)
-    print(" loaded")
     if program == 94, let state = sampler.auAudioUnit.fullState {
         func walk(_ value: Any, _ path: String) {
             if let d = value as? [String: Any] { for (k, v) in d { walk(v, path + "/" + k) } }
@@ -99,7 +94,8 @@ func render(program: Int, notes: [Note]) throws -> (dropouts: [(Double, Double)]
     return (dropouts, held, elapsed / total)
 }
 
-for (name, program, notes) in scenarios {
+let only = CommandLine.arguments.count > 2 ? Int(CommandLine.arguments[2]) : nil
+for (index, (name, program, notes)) in scenarios.enumerated() where only == nil || only == index {
     let r = try render(program: program, notes: notes)
     let silent = r.dropouts.reduce(0) { $0 + $1.1 - $1.0 }
     let pct = r.heldSeconds > 0 ? silent / r.heldSeconds * 100 : 0
