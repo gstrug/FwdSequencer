@@ -766,8 +766,10 @@ nonisolated final class MIDIKeyRouter: @unchecked Sendable {
             switch action {
             case .play(let id, let note, let velocity):
                 engine.playNote(trackID: id, midiNote: note, velocity: velocity)
+                HeldKeyLights.shared.press(id, Int(note))
             case .stop(let id, let note):
                 engine.stopNote(trackID: id, midiNote: note)
+                HeldKeyLights.shared.release(id, Int(note))
             case .control(let id, let status, let data1, let data2):
                 engine.sendPerformanceMessage(trackID: id, status: status, data1: data1, data2: data2)
             }

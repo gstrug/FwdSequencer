@@ -2195,7 +2195,9 @@ private struct SongKeyboard: View {
         PianoKeyboardView(
             notePool: $notePool,
             scale: scale,
-            playingNotes: playback.playingNotes[trackID] ?? [],
+            // What the sequencer is sounding, plus keys held on a MIDI controller.
+            playingNotes: (playback.playingNotes[trackID] ?? [])
+                + (playback.heldKeys[trackID].map { Array($0) } ?? []),
             key: key,
             onPreview: onPreview
         )

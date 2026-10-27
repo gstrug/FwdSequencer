@@ -53,6 +53,9 @@ final class PlaybackMonitor: ObservableObject {
     @Published var playingNotes: [UUID: [Int]] = [:]   // all notes currently sounding (chord = several)
     @Published var activeSteps: [UUID: Int] = [:]
     @Published var currentBar: Int = 0
+    /// Keys held down on a MIDI controller, per instrument (a track's id or the Play
+    /// keyboard's), so the on-screen keyboards light them. See HeldKeyLights.
+    @Published var heldKeys: [UUID: Set<Int>] = [:]
 }
 
 // MARK: - Batching telemetry onto the main thread
@@ -109,6 +112,54 @@ nonisolated final class LevelBatcher: @unchecked Sendable {
             pendingTracks = [:]; pendingMaster = nil; scheduled = false
             lock.unlock()
             deliver(tracks, master)
+        }
+    }
+}
+
+/// Keys held on a MIDI controller, kept per instrument so the on-screen keyboards can
+/// light them. Written on CoreMIDI's thread by MIDIKeyRouter as it plays each key;
+/// handed to the main thread at most once per turn however many keys move at once, so
+/// a chord is one screen update. Costs a lock and a set insert per key.
+nonisolated final class HeldKeyLights: @unchecked Sendable {
+    static let shared = HeldKeyLights()
+
+    private let lock = OSAllocatedUnfairLock()
+    private var held: [UUID: Set<Int>] = [:]
+    private var scheduled = false
+    private var deliver: (([UUID: Set<Int>]) -> Void)?
+
+    private init() {}
+
+    /// `deliver` runs on the main thread with every key held now.
+    func setDeliver(_ deliver: @escaping ([UUID: Set<Int>]) -> Void) {
+        lock.lock(); self.deliver = deliver; lock.unlock()
+    }
+
+    func press(_ id: UUID, _ note: Int) {
+        change { held in held[id, default: []].insert(note) }
+    }
+
+    func release(_ id: UUID, _ note: Int) {
+        change { held in
+            held[id]?.remove(note)
+            if held[id]?.isEmpty == true { held[id] = nil }
+        }
+    }
+
+    private func change(_ edit: (inout [UUID: Set<Int>]) -> Void) {
+        lock.lock()
+        edit(&held)
+        let start = !scheduled
+        scheduled = true
+        lock.unlock()
+        guard start else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            lock.lock()
+            let snapshot = held, deliver = deliver
+            scheduled = false
+            lock.unlock()
+            deliver?(snapshot)
         }
     }
 }

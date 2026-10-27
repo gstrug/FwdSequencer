@@ -23,6 +23,7 @@ struct PlayDockView: View {
             header
             if let p = perf {
                 PlayableKeyboard(
+                    performanceID: p.id,
                     onNoteOn: { note in
                         activeNotes.insert(note)
                         // Mute and solo apply here as they do to a track: muted, or
@@ -177,6 +178,9 @@ struct PlayDockView: View {
 // MARK: - Playable keyboard (wide keys, multi-touch, slide between notes, chromatic)
 
 private struct PlayableKeyboard: View {
+    /// The Play keyboard's instrument, to light keys held on a MIDI controller.
+    let performanceID: UUID
+    @EnvironmentObject private var playback: PlaybackMonitor
     let onNoteOn: (UInt8) -> Void
     let onNoteOff: (UInt8) -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -198,6 +202,8 @@ private struct PlayableKeyboard: View {
     @State private var centerC = 60   // middle C — octave-button target (always a C = white)
     /// Notes currently held by a finger, for drawing them pressed.
     @State private var held = Set<Int>()
+    /// Notes held on a MIDI controller routed to the Play keyboard.
+    private var controllerHeld: Set<Int> { playback.heldKeys[performanceID] ?? [] }
 
     private var layout: KeyboardLayout {
         KeyboardLayout(whiteKeys: Self.whiteKeys, whiteWidth: whiteW,
@@ -239,14 +245,14 @@ private struct PlayableKeyboard: View {
                     HStack(spacing: 0) {
                         ForEach(Self.whiteKeys, id: \.self) { m in
                             PlayKey(midi: m, isBlack: false, width: whiteW, height: keyH,
-                                    pressed: held.contains(m),
+                                    pressed: held.contains(m) || controllerHeld.contains(m),
                                     onNoteOn: onNoteOn, onNoteOff: onNoteOff)
                                 .overlay(alignment: .bottom) { octaveLabel(m) }
                         }
                     }
                     ForEach(Self.blackKeys, id: \.self) { m in
                         PlayKey(midi: m, isBlack: true, width: blackW, height: blackH,
-                                pressed: held.contains(m),
+                                pressed: held.contains(m) || controllerHeld.contains(m),
                                 onNoteOn: onNoteOn, onNoteOff: onNoteOff)
                             .offset(x: blackX(m))
                     }

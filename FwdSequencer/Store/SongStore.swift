@@ -320,6 +320,11 @@ class SongStore: ObservableObject {
             }
             if let master { levels.masterLevel = master }
         }
+        // Keys held on a MIDI controller light the on-screen keyboards, playing or not.
+        HeldKeyLights.shared.setDeliver { [weak self] held in
+            guard let self, playback.heldKeys != held else { return }
+            playback.heldKeys = held
+        }
         playbackBatcher = PlaybackBatcher { [weak self] notes, steps in
             // Only while playing: a batch landing after Stop has cleared the display
             // must not put notes back.
