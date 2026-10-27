@@ -13,15 +13,9 @@ jobs:
         run: |
           swiftc -O diag/SamplerVoiceTest.swift -o /tmp/voices
           set +e
-          python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/gu_fixed.sf2 >> /tmp/out.txt
-          apple=/System/Library/Components/CoreAudio.component/Contents/Resources/gs_instruments.dls
-          for bank in /tmp/gu_fixed.sf2; do
-            echo "== $(basename $bank)" >> /tmp/out.txt
-            for i in 0 1 2 3 4 5 6 7 8 9; do
-              /tmp/voices "$bank" $i >> /tmp/out.txt 2>&1
-              code=$?
-              [ $code -ne 0 ] && echo "scenario $i crashed (exit $code)" >> /tmp/out.txt
-            done
+          python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/gu_fixed.sf2 --no-start-offsets >> /tmp/out.txt
+          for n in $(seq 0 128); do
+            /tmp/voices /tmp/gu_fixed.sf2 sweep $n >> /tmp/out.txt 2>&1 || echo "$n CRASH" >> /tmp/out.txt
           done
           out=$(cat /tmp/out.txt)
           out="${out//'%'/'%25'}"

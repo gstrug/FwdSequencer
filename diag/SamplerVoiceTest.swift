@@ -47,7 +47,7 @@ func render(program: Int, notes: [Note]) throws -> (dropouts: [(Double, Double)]
     engine.connect(sampler, to: engine.mainMixerNode, format: format)
     try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 512)
     try engine.start()
-    try sampler.loadSoundBankInstrument(at: sf2, program: UInt8(program), bankMSB: 0x79, bankLSB: 0)
+    try sampler.loadSoundBankInstrument(at: sf2, program: UInt8(program == 128 ? 0 : program), bankMSB: program == 128 ? 0x78 : 0x79, bankLSB: 0)
     if program == 94, let state = sampler.auAudioUnit.fullState {
         func walk(_ value: Any, _ path: String) {
             if let d = value as? [String: Any] { for (k, v) in d { walk(v, path + "/" + k) } }
@@ -95,6 +95,15 @@ func render(program: Int, notes: [Note]) throws -> (dropouts: [(Double, Double)]
     return (dropouts, held, elapsed / total)
 }
 
+// "sweep N": program N (128 = drum kit) with 4-note chords on 8ths for 8 bars.
+if CommandLine.arguments.count > 3, CommandLine.arguments[2] == "sweep", let n = Int(CommandLine.arguments[3]) {
+    let notes = chords([48, 55, 60, 64], every: 0.5, length: 0.5, bars: 8)
+    let r = try render(program: n, notes: notes)
+    let silent = r.dropouts.reduce(0) { $0 + $1.1 - $1.0 }
+    print(String(format: "%3d cost %5.1f%%  silent %4.1f%%", n, r.renderRatio * 100,
+                 r.heldSeconds > 0 ? silent / r.heldSeconds * 100 : 0))
+    exit(0)
+}
 let only = CommandLine.arguments.count > 2 ? Int(CommandLine.arguments[2]) : nil
 for (index, (name, program, notes)) in scenarios.enumerated() where only == nil || only == index {
     let r = try render(program: program, notes: notes)

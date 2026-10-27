@@ -23,5 +23,19 @@ for rec in range(off + 8, off + 8 + size - 46, 46):        # last record is the 
         new_ls = max(start + need, new_le - length)
         struct.pack_into('<II', data, rec + 28, new_ls, new_le)
         fixed += 1
+# Sample start offsets (generators 0 and 4) crash AUSampler on some instruments:
+# drop them, so every zone plays its sample from the start.
+if '--no-start-offsets' in sys.argv:
+    off2 = pd
+    while True:
+        cid = bytes(data[off2:off2+4]); size2 = struct.unpack('<I', data[off2+4:off2+8])[0]
+        if cid == b'igen': break
+        off2 += 8 + size2
+    dropped = 0
+    for rec in range(off2 + 8, off2 + 8 + size2, 4):
+        op = struct.unpack('<H', data[rec:rec+2])[0]
+        if op in (0, 4):
+            struct.pack_into('<h', data, rec + 2, 0); dropped += 1
+    print('start offsets removed:', dropped)
 open(sys.argv[2], 'wb').write(data)
 print(f'samples {total}, loop points moved on {fixed}')
