@@ -2231,22 +2231,62 @@ private struct SongKeyboard: View {
     @EnvironmentObject var playback: PlaybackMonitor
 
     var body: some View {
-        PianoKeyboardView(
+        // Redrawn only when this track's notes change, not on every note of every
+        // track (see SongMiniSteps).
+        TrackKeyboardContent(
             notePool: $notePool,
             scale: scale,
-            // What the sequencer is sounding, plus keys held on a MIDI controller.
-            playingNotes: (playback.playingNotes[trackID] ?? [])
-                + (playback.heldKeys[trackID].map { Array($0) } ?? []),
             key: key,
+            // What the sequencer is sounding, plus keys held on a MIDI controller.
+            playing: (playback.playingNotes[trackID] ?? [])
+                + (playback.heldKeys[trackID].map { Array($0).sorted() } ?? []),
             onPreview: onPreview
         )
+        .equatable()
         .helpTag(.trackKeyboard, instance: trackID.uuidString)
     }
 }
 
+private struct TrackKeyboardContent: View, Equatable {
+    @Binding var notePool: [NoteEntry]
+    let scale: MusicalScale
+    let key: Int
+    let playing: [Int]
+    let onPreview: (Int) -> Void
+
+    static func == (a: TrackKeyboardContent, b: TrackKeyboardContent) -> Bool {
+        a.playing == b.playing && a.key == b.key && a.scale == b.scale && a.notePool == b.notePool
+    }
+
+    var body: some View {
+        PianoKeyboardView(notePool: $notePool, scale: scale, playingNotes: playing,
+                          key: key, onPreview: onPreview)
+    }
+}
+
 /// Step-sequence indicator with the active step highlighted (observes PlaybackMonitor).
+/// Step-sequence indicator for one track, with the playing step lit.
+///
+/// Reads the playing step here and hands it to StepStrip, which is only redrawn when
+/// ITS track's step or steps change. Every strip observing the shared PlaybackMonitor
+/// used to rebuild on every step of every track: with eleven imported parts of
+/// hundreds of steps each, that alone held the processor over 100% and caused
+/// dropouts, muted or not.
 private struct SongMiniSteps: View {
     let trackID: UUID
+    let steps: [Step]
+    var compact: Bool = true
+    var emptyLabel: String = ""
+    @EnvironmentObject var playback: PlaybackMonitor
+
+    var body: some View {
+        StepStrip(steps: steps, compact: compact, emptyLabel: emptyLabel,
+                  activeStep: playback.activeSteps[trackID])
+            .equatable()
+    }
+}
+
+private struct StepStrip: View, Equatable {
     let steps: [Step]
     var compact: Bool = true
     /// Shown in place of the steps when there are none, in the same font and padding as
@@ -2258,8 +2298,13 @@ private struct SongMiniSteps: View {
     /// section — starting or stopping made the strip vanish or reappear, and every track
     /// below jumped by its height.
     var emptyLabel: String = ""
-    @EnvironmentObject var playback: PlaybackMonitor
+    let activeStep: Int?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    static func == (a: StepStrip, b: StepStrip) -> Bool {
+        a.activeStep == b.activeStep && a.compact == b.compact
+            && a.emptyLabel == b.emptyLabel && a.steps == b.steps
+    }
 
     /// The strip fills whatever width the row has left and only scrolls once the steps
     /// overflow it, so a short sequence is shown whole and stays still.
@@ -2278,7 +2323,6 @@ private struct SongMiniSteps: View {
     }
 
     var body: some View {
-        let activeStep = playback.activeSteps[trackID]
         let size: CGFloat = compact ? 8 : 10
         // A long step list cannot fit the row, so the strip scrolls — but scrolling it
         // by hand while the sequencer runs is hopeless. Keep the playing step in view
@@ -2286,7 +2330,9 @@ private struct SongMiniSteps: View {
         // inspecting a stopped sequence.
         ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: chipSpacing) {
+                // Lazy: only the chips in view are built. An imported part can have
+                // hundreds of steps, and building every one on each step was costly.
+                LazyHStack(spacing: chipSpacing) {
                     if steps.isEmpty {
                         Text(emptyLabel.isEmpty ? " " : emptyLabel)
                             .font(.system(size: size, design: .monospaced))
