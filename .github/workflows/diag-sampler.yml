@@ -13,9 +13,14 @@ jobs:
         run: |
           swiftc -O diag/SamplerVoiceTest.swift -o /tmp/voices
           set +e
-          python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/gu_fixed.sf2 --no-start-offsets >> /tmp/out.txt
-          for n in $(seq 111 128); do
-            /tmp/voices /tmp/gu_fixed.sf2 sweep $n >> /tmp/out.txt 2>&1 || echo "$n CRASH" >> /tmp/out.txt
+          python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/a.sf2 --no-start-offsets > /dev/null
+          python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/b.sf2 --no-start-offsets --no-filters > /dev/null
+          for n in 0 1 96 12; do
+            echo "-- program $n: fixed / no filters / 32 voices / 16 voices" >> /tmp/out.txt
+            /tmp/voices /tmp/a.sf2 sweep $n >> /tmp/out.txt 2>&1
+            /tmp/voices /tmp/b.sf2 sweep $n >> /tmp/out.txt 2>&1
+            VOICES=32 /tmp/voices /tmp/a.sf2 sweep $n 2>&1 | grep -v "^state" >> /tmp/out.txt
+            VOICES=16 /tmp/voices /tmp/a.sf2 sweep $n 2>&1 | grep -v "^state" >> /tmp/out.txt
           done
           out=$(cat /tmp/out.txt)
           out="${out//'%'/'%25'}"

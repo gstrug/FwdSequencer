@@ -48,6 +48,12 @@ func render(program: Int, notes: [Note]) throws -> (dropouts: [(Double, Double)]
     try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 512)
     try engine.start()
     try sampler.loadSoundBankInstrument(at: sf2, program: UInt8(program == 128 ? 0 : program), bankMSB: program == 128 ? 0x78 : 0x79, bankLSB: 0)
+    if let cap = ProcessInfo.processInfo.environment["VOICES"].flatMap(Int.init),
+       var state = sampler.auAudioUnit.fullState {
+        state["voice count"] = cap
+        sampler.auAudioUnit.fullState = state
+        print("voice count now", sampler.auAudioUnit.fullState?["voice count"] ?? "?")
+    }
     if program == 94, let state = sampler.auAudioUnit.fullState {
         func walk(_ value: Any, _ path: String) {
             if let d = value as? [String: Any] { for (k, v) in d { walk(v, path + "/" + k) } }

@@ -37,5 +37,18 @@ if '--no-start-offsets' in sys.argv:
         if op in (0, 4):
             struct.pack_into('<h', data, rec + 2, 0); dropped += 1
     print('start offsets removed:', dropped)
+# Optionally drop filter generators (8 initialFilterFc, 9 initialFilterQ, 11 modEnvToFilterFc)
+# everywhere, to see how much the per-voice filters cost.
+if '--no-filters' in sys.argv:
+    for chunk in (b'pgen', b'igen'):
+        o = pd
+        while True:
+            cid = bytes(data[o:o+4]); sz = struct.unpack('<I', data[o+4:o+8])[0]
+            if cid == chunk: break
+            o += 8 + sz
+        for rec in range(o + 8, o + 8 + sz, 4):
+            op = struct.unpack('<H', data[rec:rec+2])[0]
+            if op == 8: struct.pack_into('<h', data, rec + 2, 13500)   # fully open
+            elif op in (9, 11): struct.pack_into('<h', data, rec + 2, 0)
 open(sys.argv[2], 'wb').write(data)
 print(f'samples {total}, loop points moved on {fixed}')
