@@ -116,10 +116,24 @@ nonisolated enum SongMIDIExporter {
 
             for localTick in stride(from: 0, to: sectionTicks, by: baseTick) {
                 for (trackIndex, track) in song.tracks.enumerated() {
-                    guard let part = section.parts.first(where: { $0.trackID == track.id }),
-                          !part.notePool.isEmpty else { continue }
+                    guard let part = section.parts.first(where: { $0.trackID == track.id }) else { continue }
                     let trigger = triggerTicks(for: part.tempoDivision)
                     guard localTick % trigger == 0, var state = states[track.id] else { continue }
+                    // No steps (or no notes): not sequenced here, exactly as live. A
+                    // carried Hold is released at the first trigger.
+                    guard !part.notePool.isEmpty, !part.steps.isEmpty else {
+                        if state.carry != nil || !state.lastMIDINotes.isEmpty {
+                            // Releases already due fire first, as they would have live.
+                            expireEvents(before: absoluteTick + localTick, state: &state,
+                                         events: &trackEvents[trackIndex])
+                            let channel = UInt8(channels[trackIndex % channels.count])
+                            cancelPending(state: &state, events: &trackEvents[trackIndex])
+                            stopLastNotes(at: absoluteTick + localTick, channel: channel,
+                                          state: &state, events: &trackEvents[trackIndex])
+                            states[track.id] = RenderState()
+                        }
+                        continue
+                    }
 
                     let currentTick = absoluteTick + localTick
                     expireEvents(before: currentTick, state: &state, events: &trackEvents[trackIndex])

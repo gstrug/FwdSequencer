@@ -389,7 +389,7 @@ enum HelpTopic: String {
         case .trackKeyScale:
             return "The key and scale can be assigned independently for each track. Notes falling outside the scale are dimmed and not selectable. If a scale is changed, active notes outside of the new scale will be removed."
         case .trackSteps:
-            return "The track's step sequence display for the active section; the lit step is the one playing. Edit Steps using the Steps menu under an expanded track."
+            return "The track's step sequence display for the active section; the lit step is the one playing. Edit Steps using the Steps menu under an expanded track. A track with no steps does not sequence in that section: it is an instrument for your MIDI keyboard, with its own level. Add a step to start sequencing."
         case .trackKeyboard:
             return "The heart of FWD Sequencer. Tap keys to add or remove notes in the track pool. Blue notes are added to the note pool. Notes in the pool are indexed from lowest to highest, not the order of selection. When notes sound they will display Yellow."
         case .trackNoteParams:

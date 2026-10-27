@@ -150,6 +150,12 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   then carries on — unlike the pattern queue it is not held); stopped, a tap plays from
   there (`play(startingAt:)`). Deleting a section removes it from parts and the order;
   a part left empty goes too. The validator drops missing references, keeps empty parts.
+- **No steps = instrument only** (2026-10-27): a track with no steps (or no notes) in a
+  section does not sequence there; it stays an instrument for a MIDI keyboard with its
+  own fader. Same rule in the sequencer tick and `SongMIDIExporter`; a Hold carried in
+  from the previous section is released at the track's first trigger in both. No
+  migration (Graham: nothing is public yet). `ExampleSongTests` checks every example
+  song gives steps to every part with notes — **add new example songs there**.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI
   (`.github/workflows/validate.yml`) runs `swift test` and a simulator build on every
   push/PR.

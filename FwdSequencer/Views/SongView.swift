@@ -1814,7 +1814,7 @@ private struct SongTrackRowView: View {
             // Always there, so the row keeps its height when the steps come and go —
             // see SongMiniSteps.emptyLabel.
             SongMiniSteps(trackID: track.id, steps: indicatorSteps,
-                          emptyLabel: "\(part.notePool.count) notes")
+                          emptyLabel: "No steps · instrument only")
                 .helpTag(.trackSteps, instance: track.id.uuidString)
         }
         .padding(.horizontal, 12)
@@ -1861,7 +1861,7 @@ private struct SongTrackRowView: View {
             HStack(spacing: 8) {
                 Text(part.tempoDivision.abbreviation).font(.caption2).foregroundStyle(.secondary)
                 SongMiniSteps(trackID: track.id, steps: indicatorSteps,
-                              emptyLabel: "\(part.notePool.count) notes")
+                              emptyLabel: "No steps · instrument only")
                     .helpTag(.trackSteps, instance: track.id.uuidString)
                 Spacer(minLength: 4)
                 Image(systemName: "speaker.wave.1").font(.caption2).foregroundStyle(.secondary)
@@ -2134,7 +2134,7 @@ private struct SongTrackRowView: View {
             }
 
             SongMiniSteps(trackID: track.id, steps: indicatorSteps, compact: false,
-                          emptyLabel: "No steps")
+                          emptyLabel: "No steps: instrument only. Add a step to sequence.")
                 .helpTag(.trackSteps, instance: track.id.uuidString)
 
             SongKeyboard(

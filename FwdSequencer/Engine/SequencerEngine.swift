@@ -781,13 +781,28 @@ nonisolated final class SequencerEngine: @unchecked Sendable {
         let anySoloed = frame.tracks.contains(where: { $0.isSoloed })
 
         for track in frame.tracks {
-            guard !track.notePool.isEmpty else { continue }
-
             // Single source of truth for the grid, shared with the model layer.
             let triggerEvery = max(1, track.tempoDivision.sequencerTicks)
 
             guard globalStep % triggerEvery == 0 else { continue }
             guard var state = states[track.id] else { continue }
+
+            // No steps (or no notes): the track does not sequence in this section. It
+            // stays an instrument for a MIDI keyboard, with its own fader and effects;
+            // adding a step starts it sequencing. A Hold carried in from the section
+            // before is decided before the next section is known, so it is released
+            // here rather than left ringing. SongMIDIExporter does the same.
+            guard !track.notePool.isEmpty, !track.steps.isEmpty else {
+                if state.carry != nil || !state.lastMidiNotes.isEmpty {
+                    cancelPendingNoteOffs(for: track.id)
+                    for note in state.lastMidiNotes {
+                        audioEngine?.stopNote(trackID: track.id, midiNote: UInt8(note))
+                    }
+                    states[track.id] = TrackState()
+                    onNotePlayed?(track.id, [])
+                }
+                continue
+            }
 
             if !track.steps.isEmpty {
                 onStepChange?(track.id, state.stepIndex % track.steps.count)
