@@ -176,6 +176,15 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   for software, commercial included; no attribution required, credit is courteous).
   iPadOS has no GM set of its own (Apple's gs_instruments.dls is Mac-only, the
   fallback). Source: github.com/mrbumpy409/GeneralUser-GS.
+  **The bundled file is patched** by `Tools/prepare_soundfont.py` (sha256 15bb8f57…):
+  unpatched, Apple's sampler CRASHES on many instruments (pianos, strings), which on
+  the iPad silenced whole tracks for stretches. Fixes: loop end ≥ 8 points before the
+  sample end (181 samples), sample start offsets cleared (595). Verified 2026-10-27 by
+  rendering all 128 programs + drum kit offline on a GitHub macOS runner
+  (`Tools/SamplerVoiceTest.swift`; runner logs are blocked by the proxy, so results
+  were read back as a `::notice::` annotation). Acoustic pianos (0–3) are expensive:
+  ~25–30% of a core per busy track; filters aren't the cause and the sampler's 64-voice
+  limit can't be changed via fullState. Apple's DLS renders the same at <1%.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI
   (`.github/workflows/validate.yml`) runs `swift test` and a simulator build on every
   push/PR.
