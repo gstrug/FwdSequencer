@@ -1,0 +1,13 @@
+name: Diagnostic - sampler voices
+on:
+  push:
+    branches: ['diag/**']
+jobs:
+  voices:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Fetch GeneralUser GS
+        run: curl -sSL -o /tmp/gu.sf2 https://github.com/mrbumpy409/GeneralUser-GS/raw/main/GeneralUser-GS.sf2 && ls -la /tmp/gu.sf2
+      - name: Render
+        run: swiftc -O diag/SamplerVoiceTest.swift -o /tmp/voices && /tmp/voices /tmp/gu.sf2
