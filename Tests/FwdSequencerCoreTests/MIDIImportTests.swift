@@ -155,7 +155,10 @@ final class MIDIImportTests: XCTestCase {
         var song = Song()
         song.tracks = [track]
         song.sections = [SongSection(name: "A", numberOfBars: 1, parts: [
-            Part(trackID: track.id, notePool: [60, 62, 64].map { NoteEntry(midiNote: $0) },
+            // Full-length notes: a note's gate scales its whole length, Holds included,
+            // so only at 1.0 does a Play followed by Holds export as one long note.
+            Part(trackID: track.id,
+                 notePool: [60, 62, 64].map { NoteEntry(midiNote: $0, velocity: 100, gateLength: 1.0) },
                  steps: steps, tempoDivision: .eighth)
         ])]
         song.randomSeed = 7
