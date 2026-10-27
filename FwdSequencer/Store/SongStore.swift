@@ -1191,6 +1191,87 @@ class SongStore: ObservableObject {
         selectedSection = min(selectedSection, song.sections.count - 1)
     }
 
+    // MARK: - MIDI import
+
+    /// Where one part of an imported MIDI file goes.
+    enum MIDIImportTarget: Hashable {
+        case skip
+        case newTrack
+        case track(UUID)
+    }
+
+    /// Put parts of a MIDI file into one section, each as its track's notes and steps
+    /// (MIDIImportConverter). Everything is converted before anything changes, so a part
+    /// that can't be imported leaves the song as it was. Existing tracks' notes and steps
+    /// in the section are saved first as a snapshot, "Before MIDI import".
+    func importMIDI(_ file: ImportedMIDIFile, intoSection sectionID: UUID,
+                    targets: [Int: MIDIImportTarget], division: TempoDivision,
+                    startAtFirstNote: Bool, fitLength: Bool, setTempo: Bool) throws {
+        guard let sectionIndex = song.sections.firstIndex(where: { $0.id == sectionID }) else { return }
+        let chosen = file.parts.filter { part in
+            guard !part.notes.isEmpty, let target = targets[part.id] else { return false }
+            return target != .skip
+        }
+        guard !chosen.isEmpty else { return }
+        let plan = MIDIImportPlan(file: file, parts: chosen, timeSignature: song.timeSignature,
+                                  division: division, startAtFirstNote: startAtFirstNote,
+                                  fitLength: fitLength,
+                                  currentBars: song.sections[sectionIndex].numberOfBars)
+        let results = try chosen.map { part -> (ImportedPart, MIDIImportConverter.Result) in
+            let result = try plan.convert(part)
+            return (part, result)
+        }
+
+        let newTracks = chosen.filter { targets[$0.id] == .newTrack }.count
+        guard song.tracks.count + newTracks <= Self.maximumEditableTrackCount else {
+            throw MIDIImportError.tooLong("A song can have up to \(Self.maximumEditableTrackCount) tracks. Choose fewer new tracks, or existing ones.")
+        }
+
+        let existing = Set(chosen.compactMap { part -> UUID? in
+            if case .track(let id)? = targets[part.id] { return id }
+            return nil
+        })
+        if !existing.isEmpty {
+            reportDroppedSnapshot(song.sections[sectionIndex].saveSnapshot(named: "Before MIDI import",
+                                                                           tracks: existing))
+        }
+
+        // New tracks first: adding one also sets up its instrument and its part in
+        // every section.
+        var trackFor: [Int: UUID] = [:]
+        for part in chosen {
+            switch targets[part.id] {
+            case .track(let id)?: trackFor[part.id] = id
+            case .newTrack?:
+                addTrack()
+                if let index = song.tracks.indices.last {
+                    song.tracks[index].name = String(part.name.prefix(SongValidator.maximumNameLength))
+                    trackFor[part.id] = song.tracks[index].id
+                }
+            default: break
+            }
+        }
+
+        var updated = song
+        for (part, result) in results {
+            guard let trackID = trackFor[part.id],
+                  let partIndex = updated.sections[sectionIndex].parts.firstIndex(where: { $0.trackID == trackID })
+            else { continue }
+            var target = updated.sections[sectionIndex].parts[partIndex]
+            target.notePool = result.notePool
+            target.steps = result.steps
+            target.tempoDivision = division
+            // Every imported note is kept: no scale filtering.
+            target.key = 0
+            target.scale = .chromatic
+            updated.sections[sectionIndex].parts[partIndex] = target
+        }
+        updated.sections[sectionIndex].numberOfBars = plan.bars
+        if setTempo, let tempo = file.tempo { updated.tempo = min(400, max(20, tempo.rounded())) }
+        song = updated
+        selectedSection = sectionIndex
+    }
+
     // MARK: - Arranger
 
     /// Put a section at the end of the arrangement. Starting an arrangement switches

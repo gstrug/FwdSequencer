@@ -23,7 +23,9 @@ enum HelpTopic: String {
          triggerMode, triggerHold, sectionRename, sectionAdd, sectionDuplicate, sectionMove,
          sectionDelete, arranger, arrangerPlay, arrangerSlot, arrangerAdd, arrangerFill,
          arrangerClear, songPartNew, songPartEdit, songPartAdd, songPartName, songPartSection,
-         songPartAddSection, songPartDelete, songOrderStrip, songOrderStripOpen
+         songPartAddSection, songPartDelete, songOrderStrip, songOrderStripOpen,
+         sectionImportMIDI, midiImportPart, midiImportStepSize, midiImportStart, midiImportFit,
+         midiImportTempo, midiImportButton
 
     // A track
     case trackExpand, trackName, trackMenu, trackInstrument, trackEditInstrument,
@@ -121,6 +123,13 @@ enum HelpTopic: String {
         case .songPartDelete: return "Delete Song Part"
         case .songOrderStrip: return "Song Order"
         case .songOrderStripOpen: return "Open the Arranger"
+        case .sectionImportMIDI: return "Import MIDI"
+        case .midiImportPart: return "A Part of the File"
+        case .midiImportStepSize: return "Step Size"
+        case .midiImportStart: return "Start at the First Note"
+        case .midiImportFit: return "Set Section Length to Fit"
+        case .midiImportTempo: return "Use the File's Tempo"
+        case .midiImportButton: return "Import"
 
         case .trackExpand: return "Expand / Collapse"
         case .trackName: return "Track Name"
@@ -336,6 +345,20 @@ enum HelpTopic: String {
             return "The song order, shown while Play Arrangement is on. The place playing is green. Tap a place to go to it when the one playing ends (all of a Song Part); tap it again to cancel. When stopped, a tap plays from there."
         case .songOrderStripOpen:
             return "Opens the Arranger."
+        case .sectionImportMIDI:
+            return "Imports a MIDI file into the selected section. Each part of the file becomes a track's notes and steps: Play for each note or chord, Hold for its length and Rest for silence."
+        case .midiImportPart:
+            return "Choose which track this part of the file goes to: a new track, an existing one (its notes and steps in this section are replaced, after saving a snapshot), or none."
+        case .midiImportStepSize:
+            return "The size of each step. Notes are moved to the nearest step. Smaller sizes keep more detail but make more steps."
+        case .midiImportStart:
+            return "On: the section starts at the bar of the first note, leaving out empty bars at the start of the file. Off: it starts at the beginning of the file."
+        case .midiImportFit:
+            return "On: the section's number of bars is set to fit the music. Off: it keeps its length, and notes after the end are left out."
+        case .midiImportTempo:
+            return "Sets the song's tempo to the file's."
+        case .midiImportButton:
+            return "Imports the chosen parts into the section."
         case .hold:
             return "Hold: Repeats the selected section so you can audition changes while you make them. Shape and Snapshot menu is only available when 'Hold' is on."
 

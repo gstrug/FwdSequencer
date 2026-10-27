@@ -156,6 +156,15 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   from the previous section is released at the track's first trigger in both. No
   migration (Graham: nothing is public yet). `ExampleSongTests` checks every example
   song gives steps to every part with notes — **add new example songs there**.
+- **MIDI import** (2026-10-27): Section menu ▸ Import MIDI… → `Views/MIDIImportSheet.swift`
+  (each file part → New Track / existing track / skip, step size, start at first note,
+  fit length, file tempo). Core in `Models/MIDIImport.swift` (tested): `MIDIFileReader`
+  (SMF 0/1, running status, a track with several channels splits into parts) and
+  `MIDIImportConverter` (notes → pool + Play/Hold/Pause steps, quantised; a new onset
+  ends the previous note; velocities bucketed by 8). `MIDIImportPlan` gives every part
+  one origin and length. `SongStore.importMIDI` converts all first, snapshots existing
+  target tracks ("Before MIDI import"), sets scale chromatic. Round-trip test: what the
+  exporter writes imports back to the same steps.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI
   (`.github/workflows/validate.yml`) runs `swift test` and a simulator build on every
   push/PR.

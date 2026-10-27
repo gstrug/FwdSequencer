@@ -34,6 +34,7 @@ let package = Package(
                 "Models/SongValidation.swift",
                 "Models/SongTemplates.swift",
                 "Models/MIDIControl.swift",
+                "Models/MIDIImport.swift",
                 "Engine/SequencerRandom.swift",
                 "Engine/StepGenerator.swift",
                 "Engine/MusicalTimeline.swift",
