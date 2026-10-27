@@ -27,6 +27,7 @@ func chords(_ voicing: [UInt8], every: Double, length: Double, bars: Int) -> [No
 }
 
 let scenarios: [(String, Int, [Note])] = [
+    ("Grand Piano: ONE note, C4, velocity 64, 2 s", 0, [Note(start: 0, end: 2, pitch: 60, velocity: 64)]),
     ("Pad 7 (halo): 6-note chords held a bar", 94, chords([48, 55, 60, 64, 67, 72], every: 4, length: 4, bars: 16)),
     ("Pad 3 (polysynth): 6-note chords on quarters", 90, chords([48, 55, 60, 64, 67, 72], every: 1, length: 1, bars: 16)),
     ("String Ensemble 1: 4-note chords held a bar", 48, chords([48, 55, 64, 67], every: 4, length: 4, bars: 16)),
