@@ -34,4 +34,6 @@ for k in range(len(P) - 1):
                         if IG[gg][0] == 53: samples.add(IG[gg][1])
     out[key] = {'name': name.split(b'\0')[0].decode('latin1'), 'bytes': sum((S[s][2] - S[s][1]) * 2 for s in samples),
                 'samples': sorted(samples)}
+out['sampleBytes'] = {i: (S[i][2] - S[i][1]) * 2 for i in range(len(S) - 1)}
+out['fileBytes'] = len(d)
 print(json.dumps(out))
