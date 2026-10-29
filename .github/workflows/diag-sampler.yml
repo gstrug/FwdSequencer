@@ -20,7 +20,7 @@ jobs:
           ar x fluid-soundfont-gm_*_all.deb && tar xf data.tar.* && cd -
           f=$(find /tmp/fluid -name 'FluidR3_GM.sf2' | head -1)
           echo "FluidR3_GM.sf2 bytes: $(stat -f%z "$f")" >> /tmp/out.txt
-          python3 diag/fix_loops.py "$f" /tmp/fluid_fixed.sf2 --no-start-offsets >> /tmp/out.txt
+          python3 diag/fix_loops.py "$f" /tmp/fluid_fixed.sf2 --no-start-offsets >> /tmp/out.txt 2>&1; python3 -c "import struct,sys; d=open(sys.argv[1],'rb').read(); print('pdta at', d.find(b'pdta'), 'of', len(d)); o=d.find(b'pdta')+4; [print(d[o:o+4], struct.unpack('<I',d[o+4:o+8])[0]) for _ in range(1)]" "$f" >> /tmp/out.txt 2>&1
           for n in 101 0 48 128; do
             echo "-- $n: as shipped / patched" >> /tmp/out.txt
             /tmp/voices "$f" sweep $n 2>&1 | grep -v "^state" >> /tmp/out.txt || echo "$n CRASH" >> /tmp/out.txt
