@@ -58,8 +58,9 @@ class PluginManager: ObservableObject {
         // Apple's own instruments (MIDI Synth, Sampler, DLS Synth) make no sound until
         // a host loads a sound bank into them, and would only duplicate the built-in
         // General MIDI sounds, which are chosen in Select Instrument. Not listed.
+        // 'dls ' is the DLS Synth, written as its code: its named constant is Mac-only.
         let appleSilent: Set<OSType> = [kAudioUnitSubType_MIDISynth, kAudioUnitSubType_Sampler,
-                                        kAudioUnitSubType_DLSSynth]
+                                        0x646C_7320]
         let foundInstruments = scan(type: kAudioUnitType_MusicDevice).filter {
             !($0.componentManufacturer == kAudioUnitManufacturer_Apple && appleSilent.contains($0.componentSubType))
         }
