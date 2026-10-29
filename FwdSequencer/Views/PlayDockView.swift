@@ -103,7 +103,7 @@ struct PlayDockView: View {
 
     private var instrumentButton: some View {
         Button { showPluginPicker = true } label: {
-            Label(perf?.pluginInfo?.name ?? "GM: \(GeneralMIDI.soundName(perf?.builtInSound))", systemImage: "pianokeys")
+            Label(perf?.pluginInfo?.name ?? "Built-in GM Sound", systemImage: "pianokeys")
                 .font(.subheadline.bold()).lineLimit(1)
         }
         .buttonStyle(.bordered)
@@ -118,7 +118,8 @@ struct PlayDockView: View {
             Button {
                 if perf?.pluginInfo != nil { showPluginEditor = true } else { showBuiltInSounds = true }
             } label: {
-                Label("Edit Instrument", systemImage: "slider.horizontal.3").font(.caption)
+                Label(perf?.pluginInfo != nil ? "Edit Instrument" : GeneralMIDI.soundName(perf?.builtInSound),
+                      systemImage: "slider.horizontal.3").font(.caption)
             }
             .buttonStyle(.bordered).tint(.purple)
             .helpTag(.playEditInstrument)

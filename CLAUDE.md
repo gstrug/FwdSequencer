@@ -172,7 +172,7 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   `builtInSounds[trackID]` so any sampler made later (plugin removed / failed) starts on
   it; `setBuiltInSound`. **UI model (Graham, 2026-10-29): GM is an instrument like a
   plugin.** Select Instrument lists "Built-in GM Sound" as a plain choice; the
-  instrument button reads "GM: <sound>" or the plugin's name; **Edit Instrument** opens
+  instrument button reads "Built-in GM Sound" or the plugin's name; the edit button is named after the GM sound playing ("Acoustic Grand Piano") or reads Edit Instrument for a plugin, and opens
   `BuiltInSoundSheet` (128 + drum kit) for GM, the plugin window otherwise (tracks and
   the Play keyboard). The track-menu Built-in Sound item was removed. Apple's MIDI Synth / Sampler / DLS Synth are
   hidden from the instrument list (silent without a host-loaded bank; they'd duplicate

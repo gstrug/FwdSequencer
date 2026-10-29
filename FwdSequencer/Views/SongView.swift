@@ -1815,7 +1815,7 @@ private struct SongTrackRowView: View {
 
             Divider().frame(height: 16)
 
-            Text(track.pluginInfo?.name ?? "GM: \(GeneralMIDI.soundName(track.builtInSound))")
+            Text(track.pluginInfo?.name ?? GeneralMIDI.soundName(track.builtInSound))
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
 
             Divider().frame(height: 16)
@@ -1856,7 +1856,7 @@ private struct SongTrackRowView: View {
                 // A folded track's menu is a long press; in help mode its name opens
                 // the track menu's help screen.
                 .helpMenu(.track, instance: track.id.uuidString)
-                    Text(track.pluginInfo?.name ?? "GM: \(GeneralMIDI.soundName(track.builtInSound))")
+                    Text(track.pluginInfo?.name ?? GeneralMIDI.soundName(track.builtInSound))
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
@@ -2026,7 +2026,7 @@ private struct SongTrackRowView: View {
 
             // What is loaded: a plugin, or the built-in GM sound and which one.
             Button { showPluginPicker = true } label: {
-                Label(track.pluginInfo?.name ?? "GM: \(GeneralMIDI.soundName(track.builtInSound))",
+                Label(track.pluginInfo?.name ?? "Built-in GM Sound",
                       systemImage: track.pluginInfo == nil ? "pianokeys" : "puzzlepiece.extension.fill")
                     .font(.caption).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -2068,9 +2068,10 @@ private struct SongTrackRowView: View {
                 .disabled(!isReady)
                 .helpTag(.trackEditInstrument, instance: track.id.uuidString)
             } else {
-                // The built-in GM sound's "editor" is its list of sounds.
+                // The built-in GM sound's "editor" is its list of sounds, and the button
+                // names the one playing.
                 Button { showBuiltInSounds = true } label: {
-                    Label("Edit Instrument", systemImage: "slider.horizontal.3")
+                    Label(GeneralMIDI.soundName(track.builtInSound), systemImage: "slider.horizontal.3")
                         .font(.caption).frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.bordered).tint(.purple)
