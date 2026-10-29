@@ -1760,6 +1760,11 @@ private struct SongTrackRowView: View {
         } label: {
             Label("Expand", systemImage: "chevron.down")
         }
+        // The row's long press is this menu, which takes the long press from the FX
+        // button too, so the effects are reachable from here as well.
+        Button { help.perform(.trackEffectsMenu) { showEffects = true } } label: {
+            Label("Effects…", systemImage: "fx")
+        }
         Divider()
         arrangeActions
         Divider()
