@@ -14,11 +14,10 @@ jobs:
           swiftc -O diag/SamplerVoiceTest.swift -o /tmp/voices
           set +e
           python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/a.sf2 --no-start-offsets >> /tmp/out.txt
-          python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/b.sf2 --no-start-offsets --piano-release=1200 >> /tmp/out.txt
-          python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/c.sf2 --no-start-offsets --piano-release=800 >> /tmp/out.txt
-          for n in 0 1 2 3; do
-            echo "-- program $n: now / release cap 1200 / cap 800" >> /tmp/out.txt
-            for f in a b c; do /tmp/voices /tmp/$f.sf2 sweep $n 2>&1 | grep -v "^state" >> /tmp/out.txt; done
+          python3 diag/strip_mods.py /tmp/a.sf2 /tmp/d.sf2 >> /tmp/out.txt
+          for n in 0 1 3 48 94; do
+            echo "-- program $n: now / without modulators" >> /tmp/out.txt
+            for f in a d; do /tmp/voices /tmp/$f.sf2 sweep $n 2>&1 | grep -v "^state" >> /tmp/out.txt || echo crash >> /tmp/out.txt; done
           done
           out=$(cat /tmp/out.txt)
           out="${out//'%'/'%25'}"
