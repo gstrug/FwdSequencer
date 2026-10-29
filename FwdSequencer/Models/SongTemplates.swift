@@ -62,9 +62,6 @@ enum SongTemplate: String, CaseIterable, Identifiable {
 
     private static func starterSong() -> Song {
         let track = SongTrack(name: "First Track")
-        // A single Fwd step: the plainest possible starting point, which walks the pool
-        // in order. It used to come with Fwd, Fwd, Back already set, which is a pattern
-        // someone has to clear out before starting their own.
         // Truly blank, like a new track (Graham, 2026-10-29): no notes and no steps, so
         // it is an instrument for a MIDI keyboard until a step is added — which suits
         // using the app purely as an AUv3 host. The step display says so.
