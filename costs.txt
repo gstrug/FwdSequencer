@@ -1,0 +1,129 @@
+  0 cost   2.1%  silent  0.0%
+  1 cost   2.0%  silent  0.0%
+  2 cost   1.0%  silent  0.0%
+  3 cost   3.1%  silent  0.0%
+  4 cost   0.7%  silent  0.0%
+  5 cost   0.9%  silent  0.0%
+  6 cost   0.5%  silent  0.0%
+  7 cost   0.2%  silent  0.0%
+  8 cost   2.3%  silent  0.0%
+  9 cost   1.5%  silent  0.0%
+ 10 cost   0.4%  silent  0.0%
+ 11 cost   1.4%  silent  0.0%
+ 12 cost   1.4%  silent  0.0%
+ 13 cost   0.7%  silent  0.0%
+ 14 cost   1.2%  silent  0.0%
+ 15 cost   1.4%  silent  0.0%
+ 16 cost   0.3%  silent  0.0%
+ 17 cost   0.2%  silent  0.0%
+ 18 cost   0.2%  silent  0.0%
+ 19 cost   0.5%  silent  0.0%
+ 20 cost   0.4%  silent  0.0%
+ 21 cost   0.5%  silent  0.0%
+ 22 cost   0.6%  silent  0.0%
+ 23 cost   1.1%  silent  0.0%
+ 24 cost   0.1%  silent  0.0%
+ 25 cost   1.3%  silent  0.0%
+ 26 cost   0.5%  silent  0.0%
+ 27 cost   0.2%  silent  0.0%
+ 28 cost   0.3%  silent  0.0%
+ 29 cost   0.2%  silent  0.0%
+ 30 cost   0.8%  silent  0.0%
+ 31 cost   0.1%  silent  0.0%
+ 32 cost   0.3%  silent  0.0%
+ 33 cost   0.4%  silent  0.0%
+ 34 cost   0.2%  silent  0.0%
+ 35 cost   0.2%  silent  0.0%
+ 36 cost   0.2%  silent  0.0%
+ 37 cost   0.2%  silent  0.0%
+ 38 cost   1.2%  silent  0.0%
+ 39 cost   0.3%  silent  0.0%
+ 40 cost   0.3%  silent  0.0%
+ 41 cost   0.4%  silent  0.0%
+ 42 cost   0.8%  silent  0.0%
+ 43 cost   0.8%  silent  0.0%
+ 44 cost   2.1%  silent  0.0%
+ 45 cost   0.3%  silent  0.0%
+ 46 cost   6.1%  silent  0.0%
+ 47 cost   2.6%  silent  0.0%
+ 48 cost   2.6%  silent  0.0%
+ 49 cost   2.7%  silent  0.0%
+ 50 cost   2.6%  silent  0.0%
+ 51 cost   0.5%  silent  0.0%
+ 52 cost   1.9%  silent  0.0%
+ 53 cost   1.0%  silent  0.0%
+ 54 cost   2.0%  silent  0.0%
+ 55 cost   0.3%  silent  0.0%
+ 56 cost   0.5%  silent  0.0%
+ 57 cost   0.4%  silent  0.0%
+ 58 cost   0.4%  silent  0.0%
+ 59 cost   0.4%  silent  0.0%
+ 60 cost   1.0%  silent  0.0%
+ 61 cost   1.0%  silent  0.0%
+ 62 cost   1.1%  silent  0.0%
+ 63 cost   0.7%  silent  0.0%
+ 64 cost   0.3%  silent  0.0%
+ 65 cost   1.0%  silent  0.0%
+ 66 cost   0.8%  silent  0.0%
+ 67 cost   0.7%  silent  0.0%
+ 68 cost   0.7%  silent  0.0%
+ 69 cost   0.3%  silent  0.0%
+ 70 cost   0.4%  silent  0.0%
+ 71 cost   0.4%  silent  0.0%
+ 72 cost   0.2%  silent  0.0%
+ 73 cost   1.0%  silent  0.0%
+ 74 cost   0.7%  silent  0.0%
+ 75 cost   0.5%  silent  0.0%
+ 76 cost   0.6%  silent  0.0%
+ 77 cost   0.3%  silent  0.0%
+ 78 cost   0.5%  silent  0.0%
+ 79 cost   0.4%  silent  0.0%
+ 80 cost   0.6%  silent  0.0%
+ 81 cost   0.7%  silent  0.0%
+ 82 cost   0.8%  silent  0.0%
+ 83 cost   1.8%  silent  0.0%
+ 84 cost   1.0%  silent  0.0%
+ 85 cost   0.3%  silent  0.0%
+ 86 cost   0.5%  silent  0.0%
+ 87 cost   0.4%  silent  0.0%
+ 88 cost   9.7%  silent  0.0%
+ 89 cost   8.1%  silent  0.0%
+ 90 cost   0.6%  silent  0.0%
+ 91 cost  10.4%  silent  0.0%
+ 92 cost   5.9%  silent  0.0%
+ 93 cost  10.3%  silent  0.0%
+ 94 cost   4.8%  silent  0.0%
+ 95 cost   9.1%  silent  0.0%
+ 96 cost   7.1%  silent  0.0%
+ 97 cost   1.2%  silent  0.0%
+ 98 cost   2.7%  silent  0.0%
+ 99 cost   7.7%  silent  0.0%
+100 cost   7.2%  silent  0.0%
+101 cost   7.3%  silent  0.0%
+102 cost   3.3%  silent  0.0%
+103 cost   6.4%  silent  0.0%
+104 cost   1.0%  silent  0.0%
+105 cost   1.6%  silent  0.0%
+106 cost   0.9%  silent  0.0%
+107 cost   0.3%  silent  0.0%
+108 cost   1.8%  silent  0.0%
+109 cost   1.1%  silent  0.0%
+110 cost   0.6%  silent  0.0%
+111 cost   0.8%  silent  0.0%
+112 cost   3.9%  silent  0.0%
+113 cost   1.0%  silent  0.0%
+114 cost   0.7%  silent  0.0%
+115 cost   0.3%  silent  0.0%
+116 cost   2.5%  silent  0.0%
+117 cost   0.5%  silent  0.0%
+118 cost   0.2%  silent  0.0%
+119 cost   0.3%  silent  0.0%
+120 cost   0.1%  silent  0.0%
+121 cost   0.3%  silent 47.8%
+122 cost   4.0%  silent  0.0%
+123 cost   0.8%  silent  0.0%
+124 cost   0.4%  silent  0.0%
+125 cost   2.1%  silent  0.5%
+126 cost   7.1%  silent  0.0%
+127 cost   0.2%  silent  0.0%
+128 cost   1.1%  silent  0.0%
