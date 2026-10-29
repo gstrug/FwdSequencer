@@ -21,11 +21,16 @@ jobs:
           f=$(find /tmp/fluid -name 'FluidR3_GM.sf2' | head -1)
           echo "FluidR3_GM.sf2 bytes: $(stat -f%z "$f")" >> /tmp/out.txt
           python3 diag/fix_loops.py "$f" /tmp/fluid_fixed.sf2 --no-start-offsets >> /tmp/out.txt 2>&1; python3 -c "import struct,sys; d=open(sys.argv[1],'rb').read(); print('pdta at', d.find(b'pdta'), 'of', len(d)); o=d.find(b'pdta')+4; [print(d[o:o+4], struct.unpack('<I',d[o+4:o+8])[0]) for _ in range(1)]" "$f" >> /tmp/out.txt 2>&1
-          for n in 101 0 48 128; do
-            echo "-- $n: as shipped / patched" >> /tmp/out.txt
-            /tmp/voices "$f" sweep $n 2>&1 | grep -v "^state" >> /tmp/out.txt || echo "$n CRASH" >> /tmp/out.txt
-            /tmp/voices /tmp/fluid_fixed.sf2 sweep $n 2>&1 | grep -v "^state" >> /tmp/out.txt || echo "$n CRASH" >> /tmp/out.txt
+          for n in $(seq 0 128); do
+            /tmp/voices /tmp/fluid_fixed.sf2 sweep $n > /tmp/r.txt 2>&1 || echo "$n CRASH" > /tmp/r.txt
+            grep -v "^state" /tmp/r.txt >> /tmp/all.txt
           done
+          echo "PATCHED FluidR3 - crashes: $(grep -c CRASH /tmp/all.txt) $(grep CRASH /tmp/all.txt | tr '\n' ' ')" >> /tmp/out.txt
+          echo "pianos: $(grep -E '^ *[0-3] cost' /tmp/all.txt | tr -s ' ' | tr '\n' ';')" >> /tmp/out.txt
+          echo "silent while held: $(awk '/cost/ && $5+0 > 0 {print $1"("$5")"}' /tmp/all.txt | tr '\n' ' ')" >> /tmp/out.txt
+          echo "costliest 5: $(grep cost /tmp/all.txt | sort -k3 -n -r | head -5 | tr -s ' ' | tr '\n' ';')" >> /tmp/out.txt
+          echo "sum of all 129: $(awk '/cost/ {gsub("%","",$3); t+=$3} END {print t"%"}' /tmp/all.txt)" >> /tmp/out.txt
+          shasum -a 256 /tmp/fluid_fixed.sf2 "$f" >> /tmp/out.txt
           out=$(cat /tmp/out.txt)
           out="${out//'%'/'%25'}"
           out="${out//$'\n'/'%0A'}"
