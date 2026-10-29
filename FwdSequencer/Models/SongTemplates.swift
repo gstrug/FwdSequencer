@@ -65,11 +65,10 @@ enum SongTemplate: String, CaseIterable, Identifiable {
         // A single Fwd step: the plainest possible starting point, which walks the pool
         // in order. It used to come with Fwd, Fwd, Back already set, which is a pattern
         // someone has to clear out before starting their own.
-        // No notes: a clean slate (Graham, 2026-10-29), rather than a note to clear out
-        // first. The Fwd step stays, so the track sequences as soon as a note is added;
-        // without steps it would be an instrument only.
-        let part = Part(trackID: track.id, notePool: [],
-                        steps: [Step(type: .fwd)])
+        // Truly blank, like a new track (Graham, 2026-10-29): no notes and no steps, so
+        // it is an instrument for a MIDI keyboard until a step is added — which suits
+        // using the app purely as an AUv3 host. The step display says so.
+        let part = Part(trackID: track.id)
         return Song(name: "New FWD Song", tracks: [track],
                     sections: [SongSection(name: "Section 1", numberOfBars: 4, parts: [part])],
                     randomSeed: 0x46574401)
