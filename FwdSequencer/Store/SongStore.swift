@@ -1267,7 +1267,20 @@ class SongStore: ObservableObject {
         var trackFor: [Int: UUID] = [:]
         for part in chosen {
             switch targets[part.id] {
-            case .track(let id)?: trackFor[part.id] = id
+            case .track(let id)?:
+                trackFor[part.id] = id
+                // An empty track taken by the import (a blank song's first track) is
+                // set up as a new one would be: the part's name and instrument.
+                if let index = song.tracks.firstIndex(where: { $0.id == id }),
+                   song.tracks[index].pluginInfo == nil,
+                   song.sections.allSatisfy({ section in
+                       section.parts.first { $0.trackID == id }.map { $0.notePool.isEmpty && $0.steps.isEmpty } ?? true
+                   }) {
+                    song.tracks[index].name = String(part.name.prefix(SongValidator.maximumNameLength))
+                    if useFileInstruments, let sound = GeneralMIDI.sound(for: part) {
+                        setBuiltInSound(sound, forTrack: id)
+                    }
+                }
             case .newTrack?:
                 addTrack()
                 if let index = song.tracks.indices.last {

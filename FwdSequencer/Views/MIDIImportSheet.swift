@@ -169,14 +169,20 @@ private struct MIDIImportSheet: View {
         Binding(get: { targets[part.id] ?? .skip }, set: { targets[part.id] = $0 })
     }
 
-    /// Every part but drums to a new track, named after it; the step size that suits
-    /// the file's rhythm.
+    /// Every part but drums to a track: first to the song's empty tracks, so a blank
+    /// song's first track is used rather than left over, then to new ones named after
+    /// the part. And the step size that suits the file's rhythm.
     private func setUp() {
         guard targets.isEmpty else { return }
+        var empty = emptyTracks
         let room = SongStore.maximumEditableTrackCount - songStore.song.tracks.count
         var used = 0
         for part in parts {
-            if !part.isDrums && used < room {
+            if part.isDrums {
+                targets[part.id] = .skip
+            } else if !empty.isEmpty {
+                targets[part.id] = .track(empty.removeFirst())
+            } else if used < room {
                 targets[part.id] = .newTrack
                 used += 1
             } else {
@@ -185,6 +191,15 @@ private struct MIDIImportSheet: View {
         }
         division = MIDIImportConverter.suggestedDivision(for: parts.flatMap(\.notes),
                                                          ticksPerQuarter: request.file.ticksPerQuarter)
+    }
+
+    /// Tracks with nothing in them yet: no plugin, and no notes or steps in any section.
+    private var emptyTracks: [UUID] {
+        songStore.song.tracks.filter { track in
+            track.pluginInfo == nil && songStore.song.sections.allSatisfy { section in
+                section.parts.first { $0.trackID == track.id }.map { $0.notePool.isEmpty && $0.steps.isEmpty } ?? true
+            }
+        }.map(\.id)
     }
 
     private func partDetail(_ part: ImportedPart) -> String {
