@@ -1462,13 +1462,15 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
-    /// The General MIDI sound bank: GeneralUser GS by S. Christian Collins, bundled with
-    /// the app (Resources/GeneralUser-GS.sf2; licence beside it allows use in software,
-    /// commercial included). iPadOS has no General MIDI set of its own — Apple's
-    /// gs_instruments.dls is only on the Mac — so without this every track played the
-    /// sampler's one plain tone. The Mac's set remains a fallback.
+    /// The General MIDI sound bank, FWD-GM.sf2: each of the 128 programs and the drum
+    /// kit taken from GeneralUser GS (S. Christian Collins) or FluidR3_GM (Frank Wen,
+    /// MIT), as Graham picked them for sound and processor cost, and patched so Apple's
+    /// sampler can play every one (SoundBank/README.md; licences in Resources).
+    /// iPadOS has no General MIDI set of its own — Apple's gs_instruments.dls is only
+    /// on the Mac — so without this every track played the sampler's one plain tone.
+    /// The Mac's set remains a fallback.
     private static let gmBankURL: URL? = {
-        if let url = Bundle.main.url(forResource: "GeneralUser-GS", withExtension: "sf2") { return url }
+        if let url = Bundle.main.url(forResource: "FWD-GM", withExtension: "sf2") { return url }
         if let bundle = Bundle(identifier: "com.apple.audio.CoreAudio") {
             return bundle.url(forResource: "gs_instruments", withExtension: "dls")
         }

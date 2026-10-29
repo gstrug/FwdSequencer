@@ -176,20 +176,20 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   `BuiltInSoundSheet` (128 + drum kit) for GM, the plugin window otherwise (tracks and
   the Play keyboard). The track-menu Built-in Sound item was removed. Apple's MIDI Synth / Sampler / DLS Synth are
   hidden from the instrument list (silent without a host-loaded bank; they'd duplicate
-  this). The bank is **GeneralUser GS v2.0.3** (S. Christian Collins),
-  bundled as `Resources/GeneralUser-GS.sf2` (32 MB) with its licence beside it (free
-  for software, commercial included; no attribution required, credit is courteous).
+  this). **The bank is `FWD-GM.sf2` (2026-10-29)**: each GM program and the drum kit
+  picked by Graham (by ear and cost, on the "FWD Sound Bank Picker" artifact) from
+  GeneralUser GS v2.0.3 or FluidR3_GM (MIT): 79 FluidR3, 50 GeneralUser, 106.2 MB.
   iPadOS has no GM set of its own (Apple's gs_instruments.dls is Mac-only, the
-  fallback). Source: github.com/mrbumpy409/GeneralUser-GS.
-  **The bundled file is patched** by `Tools/prepare_soundfont.py` (sha256 15bb8f57…):
-  unpatched, Apple's sampler CRASHES on many instruments (pianos, strings), which on
-  the iPad silenced whole tracks for stretches. Fixes: loop end ≥ 8 points before the
-  sample end (181 samples), sample start offsets cleared (595). Verified 2026-10-27 by
-  rendering all 128 programs + drum kit offline on a GitHub macOS runner
-  (`Tools/SamplerVoiceTest.swift`; runner logs are blocked by the proxy, so results
-  were read back as a `::notice::` annotation). Acoustic pianos (0–3) are expensive:
-  ~25–30% of a core per busy track; filters aren't the cause and the sampler's 64-voice
-  limit can't be changed via fullState. Apple's DLS renders the same at <1%.
+  fallback). **Kept in six parts in `SoundBank/`** (GitHub refuses files >100 MB); the
+  Xcode build phase "Join sound bank" cats them into the bundle. Rebuild:
+  `Tools/prepare_soundfont.py` on each source (loop end ≥ 8 points from the sample end;
+  start offsets cleared; unpatched, Apple's sampler CRASHES on many instruments, which
+  silenced tracks), then `Tools/merge_banks.py` with `Tools/bank-picks.json`, then split
+  — see `SoundBank/README.md`. Why mixed: GeneralUser's acoustic pianos cost 20–30% of a
+  core per busy track (cause not found: not release, modulators, rates or layers);
+  FluidR3's ~2%. Verified on a GitHub macOS runner (`Tools/SamplerVoiceTest.swift`;
+  runner logs are blocked by the proxy, so results come back as `::notice::`
+  annotations): all 129 render, no crashes, heaviest ~10%. Licences in `Resources/`.
 - Sequencer core has no AVFoundation dependency, so `swift test` runs anywhere. CI
   (`.github/workflows/validate.yml`) runs `swift test` and a simulator build on every
   push/PR.

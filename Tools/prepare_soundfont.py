@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Make GeneralUser GS safe for Apple's sampler (AVAudioUnitSampler / AUSampler).
+"""Make a SoundFont safe for Apple's sampler (AVAudioUnitSampler / AUSampler).
+Used on both GeneralUser GS and FluidR3 before they are merged into FWD-GM.sf2
+(see SoundBank/README.md).
 
-The bundled FwdSequencer/Resources/GeneralUser-GS.sf2 is GeneralUser GS v2.0.3
+GeneralUser GS v2.0.3
 (github.com/mrbumpy409/GeneralUser-GS) passed through this script. Unchanged, some of
 its instruments crash Apple's sampler while it plays (found 2026-10-27 by rendering
 every instrument offline on a Mac): on the iPad that silenced tracks for stretches.
@@ -31,8 +33,20 @@ def chunk(data, start, tag):
         off += 8 + size + (size & 1)
 
 
+def find_list(data, kind):
+    # Walk the RIFF chunks: the bytes 'pdta' can also occur inside the sample data
+    # (they do in FluidR3), so a plain search can land in the wrong place.
+    off = 12
+    while off + 12 <= len(data):
+        cid = bytes(data[off:off + 4]); size = struct.unpack('<I', data[off + 4:off + 8])[0]
+        if cid == b'LIST' and bytes(data[off + 8:off + 12]) == kind:
+            return off + 12
+        off += 8 + size + (size & 1)
+    raise SystemExit('no LIST ' + kind.decode())
+
+
 data = bytearray(open(sys.argv[1], 'rb').read())
-pdta = data.find(b'pdta') + 4
+pdta = find_list(data, b'pdta')
 
 off, size = chunk(data, pdta, b'shdr')
 moved = 0

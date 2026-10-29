@@ -68,6 +68,7 @@
 				0CA798692FF4299F00DF8538 /* Sources */,
 				0CA7986A2FF4299F00DF8538 /* Frameworks */,
 				0CA7986B2FF4299F00DF8538 /* Resources */,
+				0CF1B0012FF6000000AB0001 /* Join sound bank */,
 			);
 			buildRules = (
 			);
@@ -128,6 +129,35 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		0CF1B0012FF6000000AB0001 /* Join sound bank */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 0;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/SoundBank/FWD-GM.sf2.part-a",
+				"$(SRCROOT)/SoundBank/FWD-GM.sf2.part-b",
+				"$(SRCROOT)/SoundBank/FWD-GM.sf2.part-c",
+				"$(SRCROOT)/SoundBank/FWD-GM.sf2.part-d",
+				"$(SRCROOT)/SoundBank/FWD-GM.sf2.part-e",
+				"$(SRCROOT)/SoundBank/FWD-GM.sf2.part-f",
+			);
+			name = "Join sound bank";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/FWD-GM.sf2",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# The General MIDI bank is kept in parts because GitHub refuses files over 100 MB.\n# Joined here into the app bundle. See SoundBank/README.md.\nset -e\ncat \"$SCRIPT_INPUT_FILE_0\" \"$SCRIPT_INPUT_FILE_1\" \"$SCRIPT_INPUT_FILE_2\" \"$SCRIPT_INPUT_FILE_3\" \"$SCRIPT_INPUT_FILE_4\" \"$SCRIPT_INPUT_FILE_5\" > \"$SCRIPT_OUTPUT_FILE_0\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		0CA798692FF4299F00DF8538 /* Sources */ = {
