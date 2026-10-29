@@ -4,7 +4,16 @@
 # moved back by the shortfall, keeping the loop's length. Usage: fix_loops.py in out
 import struct, sys
 data = bytearray(open(sys.argv[1], 'rb').read())
-pd = data.find(b'pdta') + 4
+def find_list(data, kind):
+    # Walk the RIFF chunks: the bytes 'pdta' can also occur inside the sample data.
+    off = 12
+    while off + 12 <= len(data):
+        cid = bytes(data[off:off+4]); size = struct.unpack('<I', data[off+4:off+8])[0]
+        if cid == b'LIST' and bytes(data[off+8:off+12]) == kind:
+            return off + 12
+        off += 8 + size + (size & 1)
+    raise SystemExit('no LIST ' + kind.decode())
+pd = find_list(data, b'pdta')
 off = pd
 while True:
     cid = bytes(data[off:off+4]); size = struct.unpack('<I', data[off+4:off+8])[0]
