@@ -1227,12 +1227,19 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         // rather than forcing stereo, which has silenced plugins here before. An effect
         // that will not take what it is offered gets a converter (connectEffectLocked).
         var upstream: AVAudioNode = source
+        // The format the node before has been set to send, when it is not negotiated:
+        // an effect wired mono-in/stereo-out must be read from in that format.
+        var upstreamFormat: AVAudioFormat?
         for unit in chain where !bypassedUnits.contains(ObjectIdentifier(unit)) {
-            if connectEffectLocked(unit, after: upstream, trackID: trackID) { upstream = unit }
+            if let output = connectEffectLocked(unit, after: upstream, upstreamFormat: upstreamFormat,
+                                                trackID: trackID) {
+                upstream = unit
+                upstreamFormat = output.format
+            }
         }
         // A bypassed unit is left attached but unconnected, so it keeps its state and its
         // open editor and costs nothing to bring back.
-        if let error = FWDExceptionCatcher.catching({ engine.connect(upstream, to: mixer, format: nil) }) {
+        if let error = FWDExceptionCatcher.catching({ engine.connect(upstream, to: mixer, format: upstreamFormat) }) {
             NSLog("[FWD] Track output could not be connected: %@", error.localizedDescription)
             // Fall back to the instrument alone rather than leaving the track silent.
             engine.disconnectNodeOutput(upstream)
@@ -1244,58 +1251,99 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         refreshLatencyLocked(for: trackID)
     }
 
-    /// Connect one effect after `upstream`, and say whether it is now in the chain.
+    /// What an effect was connected with: the format to read its output in, or nil
+    /// to let the engine negotiate it.
+    private struct EffectOutput { let format: AVAudioFormat? }
+
+    /// The input and output channel counts an effect says it supports, as pairs, from
+    /// its channel capabilities. Empty when it does not say, which means "anything".
+    /// A negative count is a wildcard (-1: any, matching the other side).
+    private func channelPairs(of unit: AVAudioUnit) -> [(Int, Int)] {
+        let caps = unit.auAudioUnit.channelCapabilities?.map(\.intValue) ?? []
+        return stride(from: 0, to: caps.count - 1, by: 2).map { (caps[$0], caps[$0 + 1]) }
+    }
+
+    private func supports(_ pairs: [(Int, Int)], input: Int, output: Int) -> Bool {
+        guard !pairs.isEmpty else { return true }
+        return pairs.contains { pair in
+            let (i, o) = pair
+            if i == -1 && o == -1 { return input == output }
+            let inOK = i < 0 ? input <= max(2, -i) : i == input
+            let outOK = o < 0 ? output <= max(2, -o) : o == output
+            return inOK && outOK
+        }
+    }
+
+    /// Connect one effect after `upstream`; nil when it could not be connected.
     ///
-    /// AVAudioEngine raises an exception, ending the app, when an effect will not take
-    /// the format offered: guitar effects that only accept mono (Nembrini's), or
-    /// Apple's Sound Isolation, which wants particular formats. So the connection is
-    /// tried under FWDExceptionCatcher; refused, the effect is fed through a mixer node
-    /// set to convert to mono, stereo, 48 or 44.1 kHz in turn, and if none is accepted
-    /// it is left out — reported once, never fatal.
-    private func connectEffectLocked(_ unit: AVAudioUnit, after upstream: AVAudioNode, trackID: UUID) -> Bool {
+    /// Effects differ in the channels they take. Guitar effects (Nembrini's) are often
+    /// one channel in, two out: given stereo they either refuse — AVAudioEngine then
+    /// raises an exception that ends the app — or accept and render silence. So the
+    /// effect's own channel capabilities choose the wiring: stereo straight through
+    /// when it supports that, otherwise through a mixer node converting to what it
+    /// takes (mono in, stereo out first), at the track's rate, then 48 or 44.1 kHz.
+    /// Every attempt is made under FWDExceptionCatcher; an effect that takes none is
+    /// left out — reported once, never fatal.
+    private func connectEffectLocked(_ unit: AVAudioUnit, after upstream: AVAudioNode,
+                                     upstreamFormat: AVAudioFormat?, trackID: UUID) -> EffectOutput? {
         let id = ObjectIdentifier(unit)
+        let name = unit.auAudioUnit.audioUnitName ?? unit.name
         guard unit.numberOfInputs > 0 else { return refuseLocked(unit) }
-        if FWDExceptionCatcher.catching({ engine.connect(upstream, to: unit, format: nil) }) == nil {
+        let pairs = channelPairs(of: unit)
+        NSLog("[FWD] %@ channel capabilities: %@", name,
+              pairs.isEmpty ? "not stated" : pairs.map { "\($0.0)→\($0.1)" }.joined(separator: ", "))
+
+        if supports(pairs, input: 2, output: 2),
+           FWDExceptionCatcher.catching({ engine.connect(upstream, to: unit, format: upstreamFormat) }) == nil {
             refusedUnits.remove(id)
-            return true
+            return EffectOutput(format: nil)
         }
         engine.disconnectNodeOutput(upstream)
 
-        let offered = upstream.outputFormat(forBus: 0)
+        let offered = upstreamFormat ?? upstream.outputFormat(forBus: 0)
         let rate = offered.sampleRate > 0 ? offered.sampleRate : engine.outputNode.outputFormat(forBus: 0).sampleRate
+        let layouts = [(1, 2), (1, 1), (2, 1), (2, 2)].filter { supports(pairs, input: $0.0, output: $0.1) }
         var tried = Set<String>()
-        for (sampleRate, channels) in [(rate, 1), (rate, 2), (48_000, 2), (48_000, 1), (44_100, 2), (44_100, 1)] as [(Double, AVAudioChannelCount)] {
-            guard sampleRate > 0, tried.insert("\(sampleRate)-\(channels)").inserted,
-                  let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channels)
-            else { continue }
-            let adapter = AVAudioMixerNode()
-            engine.attach(adapter)
-            let failed = FWDExceptionCatcher.catching {
-                engine.connect(upstream, to: adapter, format: nil)
-                engine.connect(adapter, to: unit, format: format)
+        for sampleRate in [rate, 48_000, 44_100] where sampleRate > 0 {
+            for (input, output) in layouts {
+                guard tried.insert("\(sampleRate)-\(input)-\(output)").inserted,
+                      let inFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate,
+                                                   channels: AVAudioChannelCount(input)),
+                      let outFormat = AVAudioFormat(standardFormatWithSampleRate: sampleRate,
+                                                    channels: AVAudioChannelCount(output))
+                else { continue }
+                let adapter = AVAudioMixerNode()
+                engine.attach(adapter)
+                let failed = FWDExceptionCatcher.catching {
+                    engine.connect(upstream, to: adapter, format: upstreamFormat)
+                    engine.connect(adapter, to: unit, format: inFormat)
+                    // The output must be set too, or the effect keeps its default
+                    // (stereo) output and renders silence in a layout it can't do.
+                    unit.auAudioUnit.outputBusses[0].isEnabled = true
+                    try? unit.auAudioUnit.outputBusses[0].setFormat(outFormat)
+                }
+                if failed == nil {
+                    effectAdapters[trackID, default: []].append(adapter)
+                    refusedUnits.remove(id)
+                    NSLog("[FWD] %@ connected %d in, %d out at %.0f Hz", name, input, output, sampleRate)
+                    return EffectOutput(format: outFormat)
+                }
+                engine.disconnectNodeOutput(upstream)
+                engine.disconnectNodeOutput(adapter)
+                engine.detach(adapter)
             }
-            if failed == nil {
-                effectAdapters[trackID, default: []].append(adapter)
-                refusedUnits.remove(id)
-                NSLog("[FWD] %@ connected through a converter: %.0f Hz, %u channel(s)",
-                      unit.auAudioUnit.audioUnitName ?? unit.name, sampleRate, channels)
-                return true
-            }
-            engine.disconnectNodeOutput(upstream)
-            engine.disconnectNodeOutput(adapter)
-            engine.detach(adapter)
         }
         return refuseLocked(unit)
     }
 
     /// Leave an effect out of the chain, telling the screen the first time.
-    private func refuseLocked(_ unit: AVAudioUnit) -> Bool {
+    private func refuseLocked(_ unit: AVAudioUnit) -> EffectOutput? {
         if refusedUnits.insert(ObjectIdentifier(unit)).inserted {
             let name = unit.auAudioUnit.audioUnitName ?? unit.name
             NSLog("[FWD] Effect %@ would not connect in any format; left out", name)
             DispatchQueue.main.async { [weak self] in self?.onEffectRefused?(name) }
         }
-        return false
+        return nil
     }
 
     private func swapInstrument(_ newUnit: AVAudioUnit, for trackID: UUID, mixer: AVAudioMixerNode) {
