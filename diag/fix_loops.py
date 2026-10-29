@@ -50,5 +50,37 @@ if '--no-filters' in sys.argv:
             op = struct.unpack('<H', data[rec:rec+2])[0]
             if op == 8: struct.pack_into('<h', data, rec + 2, 13500)   # fully open
             elif op in (9, 11): struct.pack_into('<h', data, rec + 2, 0)
+# Cap the release of the acoustic pianos (bank 0, programs 0-3) at CAP timecents in
+# their instrument zones: GeneralUser GS rings them up to ~8 s after key-up.
+cap_arg = [a for a in sys.argv if a.startswith('--piano-release=')]
+if cap_arg:
+    CAP = int(cap_arg[0].split('=')[1])
+    def ch(tag):
+        o = pd
+        while True:
+            cid = bytes(data[o:o+4]); sz = struct.unpack('<I', data[o+4:o+8])[0]
+            if cid == tag: return o + 8, sz
+            o += 8 + sz
+    po, ps = ch(b'phdr'); bo, bs = ch(b'pbag'); go, gs = ch(b'pgen'); io, is_ = ch(b'inst'); ibo, ibs = ch(b'ibag'); igo, igs = ch(b'igen')
+    P = [struct.unpack('<20sHHH', data[po+i:po+i+26]) for i in range(0, ps, 38)]
+    PB = [struct.unpack('<HH', data[bo+i:bo+i+4]) for i in range(0, bs, 4)]
+    PG = [struct.unpack('<Hh', data[go+i:go+i+4]) for i in range(0, gs, 4)]
+    I = [struct.unpack('<20sH', data[io+i:io+i+22]) for i in range(0, is_, 22)]
+    IB = [struct.unpack('<HH', data[ibo+i:ibo+i+4]) for i in range(0, ibs, 4)]
+    insts = set()
+    for k in range(len(P) - 1):
+        if P[k][2] == 0 and P[k][1] in (0, 1, 2, 3):
+            for b in range(P[k][3], P[k+1][3]):
+                for g in range(PB[b][0], PB[b+1][0]):
+                    if PG[g][0] == 41: insts.add(PG[g][1])
+    capped = 0
+    for ii in insts:
+        for zb in range(I[ii][1], I[ii+1][1]):
+            for g in range(IB[zb][0], IB[zb+1][0]):
+                rec = igo + g * 4
+                op, amt = struct.unpack('<Hh', data[rec:rec+4])
+                if op == 38 and amt > CAP:
+                    struct.pack_into('<h', data, rec + 2, CAP); capped += 1
+    print('piano instruments', len(insts), 'release capped on', capped, 'zones at', CAP)
 open(sys.argv[2], 'wb').write(data)
 print(f'samples {total}, loop points moved on {fixed}')
