@@ -13,6 +13,8 @@ struct PlayDockView: View {
     var onClose: () -> Void
 
     @State private var showPluginEditor = false
+
+    @State private var showBuiltInSounds = false
     @State private var showPluginPicker = false
     @State private var activeNotes = Set<UInt8>()
 
@@ -52,13 +54,13 @@ struct PlayDockView: View {
         .onDisappear { releaseAll() }
         .sheet(isPresented: $showPluginPicker) {
             PluginPickerView(selectedPlugin: pluginBinding,
-                             builtInSound: songStore.song.performance?.builtInSound,
-                             onChooseBuiltInSound: { sound in
-                if let id = songStore.song.performance?.id {
-                    songStore.setBuiltInSound(sound, forTrack: id)
-                }
-                pluginBinding.wrappedValue = nil
-            })
+                             builtInSound: songStore.song.performance?.builtInSound)
+        }
+        .sheet(isPresented: $showBuiltInSounds) {
+            BuiltInSoundSheet(title: "Play Keyboard: GM Sound",
+                              current: songStore.song.performance?.builtInSound ?? 0) { sound in
+                if let id = songStore.song.performance?.id { songStore.setBuiltInSound(sound, forTrack: id) }
+            }
         }
         .fullScreenCover(isPresented: $showPluginEditor) {
             if let p = perf {
@@ -101,18 +103,21 @@ struct PlayDockView: View {
 
     private var instrumentButton: some View {
         Button { showPluginPicker = true } label: {
-            Label(perf?.pluginInfo?.name ?? "Built-in GM Sound", systemImage: "pianokeys")
+            Label(perf?.pluginInfo?.name ?? "GM: \(GeneralMIDI.soundName(perf?.builtInSound))", systemImage: "pianokeys")
                 .font(.subheadline.bold()).lineLimit(1)
         }
         .buttonStyle(.bordered)
-        .tint(perf?.pluginInfo == nil ? nil : .accentColor)
+        .tint(.accentColor)
         .helpTag(.playInstrument)
     }
 
     @ViewBuilder
     private var editSoundButton: some View {
-        if perf?.pluginInfo != nil {
-            Button { showPluginEditor = true } label: {
+        if perf != nil {
+            // A plugin's own window, or for the built-in GM sound its list of sounds.
+            Button {
+                if perf?.pluginInfo != nil { showPluginEditor = true } else { showBuiltInSounds = true }
+            } label: {
                 Label("Edit Instrument", systemImage: "slider.horizontal.3").font(.caption)
             }
             .buttonStyle(.bordered).tint(.purple)

@@ -2,10 +2,9 @@ import SwiftUI
 
 struct PluginPickerView: View {
     @Binding var selectedPlugin: PluginInfo?
-    /// The General MIDI sound the built-in sampler plays, and what to do when one is
-    /// chosen. When given, the Included row opens the list of sounds.
+    /// The General MIDI sound the built-in sampler plays, shown beside its row. The
+    /// sound itself is chosen with Edit Instrument, as a plugin's is.
     var builtInSound: Int? = nil
-    var onChooseBuiltInSound: ((Int) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var manager = PluginManager.shared
     @State private var searchText = ""
@@ -50,37 +49,21 @@ struct PluginPickerView: View {
     private var content: some View {
         List {
             Section("Included") {
-                if let onChooseBuiltInSound {
-                    NavigationLink {
-                        BuiltInSoundList(current: selectedPlugin == nil ? (builtInSound ?? 0) : nil) { sound in
-                            onChooseBuiltInSound(sound)
-                            dismiss()
-                        }
-                    } label: {
-                        HStack {
+                Button {
+                    selectedPlugin = nil
+                    dismiss()
+                } label: {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
                             Label("Built-in GM Sound", systemImage: "pianokeys")
                                 .foregroundStyle(.primary)
-                            Spacer()
-                            Text(GeneralMIDI.soundName(builtInSound))
+                            Text("128 General MIDI instruments and a drum kit. Choose one with Edit Instrument.")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
-                            if selectedPlugin == nil {
-                                Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
-                            }
                         }
-                    }
-                } else {
-                    Button {
-                        selectedPlugin = nil
-                        dismiss()
-                    } label: {
-                        HStack {
-                            Label("Built-in GM Sound", systemImage: "pianokeys")
-                                .foregroundStyle(.primary)
-                            Spacer()
-                            if selectedPlugin == nil {
-                                Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
-                            }
+                        Spacer()
+                        if selectedPlugin == nil {
+                            Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
                         }
                     }
                 }
@@ -157,10 +140,30 @@ struct PluginPickerView: View {
     }
 }
 
-/// The 128 General MIDI instruments by family, and the drum kit, from the bundled
-/// sound bank. Choosing one makes the track play it (switching off a plugin).
+/// Edit Instrument for the built-in GM sound: the 128 General MIDI instruments by
+/// family, and the drum kit, from the bundled sound bank — where a plugin would open
+/// its own window. A tap plays the chosen sound at once; Done closes.
+struct BuiltInSoundSheet: View {
+    let title: String
+    let current: Int?
+    let choose: (Int) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            BuiltInSoundList(current: current, choose: choose)
+                .navigationTitle(title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } }
+                }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
 private struct BuiltInSoundList: View {
-    /// The sound playing now, or nil when the track has a plugin.
+    /// The sound playing now.
     let current: Int?
     let choose: (Int) -> Void
 
@@ -175,8 +178,6 @@ private struct BuiltInSoundList: View {
                 }
             }
         }
-        .navigationTitle("Built-in GM Sound")
-        .navigationBarTitleDisplayMode(.inline)
     }
 
     private func row(_ sound: Int) -> some View {

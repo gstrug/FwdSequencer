@@ -376,9 +376,9 @@ enum HelpTopic: String {
         case .trackMenu:
             return "Track Menu Help: Scroll through this screen to get help on the Track menu items."
         case .trackInstrument:
-            return "The sound played by this track. Tap to choose an AUv3 plugin."
+            return "The sound played by this track: the built-in GM sound (and which one) or an AUv3 plugin. Tap to choose."
         case .trackEditInstrument:
-            return "Opens the plugin's controls, to change its sound."
+            return "Opens the instrument's controls to change its sound: a plugin's own window, or for the built-in GM sound, the list of 128 instruments and the drum kit."
         case .trackVolume:
             return "Track volume. Drag to adjust. Move your finger away from the slider for finer steps. Double tap to reset to 0 dB."
         case .trackPan:
@@ -428,9 +428,9 @@ enum HelpTopic: String {
 
         // Play keyboard
         case .playInstrument:
-            return "Independently play a virtual keyboard over the sequenced tracks. Tap to choose a plugin."
+            return "Independently play a virtual keyboard over the sequenced tracks. Shows its instrument: the built-in GM sound or a plugin. Tap to choose."
         case .playEditInstrument:
-            return "Tap to open the plugin's controls to edit the sound played by the virtual keyboard."
+            return "Tap to edit the sound played by the virtual keyboard: a plugin's own controls, or the list of built-in GM sounds."
         case .playVolume:
             return "Volume of the virtual keyboard. Double tap to reset to 0 dB."
         case .playMute:

@@ -170,9 +170,11 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
 - **Built-in sound** (2026-10-27): `SongTrack.builtInSound` (nil = program 0, 0–127, or
   `GeneralMIDI.drumKit` = 128, the percussion bank 0x78). `AudioEngineManager` keeps
   `builtInSounds[trackID]` so any sampler made later (plugin removed / failed) starts on
-  it; `setBuiltInSound`. Track ⋯ menu ▸ Built-in Sound (families of 8), shown when the
-  track has no plugin; also Select Instrument ▸ Built-in GM Sound (tracks and the Play
-  keyboard), which switches a plugin off. Apple's MIDI Synth / Sampler / DLS Synth are
+  it; `setBuiltInSound`. **UI model (Graham, 2026-10-29): GM is an instrument like a
+  plugin.** Select Instrument lists "Built-in GM Sound" as a plain choice; the
+  instrument button reads "GM: <sound>" or the plugin's name; **Edit Instrument** opens
+  `BuiltInSoundSheet` (128 + drum kit) for GM, the plugin window otherwise (tracks and
+  the Play keyboard). The track-menu Built-in Sound item was removed. Apple's MIDI Synth / Sampler / DLS Synth are
   hidden from the instrument list (silent without a host-loaded bank; they'd duplicate
   this). The bank is **GeneralUser GS v2.0.3** (S. Christian Collins),
   bundled as `Resources/GeneralUser-GS.sf2` (32 MB) with its licence beside it (free

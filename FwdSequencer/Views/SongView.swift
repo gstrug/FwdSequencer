@@ -1422,6 +1422,7 @@ private struct SongTrackRowView: View {
     @State private var showEffects = false
     @State private var showPluginPicker = false
     @State private var showPluginEditor = false
+    @State private var showBuiltInSounds = false
     @State private var showSteps = false
     @State private var showNoteParams = false
     @State private var showScalePicker = false
@@ -1592,12 +1593,12 @@ private struct SongTrackRowView: View {
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .sheet(isPresented: $showPluginPicker) {
-            PluginPickerView(selectedPlugin: pluginBinding, builtInSound: track.builtInSound,
-                             onChooseBuiltInSound: { sound in
-                // The sound first, so the sampler that replaces a plugin starts on it.
+            PluginPickerView(selectedPlugin: pluginBinding, builtInSound: track.builtInSound)
+        }
+        .sheet(isPresented: $showBuiltInSounds) {
+            BuiltInSoundSheet(title: "\(track.name): GM Sound", current: track.builtInSound ?? 0) { sound in
                 songStore.setBuiltInSound(sound, forTrack: track.id)
-                songStore.setPlugin(nil, for: track.id)
-            })
+            }
         }
         .fullScreenCover(isPresented: $showPluginEditor) {
             PluginEditorView(trackID: track.id, trackName: track.name,
@@ -1712,40 +1713,6 @@ private struct SongTrackRowView: View {
             Label("Duplicate Track", systemImage: "plus.square.on.square")
         }
         .disabled(!help.isOn && trackCount >= SongStore.maximumEditableTrackCount)
-
-        // The built-in General MIDI sound, used while the track has no plugin.
-        if track.pluginInfo == nil || help.isOn {
-            builtInSoundMenu
-        }
-    }
-
-    /// Every General MIDI instrument, by family, plus the drum kit.
-    private var builtInSoundMenu: some View {
-        Menu {
-            ForEach(Array(GeneralMIDI.families.enumerated()), id: \.offset) { family, name in
-                Menu(name) {
-                    ForEach(family * 8 ..< family * 8 + 8, id: \.self) { program in
-                        soundButton(program)
-                    }
-                }
-            }
-            Divider()
-            soundButton(GeneralMIDI.drumKit)
-        } label: {
-            Label("Built-in Sound: \(GeneralMIDI.soundName(track.builtInSound))", systemImage: "pianokeys")
-        }
-    }
-
-    private func soundButton(_ sound: Int) -> some View {
-        Button {
-            help.perform(.trackBuiltInSound) { songStore.setBuiltInSound(sound, forTrack: track.id) }
-        } label: {
-            if (track.builtInSound ?? 0) == sound {
-                Label(GeneralMIDI.soundName(sound), systemImage: "checkmark")
-            } else {
-                Text(GeneralMIDI.soundName(sound))
-            }
-        }
     }
 
     /// The same actions plus expand and delete, for a collapsed row — which has no menu
@@ -1848,7 +1815,7 @@ private struct SongTrackRowView: View {
 
             Divider().frame(height: 16)
 
-            Text(track.pluginInfo?.name ?? "No plugin")
+            Text(track.pluginInfo?.name ?? "GM: \(GeneralMIDI.soundName(track.builtInSound))")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
 
             Divider().frame(height: 16)
@@ -1889,7 +1856,7 @@ private struct SongTrackRowView: View {
                 // A folded track's menu is a long press; in help mode its name opens
                 // the track menu's help screen.
                 .helpMenu(.track, instance: track.id.uuidString)
-                    Text(track.pluginInfo?.name ?? "Built-in Sound")
+                    Text(track.pluginInfo?.name ?? "GM: \(GeneralMIDI.soundName(track.builtInSound))")
                         .font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
                 Spacer(minLength: 4)
@@ -2057,13 +2024,14 @@ private struct SongTrackRowView: View {
                 .helpMenu(.track, instance: track.id.uuidString)
             }
 
+            // What is loaded: a plugin, or the built-in GM sound and which one.
             Button { showPluginPicker = true } label: {
-                Label(track.pluginInfo?.name ?? "Choose Plugin",
-                      systemImage: track.pluginInfo == nil ? "puzzlepiece.extension" : "puzzlepiece.extension.fill")
+                Label(track.pluginInfo?.name ?? "GM: \(GeneralMIDI.soundName(track.builtInSound))",
+                      systemImage: track.pluginInfo == nil ? "pianokeys" : "puzzlepiece.extension.fill")
                     .font(.caption).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
             }
             .buttonStyle(.bordered)
-            .tint(track.pluginInfo == nil ? nil : .accentColor)
+            .tint(.accentColor)
             .helpTag(.trackInstrument, instance: track.id.uuidString)
 
             if let status = songStore.pluginStatuses[track.id] {
@@ -2098,6 +2066,14 @@ private struct SongTrackRowView: View {
                 }
                 .buttonStyle(.bordered).tint(.purple)
                 .disabled(!isReady)
+                .helpTag(.trackEditInstrument, instance: track.id.uuidString)
+            } else {
+                // The built-in GM sound's "editor" is its list of sounds.
+                Button { showBuiltInSounds = true } label: {
+                    Label("Edit Instrument", systemImage: "slider.horizontal.3")
+                        .font(.caption).frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.bordered).tint(.purple)
                 .helpTag(.trackEditInstrument, instance: track.id.uuidString)
             }
 
