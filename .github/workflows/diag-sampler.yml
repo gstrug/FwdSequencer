@@ -2,36 +2,48 @@ name: Diagnostic - sampler voices
 on:
   push:
     branches: ['diag/**']
+permissions:
+  contents: write
 jobs:
-  voices:
+  compare:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Fetch GeneralUser GS
-        run: curl -sSL -o /tmp/gu.sf2 https://github.com/mrbumpy409/GeneralUser-GS/raw/main/GeneralUser-GS.sf2 && ls -la /tmp/gu.sf2
-      - name: Render
+      - name: Fetch banks
         run: |
-          swiftc -O diag/SamplerVoiceTest.swift -o /tmp/voices
-          set +e
+          curl -sSL -o /tmp/gu.sf2 https://github.com/mrbumpy409/GeneralUser-GS/raw/main/GeneralUser-GS.sf2
           mkdir -p /tmp/fluid && cd /tmp/fluid
           for v in 3.1-5.3 3.1-5.2 3.1-5.1; do
             curl -fsSLO "https://deb.debian.org/debian/pool/main/f/fluid-soundfont/fluid-soundfont-gm_${v}_all.deb" && break
           done
-          ar x fluid-soundfont-gm_*_all.deb && tar xf data.tar.* && cd -
-          f=$(find /tmp/fluid -name 'FluidR3_GM.sf2' | head -1)
-          echo "FluidR3_GM.sf2 bytes: $(stat -f%z "$f")" >> /tmp/out.txt
-          python3 diag/fix_loops.py "$f" /tmp/fluid_fixed.sf2 --no-start-offsets >> /tmp/out.txt 2>&1; python3 -c "import struct,sys; d=open(sys.argv[1],'rb').read(); print('pdta at', d.find(b'pdta'), 'of', len(d)); o=d.find(b'pdta')+4; [print(d[o:o+4], struct.unpack('<I',d[o+4:o+8])[0]) for _ in range(1)]" "$f" >> /tmp/out.txt 2>&1
+          ar x fluid-soundfont-gm_*_all.deb && tar xf data.tar.*
+          cd - && f=$(find /tmp/fluid -name 'FluidR3_GM.sf2' | head -1)
+          python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/GU.sf2 --no-start-offsets
+          python3 diag/fix_loops.py "$f" /tmp/FL.sf2 --no-start-offsets
+      - name: Measure and record
+        run: |
+          swiftc -O diag/SamplerVoiceTest.swift -o /tmp/voices
+          mkdir -p /tmp/out/audio/gu /tmp/out/audio/fluid
+          python3 diag/bank_facts.py /tmp/GU.sf2 > /tmp/out/gu.json
+          python3 diag/bank_facts.py /tmp/FL.sf2 > /tmp/out/fluid.json
+          : > /tmp/out/costs.txt
           for n in $(seq 0 128); do
-            /tmp/voices /tmp/fluid_fixed.sf2 sweep $n > /tmp/r.txt 2>&1 || echo "$n CRASH" > /tmp/r.txt
-            grep -v "^state" /tmp/r.txt >> /tmp/all.txt
+            for b in GU FL; do
+              c=$(/tmp/voices /tmp/$b.sf2 sweep $n 2>/dev/null | grep cost | awk '{print $3}') || c=CRASH
+              [ -z "$c" ] && c=CRASH
+              echo "$n $b $c" >> /tmp/out/costs.txt
+              dir=$([ $b = GU ] && echo gu || echo fluid)
+              if /tmp/voices /tmp/$b.sf2 record $n /tmp/r.caf 2>/dev/null; then
+                afconvert -f m4af -d aac -b 64000 /tmp/r.caf /tmp/out/audio/$dir/$(printf %03d $n).m4a
+              fi
+            done
           done
-          echo "PATCHED FluidR3 - crashes: $(grep -c CRASH /tmp/all.txt) $(grep CRASH /tmp/all.txt | tr '\n' ' ')" >> /tmp/out.txt
-          echo "pianos: $(grep -E '^ *[0-3] cost' /tmp/all.txt | tr -s ' ' | tr '\n' ';')" >> /tmp/out.txt
-          echo "silent while held: $(awk '/cost/ && $5+0 > 0 {print $1"("$5")"}' /tmp/all.txt | tr '\n' ' ')" >> /tmp/out.txt
-          echo "costliest 5: $(grep cost /tmp/all.txt | sort -k3 -n -r | head -5 | tr -s ' ' | tr '\n' ';')" >> /tmp/out.txt
-          echo "sum of all 129: $(awk '/cost/ {gsub("%","",$3); t+=$3} END {print t"%"}' /tmp/all.txt)" >> /tmp/out.txt
-          shasum -a 256 /tmp/fluid_fixed.sf2 "$f" >> /tmp/out.txt
-          out=$(cat /tmp/out.txt)
-          out="${out//'%'/'%25'}"
-          out="${out//$'\n'/'%0A'}"
-          echo "::notice title=Results::$out"
+          du -sh /tmp/out
+          echo "::notice title=Done::$(wc -l < /tmp/out/costs.txt) measurements, $(ls /tmp/out/audio/gu | wc -l) + $(ls /tmp/out/audio/fluid | wc -l) recordings, crashes $(grep -c CRASH /tmp/out/costs.txt)"
+      - name: Publish results to a branch
+        run: |
+          cd /tmp/out
+          git init -q && git checkout -q -b diag/bank-compare-results
+          git config user.name "diag" && git config user.email "diag@example.invalid"
+          git add -A && git commit -qm "Bank comparison results"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" diag/bank-compare-results

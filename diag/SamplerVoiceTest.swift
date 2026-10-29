@@ -110,6 +110,52 @@ if CommandLine.arguments.count > 3, CommandLine.arguments[2] == "sweep", let n =
                  r.heldSeconds > 0 ? silent / r.heldSeconds * 100 : 0))
     exit(0)
 }
+// "record N out.caf": a short phrase on program N (128 = drum kit) to an audio file.
+if CommandLine.arguments.count > 4, CommandLine.arguments[2] == "record", let n = Int(CommandLine.arguments[3]) {
+    let out = URL(fileURLWithPath: CommandLine.arguments[4])
+    let engine = AVAudioEngine()
+    let sampler = AVAudioUnitSampler()
+    engine.attach(sampler)
+    let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2)!
+    engine.connect(sampler, to: engine.mainMixerNode, format: format)
+    try engine.enableManualRenderingMode(.offline, format: format, maximumFrameCount: 512)
+    try engine.start()
+    try sampler.loadSoundBankInstrument(at: sf2, program: UInt8(n == 128 ? 0 : n),
+                                        bankMSB: n == 128 ? 0x78 : 0x79, bankLSB: 0)
+    var phrase: [Note] = []
+    if n == 128 {
+        let hits: [(Double, UInt8)] = [(0, 36), (0, 42), (0.25, 42), (0.5, 38), (0.5, 42), (0.75, 42),
+                                       (1.0, 36), (1.0, 42), (1.25, 36), (1.25, 42), (1.5, 38), (1.5, 42),
+                                       (1.75, 46), (2.0, 49), (2.0, 36)]
+        phrase = hits.map { Note(start: $0.0 * beat * 2, end: $0.0 * beat * 2 + 0.2, pitch: $0.1, velocity: 100) }
+    } else {
+        let base: UInt8 = (32...39).contains(n) ? 36 : 60     // basses an octave down
+        for (i, step) in [0, 4, 7, 12].enumerated() {
+            phrase.append(Note(start: Double(i) * 0.4, end: Double(i) * 0.4 + 0.35, pitch: base + UInt8(step), velocity: 96))
+        }
+        for step in [0, 4, 7] as [UInt8] {
+            phrase.append(Note(start: 1.7, end: 3.0, pitch: base + 12 + step, velocity: 96))
+        }
+    }
+    let file = try AVAudioFile(forWriting: out, settings: format.settings)
+    let buffer = AVAudioPCMBuffer(pcmFormat: engine.manualRenderingFormat, frameCapacity: 512)!
+    struct E { var t: Double; var on: Bool; var p: UInt8; var v: UInt8 }
+    var events = phrase.flatMap { [E(t: $0.start, on: true, p: $0.pitch, v: $0.velocity), E(t: $0.end, on: false, p: $0.pitch, v: 0)] }
+    events.sort { ($0.t, $0.on ? 1 : 0) < ($1.t, $1.on ? 1 : 0) }
+    var t = 0.0, next = 0
+    while t < 4.2 {
+        let end = t + 512 / sampleRate
+        while next < events.count && events[next].t < end {
+            let e = events[next]
+            if e.on { sampler.startNote(e.p, withVelocity: e.v, onChannel: 0) } else { sampler.stopNote(e.p, onChannel: 0) }
+            next += 1
+        }
+        _ = try engine.renderOffline(512, to: buffer)
+        try file.write(from: buffer)
+        t = end
+    }
+    exit(0)
+}
 let only = CommandLine.arguments.count > 2 ? Int(CommandLine.arguments[2]) : nil
 for (index, (name, program, notes)) in scenarios.enumerated() where only == nil || only == index {
     let r = try render(program: program, notes: notes)
