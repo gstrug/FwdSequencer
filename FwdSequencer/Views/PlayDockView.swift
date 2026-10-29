@@ -51,7 +51,14 @@ struct PlayDockView: View {
         }
         .onDisappear { releaseAll() }
         .sheet(isPresented: $showPluginPicker) {
-            PluginPickerView(selectedPlugin: pluginBinding)
+            PluginPickerView(selectedPlugin: pluginBinding,
+                             builtInSound: songStore.song.performance?.builtInSound,
+                             onChooseBuiltInSound: { sound in
+                if let id = songStore.song.performance?.id {
+                    songStore.setBuiltInSound(sound, forTrack: id)
+                }
+                pluginBinding.wrappedValue = nil
+            })
         }
         .fullScreenCover(isPresented: $showPluginEditor) {
             if let p = perf {

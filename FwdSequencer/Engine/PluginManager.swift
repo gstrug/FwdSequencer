@@ -55,7 +55,14 @@ class PluginManager: ObservableObject {
     }
 
     private func performScan() {
-        let foundInstruments = scan(type: kAudioUnitType_MusicDevice)
+        // Apple's own instruments (MIDI Synth, Sampler, DLS Synth) make no sound until
+        // a host loads a sound bank into them, and would only duplicate the built-in
+        // General MIDI sounds, which are chosen in Select Instrument. Not listed.
+        let appleSilent: Set<OSType> = [kAudioUnitSubType_MIDISynth, kAudioUnitSubType_Sampler,
+                                        kAudioUnitSubType_DLSSynth]
+        let foundInstruments = scan(type: kAudioUnitType_MusicDevice).filter {
+            !($0.componentManufacturer == kAudioUnitManufacturer_Apple && appleSilent.contains($0.componentSubType))
+        }
         let foundEffects = (scan(type: kAudioUnitType_Effect) + scan(type: kAudioUnitType_MusicEffect))
             .sorted { $0.name < $1.name }
         DispatchQueue.main.async { [weak self] in

@@ -171,7 +171,10 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   `GeneralMIDI.drumKit` = 128, the percussion bank 0x78). `AudioEngineManager` keeps
   `builtInSounds[trackID]` so any sampler made later (plugin removed / failed) starts on
   it; `setBuiltInSound`. Track ⋯ menu ▸ Built-in Sound (families of 8), shown when the
-  track has no plugin. The bank is **GeneralUser GS v2.0.3** (S. Christian Collins),
+  track has no plugin; also Select Instrument ▸ Built-in GM Sound (tracks and the Play
+  keyboard), which switches a plugin off. Apple's MIDI Synth / Sampler / DLS Synth are
+  hidden from the instrument list (silent without a host-loaded bank; they'd duplicate
+  this). The bank is **GeneralUser GS v2.0.3** (S. Christian Collins),
   bundled as `Resources/GeneralUser-GS.sf2` (32 MB) with its licence beside it (free
   for software, commercial included; no attribution required, credit is courteous).
   iPadOS has no GM set of its own (Apple's gs_instruments.dls is Mac-only, the

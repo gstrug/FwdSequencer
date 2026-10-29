@@ -1206,8 +1206,13 @@ class SongStore: ObservableObject {
 
     /// The General MIDI sound a track plays when it has no plugin.
     func setBuiltInSound(_ sound: Int, forTrack id: UUID) {
-        guard let index = song.tracks.firstIndex(where: { $0.id == id }) else { return }
-        song.tracks[index].builtInSound = sound == 0 ? nil : sound
+        if let index = song.tracks.firstIndex(where: { $0.id == id }) {
+            song.tracks[index].builtInSound = sound == 0 ? nil : sound
+        } else if song.performance?.id == id {
+            song.performance?.builtInSound = sound == 0 ? nil : sound
+        } else {
+            return
+        }
         audioEngine.setBuiltInSound(sound, for: id)
     }
 

@@ -1592,7 +1592,12 @@ private struct SongTrackRowView: View {
         }
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
         .sheet(isPresented: $showPluginPicker) {
-            PluginPickerView(selectedPlugin: pluginBinding)
+            PluginPickerView(selectedPlugin: pluginBinding, builtInSound: track.builtInSound,
+                             onChooseBuiltInSound: { sound in
+                // The sound first, so the sampler that replaces a plugin starts on it.
+                songStore.setBuiltInSound(sound, forTrack: track.id)
+                songStore.setPlugin(nil, for: track.id)
+            })
         }
         .fullScreenCover(isPresented: $showPluginEditor) {
             PluginEditorView(trackID: track.id, trackName: track.name,

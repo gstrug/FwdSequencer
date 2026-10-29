@@ -2,6 +2,10 @@ import SwiftUI
 
 struct PluginPickerView: View {
     @Binding var selectedPlugin: PluginInfo?
+    /// The General MIDI sound the built-in sampler plays, and what to do when one is
+    /// chosen. When given, the Included row opens the list of sounds.
+    var builtInSound: Int? = nil
+    var onChooseBuiltInSound: ((Int) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var manager = PluginManager.shared
     @State private var searchText = ""
@@ -46,16 +50,37 @@ struct PluginPickerView: View {
     private var content: some View {
         List {
             Section("Included") {
-                Button {
-                    selectedPlugin = nil
-                    dismiss()
-                } label: {
-                    HStack {
-                        Label("Built-in GM Sound", systemImage: "pianokeys")
-                            .foregroundStyle(.primary)
-                        Spacer()
-                        if selectedPlugin == nil {
-                            Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                if let onChooseBuiltInSound {
+                    NavigationLink {
+                        BuiltInSoundList(current: selectedPlugin == nil ? (builtInSound ?? 0) : nil) { sound in
+                            onChooseBuiltInSound(sound)
+                            dismiss()
+                        }
+                    } label: {
+                        HStack {
+                            Label("Built-in GM Sound", systemImage: "pianokeys")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            Text(GeneralMIDI.soundName(builtInSound))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                            if selectedPlugin == nil {
+                                Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                            }
+                        }
+                    }
+                } else {
+                    Button {
+                        selectedPlugin = nil
+                        dismiss()
+                    } label: {
+                        HStack {
+                            Label("Built-in GM Sound", systemImage: "pianokeys")
+                                .foregroundStyle(.primary)
+                            Spacer()
+                            if selectedPlugin == nil {
+                                Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                            }
                         }
                     }
                 }
@@ -128,6 +153,42 @@ struct PluginPickerView: View {
                 Label(manager.isFavorite(plugin) ? "Remove Favorite" : "Add Favorite",
                       systemImage: manager.isFavorite(plugin) ? "star.slash" : "star")
             }
+        }
+    }
+}
+
+/// The 128 General MIDI instruments by family, and the drum kit, from the bundled
+/// sound bank. Choosing one makes the track play it (switching off a plugin).
+private struct BuiltInSoundList: View {
+    /// The sound playing now, or nil when the track has a plugin.
+    let current: Int?
+    let choose: (Int) -> Void
+
+    var body: some View {
+        List {
+            Section {
+                row(GeneralMIDI.drumKit)
+            }
+            ForEach(Array(GeneralMIDI.families.enumerated()), id: \.offset) { family, name in
+                Section(name) {
+                    ForEach(family * 8 ..< family * 8 + 8, id: \.self) { program in row(program) }
+                }
+            }
+        }
+        .navigationTitle("Built-in GM Sound")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func row(_ sound: Int) -> some View {
+        Button { choose(sound) } label: {
+            HStack {
+                Text(GeneralMIDI.soundName(sound)).foregroundStyle(.primary)
+                Spacer()
+                if current == sound {
+                    Image(systemName: "checkmark").foregroundStyle(Color.accentColor)
+                }
+            }
+            .contentShape(Rectangle())
         }
     }
 }
