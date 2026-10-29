@@ -5,11 +5,11 @@ on:
 permissions:
   contents: write
 jobs:
-  compare:
+  merge:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
-      - name: Fetch banks
+      - name: Fetch and patch banks
         run: |
           curl -sSL -o /tmp/gu.sf2 https://github.com/mrbumpy409/GeneralUser-GS/raw/main/GeneralUser-GS.sf2
           mkdir -p /tmp/fluid && cd /tmp/fluid
@@ -20,15 +20,36 @@ jobs:
           cd - && f=$(find /tmp/fluid -name 'FluidR3_GM.sf2' | head -1)
           python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/GU.sf2 --no-start-offsets
           python3 diag/fix_loops.py "$f" /tmp/FL.sf2 --no-start-offsets
-      - name: Facts only
+          shasum -a 256 /tmp/gu.sf2 "$f"
+      - name: Merge
         run: |
           mkdir -p /tmp/out
-          python3 diag/bank_facts.py /tmp/GU.sf2 > /tmp/out/gu.json
-          python3 diag/bank_facts.py /tmp/FL.sf2 > /tmp/out/fluid.json
-      - name: Publish results to a branch
+          python3 diag/merge_banks.py /tmp/GU.sf2 /tmp/FL.sf2 diag/picks.json /tmp/out/FWD-GM.sf2 | tee /tmp/merge.txt
+      - name: Test every sound in the merged bank
+        run: |
+          swiftc -O diag/SamplerVoiceTest.swift -o /tmp/voices
+          : > /tmp/all.txt
+          for n in $(seq 0 128); do
+            /tmp/voices /tmp/out/FWD-GM.sf2 sweep $n > /tmp/r.txt 2>&1 || echo "$n CRASH" > /tmp/r.txt
+            grep -v "^state" /tmp/r.txt >> /tmp/all.txt
+          done
+          {
+            cat /tmp/merge.txt
+            echo "crashes: $(grep -c CRASH /tmp/all.txt) $(grep CRASH /tmp/all.txt | tr '\n' ' ')"
+            echo "pianos: $(grep -E '^ *[0-7] cost' /tmp/all.txt | tr -s ' ' | tr '\n' ';')"
+            echo "silent while held: $(awk '/cost/ && $5+0 > 0 {print $1"("$5")"}' /tmp/all.txt | tr '\n' ' ')"
+            echo "costliest 5: $(grep cost /tmp/all.txt | sort -k3 -n -r | head -5 | tr -s ' ' | tr '\n' ';')"
+            echo "sha256 $(shasum -a 256 /tmp/out/FWD-GM.sf2 | cut -d' ' -f1)  bytes $(stat -f%z /tmp/out/FWD-GM.sf2)"
+          } > /tmp/sum.txt
+          cp /tmp/all.txt /tmp/out/costs.txt
+          out=$(cat /tmp/sum.txt); out="${out//'%'/'%25'}"; out="${out//$'\n'/'%0A'}"
+          echo "::notice title=Merged::$out"
+      - name: Publish the merged bank in parts
         run: |
           cd /tmp/out
-          git init -q && git checkout -q -b diag/bank-facts
+          split -b 28000000 -a 1 FWD-GM.sf2 FWD-GM.sf2.part-
+          rm FWD-GM.sf2
+          git init -q && git checkout -q -b diag/merged-bank
           git config user.name "diag" && git config user.email "diag@example.invalid"
-          git add -A && git commit -qm "Bank comparison results"
-          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" diag/bank-facts
+          git add -A && git commit -qm "Merged FWD General MIDI bank, in parts"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" diag/merged-bank
