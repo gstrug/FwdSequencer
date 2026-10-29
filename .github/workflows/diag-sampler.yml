@@ -20,18 +20,12 @@ jobs:
           ar x fluid-soundfont-gm_*_all.deb && tar xf data.tar.* && cd -
           f=$(find /tmp/fluid -name 'FluidR3_GM.sf2' | head -1)
           echo "FluidR3_GM.sf2 bytes: $(stat -f%z "$f")" >> /tmp/out.txt
-          for n in $(seq 0 128); do
-            /tmp/voices "$f" sweep $n > /tmp/r.txt 2>&1 || echo "$n CRASH" > /tmp/r.txt
-            grep -v "^state" /tmp/r.txt >> /tmp/all.txt
+          python3 diag/fix_loops.py "$f" /tmp/fluid_fixed.sf2 --no-start-offsets >> /tmp/out.txt
+          for n in 101 0 48 128; do
+            echo "-- $n: as shipped / patched" >> /tmp/out.txt
+            /tmp/voices "$f" sweep $n 2>&1 | grep -v "^state" >> /tmp/out.txt || echo "$n CRASH" >> /tmp/out.txt
+            /tmp/voices /tmp/fluid_fixed.sf2 sweep $n 2>&1 | grep -v "^state" >> /tmp/out.txt || echo "$n CRASH" >> /tmp/out.txt
           done
-          echo "crashes: $(grep -c CRASH /tmp/all.txt)  $(grep CRASH /tmp/all.txt | tr '\n' ' ')" >> /tmp/out.txt
-          echo "pianos: $(grep -E '^ *[0-3] cost' /tmp/all.txt | tr -s ' ' | tr '\n' ';')" >> /tmp/out.txt
-          echo "dropouts (silent > 0 while held): $(awk '/cost/ && $5+0 > 0 {print $1"("$5")"}' /tmp/all.txt | tr '\n' ' ')" >> /tmp/out.txt
-          echo "costliest 10:" >> /tmp/out.txt
-          grep cost /tmp/all.txt | sort -k3 -n -r | head -10 >> /tmp/out.txt
-          echo "total cost of all 129: $(awk '/cost/ {gsub("%","",$3); t+=$3} END {print t"%"}' /tmp/all.txt)" >> /tmp/out.txt
-          python3 diag/fix_loops.py /tmp/gu.sf2 /tmp/a.sf2 --no-start-offsets > /dev/null
-          for n in 0 1 3; do /tmp/voices /tmp/a.sf2 sweep $n 2>&1 | grep -v "^state" | sed 's/^/GeneralUser /' >> /tmp/out.txt; done
           out=$(cat /tmp/out.txt)
           out="${out//'%'/'%25'}"
           out="${out//$'\n'/'%0A'}"
