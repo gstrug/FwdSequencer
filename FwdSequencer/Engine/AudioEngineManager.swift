@@ -1214,41 +1214,81 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         guard let mixer = trackMixers[trackID], let source = instrumentNode(for: trackID) else { return }
         let chain = effectUnits[trackID] ?? []
 
-        engine.disconnectNodeInput(mixer)
-        for unit in chain { engine.disconnectNodeOutput(unit) }
-        engine.disconnectNodeOutput(source)
-        for adapter in effectAdapters[trackID] ?? [] {
-            engine.disconnectNodeOutput(adapter)
-            engine.detach(adapter)
+        // Every connection and disconnection below can raise an exception while the
+        // engine is running (it re-initialises the graph each time), so the whole
+        // rewiring is protected. Should anything still be raised, the track falls back
+        // to its instrument alone, with its effects left out, rather than ending the app.
+        let failure = FWDExceptionCatcher.catching {
+            wireChainLocked(trackID: trackID, source: source, mixer: mixer, chain: chain)
         }
-        effectAdapters[trackID] = nil
-
-        // `format: nil` where possible, as for the instrument: let the engine negotiate
-        // rather than forcing stereo, which has silenced plugins here before. An effect
-        // that will not take what it is offered gets a converter (connectEffectLocked).
-        var upstream: AVAudioNode = source
-        // The format the node before has been set to send, when it is not negotiated:
-        // an effect wired mono-in/stereo-out must be read from in that format.
-        var upstreamFormat: AVAudioFormat?
-        for unit in chain where !bypassedUnits.contains(ObjectIdentifier(unit)) {
-            if let output = connectEffectLocked(unit, after: upstream, upstreamFormat: upstreamFormat,
-                                                trackID: trackID) {
-                upstream = unit
-                upstreamFormat = output.format
+        if let failure {
+            NSLog("[FWD] Effects could not be wired (%@); the track plays without them",
+                  failure.localizedDescription)
+            _ = FWDExceptionCatcher.catching {
+                unwireLocked(trackID: trackID, source: source, mixer: mixer, chain: chain)
             }
-        }
-        // A bypassed unit is left attached but unconnected, so it keeps its state and its
-        // open editor and costs nothing to bring back.
-        if let error = FWDExceptionCatcher.catching({ engine.connect(upstream, to: mixer, format: upstreamFormat) }) {
-            NSLog("[FWD] Track output could not be connected: %@", error.localizedDescription)
-            // Fall back to the instrument alone rather than leaving the track silent.
-            engine.disconnectNodeOutput(upstream)
+            for unit in chain where !bypassedUnits.contains(ObjectIdentifier(unit)) { _ = refuseLocked(unit) }
             _ = FWDExceptionCatcher.catching { engine.connect(source, to: mixer, format: nil) }
         }
 
         // Effect load, move, remove and bypass, and instrument swap all end here, so this
         // is where the kept latency is brought up to date for a track with a real chain.
         refreshLatencyLocked(for: trackID)
+    }
+
+    private func unwireLocked(trackID: UUID, source: AVAudioNode, mixer: AVAudioMixerNode, chain: [AVAudioUnit]) {
+        engine.disconnectNodeInput(mixer)
+        for unit in chain {
+            engine.disconnectNodeInput(unit)
+            engine.disconnectNodeOutput(unit)
+        }
+        engine.disconnectNodeOutput(source)
+        for adapter in effectAdapters[trackID] ?? [] {
+            engine.disconnectNodeInput(adapter)
+            engine.disconnectNodeOutput(adapter)
+            engine.detach(adapter)
+        }
+        effectAdapters[trackID] = nil
+    }
+
+    /// Instrument → each effect in use → the track's mixer. An effect whose output the
+    /// engine then cannot start (error -10868, "format not supported", seen with
+    /// Nembrini's effects) is taken out and the chain wired again without it.
+    private func wireChainLocked(trackID: UUID, source: AVAudioNode, mixer: AVAudioMixerNode,
+                                 chain: [AVAudioUnit]) {
+        var leftOut = Set<ObjectIdentifier>()
+        for _ in 0...chain.count {
+            unwireLocked(trackID: trackID, source: source, mixer: mixer, chain: chain)
+            // `format: nil` into each effect where possible, as for the instrument: let
+            // the engine negotiate rather than forcing stereo, which has silenced plugins
+            // here before. What comes OUT of an effect is set explicitly, to its input's
+            // sample rate — left alone it can stay at a default the effect can't run.
+            var upstream: AVAudioNode = source
+            var upstreamFormat: AVAudioFormat?
+            for unit in chain where !bypassedUnits.contains(ObjectIdentifier(unit))
+                && !leftOut.contains(ObjectIdentifier(unit)) {
+                if let output = connectEffectLocked(unit, after: upstream, upstreamFormat: upstreamFormat,
+                                                    trackID: trackID) {
+                    upstream = unit
+                    upstreamFormat = output.format
+                }
+            }
+            // A bypassed unit is left attached but unconnected, so it keeps its state and
+            // its open editor and costs nothing to bring back.
+            let failed = FWDExceptionCatcher.catching {
+                engine.connect(upstream, to: mixer, format: upstreamFormat)
+            }
+            guard let failed else { return }
+            NSLog("[FWD] Track output could not be connected: %@", failed.localizedDescription)
+            // The last effect in the chain would not run: leave it out and try again.
+            guard let last = upstream as? AVAudioUnit, chain.contains(where: { $0 === last }) else {
+                engine.disconnectNodeOutput(upstream)
+                engine.connect(source, to: mixer, format: nil)
+                return
+            }
+            leftOut.insert(ObjectIdentifier(last))
+            _ = refuseLocked(last)
+        }
     }
 
     /// What an effect was connected with: the format to read its output in, or nil
@@ -1296,7 +1336,15 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         if supports(pairs, input: 2, output: 2),
            FWDExceptionCatcher.catching({ engine.connect(upstream, to: unit, format: upstreamFormat) }) == nil {
             refusedUnits.remove(id)
-            return EffectOutput(format: nil)
+            // Out at the rate it takes in: an effect whose output is left at another
+            // rate fails to start (-10868), and with it the whole track.
+            let input = unit.inputFormat(forBus: 0)
+            guard input.sampleRate > 0 else { return EffectOutput(format: nil) }
+            let channels = supports(pairs, input: Int(input.channelCount), output: 2) ? 2 : input.channelCount
+            NSLog("[FWD] %@ connected %u in, %u out at %.0f Hz", name, input.channelCount,
+                  UInt32(channels), input.sampleRate)
+            return EffectOutput(format: AVAudioFormat(standardFormatWithSampleRate: input.sampleRate,
+                                                      channels: AVAudioChannelCount(channels)))
         }
         engine.disconnectNodeOutput(upstream)
 
@@ -1317,10 +1365,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                 let failed = FWDExceptionCatcher.catching {
                     engine.connect(upstream, to: adapter, format: upstreamFormat)
                     engine.connect(adapter, to: unit, format: inFormat)
-                    // The output must be set too, or the effect keeps its default
-                    // (stereo) output and renders silence in a layout it can't do.
-                    unit.auAudioUnit.outputBusses[0].isEnabled = true
-                    try? unit.auAudioUnit.outputBusses[0].setFormat(outFormat)
                 }
                 if failed == nil {
                     effectAdapters[trackID, default: []].append(adapter)
