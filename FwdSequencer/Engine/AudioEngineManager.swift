@@ -79,6 +79,12 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// is detached: an address freed and reused would otherwise silently bypass whatever
     /// took its place.
     private var bypassedUnits: Set<ObjectIdentifier> = []
+    /// Effects that would not connect in any format (see connectEffectLocked): left out
+    /// of the chain, like a bypassed one, rather than crashing the app.
+    private var refusedUnits: Set<ObjectIdentifier> = []
+    /// Format converters put in front of effects that would not take the track's own
+    /// format, per track, so the next rebuild can remove them.
+    private var effectAdapters: [UUID: [AVAudioMixerNode]] = [:]
     /// Each track's total signal-path latency, KEPT rather than polled.
     ///
     /// The sequencer asks for this on every tick and again for every track it triggers —
@@ -102,6 +108,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     private var _onLevelUpdate: ((UUID, AudioLevel) -> Void)?
     private var _onMasterLevelUpdate: ((AudioLevel) -> Void)?
     private var _onStatusChange: ((AudioEngineStatus) -> Void)?
+    private var _onEffectRefused: ((String) -> Void)?
     private var _onPlaybackInterrupted: ((String) -> Void)?
     private var _onRecoveryRequired: (() -> Void)?
     private var _onRecordingError: ((String) -> Void)?
@@ -136,6 +143,12 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     var onStatusChange: ((AudioEngineStatus) -> Void)? {
         get { withCallbackLock { _onStatusChange } }
         set { withCallbackLock { _onStatusChange = newValue } }
+    }
+    /// An effect could not be connected in any format and was left out. On the main
+    /// thread, with the effect's name.
+    var onEffectRefused: ((String) -> Void)? {
+        get { withCallbackLock { _onEffectRefused } }
+        set { withCallbackLock { _onEffectRefused = newValue } }
     }
     var onPlaybackInterrupted: ((String) -> Void)? {
         get { withCallbackLock { _onPlaybackInterrupted } }
@@ -341,7 +354,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     private func recomputeLatencyLocked(for trackID: UUID) {
         let instrument = auv3Units[trackID]?.auAudioUnit.latency ?? 0
         let effects = (effectUnits[trackID] ?? [])
-            .filter { !bypassedUnits.contains(ObjectIdentifier($0)) }
+            .filter { !bypassedUnits.contains(ObjectIdentifier($0)) && !refusedUnits.contains(ObjectIdentifier($0)) }
             .reduce(0.0) { $0 + $1.auAudioUnit.latency }
         trackLatency[trackID] = instrument + effects
     }
@@ -592,6 +605,8 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             auv3Units.removeAll()
             effectUnits.removeAll()
             bypassedUnits.removeAll()
+            refusedUnits.removeAll()
+            effectAdapters.removeAll()
             trackLatency.removeAll()
             latencyObservers.removeAll()
             trackMixers.removeAll()
@@ -1202,21 +1217,85 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         engine.disconnectNodeInput(mixer)
         for unit in chain { engine.disconnectNodeOutput(unit) }
         engine.disconnectNodeOutput(source)
+        for adapter in effectAdapters[trackID] ?? [] {
+            engine.disconnectNodeOutput(adapter)
+            engine.detach(adapter)
+        }
+        effectAdapters[trackID] = nil
 
-        // `format: nil` throughout, as for the instrument: let the engine negotiate
-        // rather than forcing stereo, which has silenced plugins here before.
+        // `format: nil` where possible, as for the instrument: let the engine negotiate
+        // rather than forcing stereo, which has silenced plugins here before. An effect
+        // that will not take what it is offered gets a converter (connectEffectLocked).
         var upstream: AVAudioNode = source
         for unit in chain where !bypassedUnits.contains(ObjectIdentifier(unit)) {
-            engine.connect(upstream, to: unit, format: nil)
-            upstream = unit
+            if connectEffectLocked(unit, after: upstream, trackID: trackID) { upstream = unit }
         }
         // A bypassed unit is left attached but unconnected, so it keeps its state and its
         // open editor and costs nothing to bring back.
-        engine.connect(upstream, to: mixer, format: nil)
+        if let error = FWDExceptionCatcher.catching({ engine.connect(upstream, to: mixer, format: nil) }) {
+            NSLog("[FWD] Track output could not be connected: %@", error.localizedDescription)
+            // Fall back to the instrument alone rather than leaving the track silent.
+            engine.disconnectNodeOutput(upstream)
+            _ = FWDExceptionCatcher.catching { engine.connect(source, to: mixer, format: nil) }
+        }
 
         // Effect load, move, remove and bypass, and instrument swap all end here, so this
         // is where the kept latency is brought up to date for a track with a real chain.
         refreshLatencyLocked(for: trackID)
+    }
+
+    /// Connect one effect after `upstream`, and say whether it is now in the chain.
+    ///
+    /// AVAudioEngine raises an exception, ending the app, when an effect will not take
+    /// the format offered: guitar effects that only accept mono (Nembrini's), or
+    /// Apple's Sound Isolation, which wants particular formats. So the connection is
+    /// tried under FWDExceptionCatcher; refused, the effect is fed through a mixer node
+    /// set to convert to mono, stereo, 48 or 44.1 kHz in turn, and if none is accepted
+    /// it is left out — reported once, never fatal.
+    private func connectEffectLocked(_ unit: AVAudioUnit, after upstream: AVAudioNode, trackID: UUID) -> Bool {
+        let id = ObjectIdentifier(unit)
+        guard unit.numberOfInputs > 0 else { return refuseLocked(unit) }
+        if FWDExceptionCatcher.catching({ engine.connect(upstream, to: unit, format: nil) }) == nil {
+            refusedUnits.remove(id)
+            return true
+        }
+        engine.disconnectNodeOutput(upstream)
+
+        let offered = upstream.outputFormat(forBus: 0)
+        let rate = offered.sampleRate > 0 ? offered.sampleRate : engine.outputNode.outputFormat(forBus: 0).sampleRate
+        var tried = Set<String>()
+        for (sampleRate, channels) in [(rate, 1), (rate, 2), (48_000, 2), (48_000, 1), (44_100, 2), (44_100, 1)] as [(Double, AVAudioChannelCount)] {
+            guard sampleRate > 0, tried.insert("\(sampleRate)-\(channels)").inserted,
+                  let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channels)
+            else { continue }
+            let adapter = AVAudioMixerNode()
+            engine.attach(adapter)
+            let failed = FWDExceptionCatcher.catching {
+                engine.connect(upstream, to: adapter, format: nil)
+                engine.connect(adapter, to: unit, format: format)
+            }
+            if failed == nil {
+                effectAdapters[trackID, default: []].append(adapter)
+                refusedUnits.remove(id)
+                NSLog("[FWD] %@ connected through a converter: %.0f Hz, %u channel(s)",
+                      unit.auAudioUnit.audioUnitName ?? unit.name, sampleRate, channels)
+                return true
+            }
+            engine.disconnectNodeOutput(upstream)
+            engine.disconnectNodeOutput(adapter)
+            engine.detach(adapter)
+        }
+        return refuseLocked(unit)
+    }
+
+    /// Leave an effect out of the chain, telling the screen the first time.
+    private func refuseLocked(_ unit: AVAudioUnit) -> Bool {
+        if refusedUnits.insert(ObjectIdentifier(unit)).inserted {
+            let name = unit.auAudioUnit.audioUnitName ?? unit.name
+            NSLog("[FWD] Effect %@ would not connect in any format; left out", name)
+            DispatchQueue.main.async { [weak self] in self?.onEffectRefused?(name) }
+        }
+        return false
     }
 
     private func swapInstrument(_ newUnit: AVAudioUnit, for trackID: UUID, mixer: AVAudioMixerNode) {

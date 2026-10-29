@@ -350,6 +350,9 @@ class SongStore: ObservableObject {
             self?.audioStatus = status
             if case .failed(let message) = status { self?.notice = message }
         }
+        audioEngine.onEffectRefused = { [weak self] name in
+            self?.notice = "\(name) could not be connected on this track, so it has been left out and the track plays without it. It may need audio this app can't give it; try it on another track, or remove it."
+        }
         audioEngine.onPlaybackInterrupted = { [weak self] message in
             self?.pauseForAudioInterruption(message)
         }

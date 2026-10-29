@@ -232,7 +232,19 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
      first. (The timing messages used to find this were removed afterwards; commit
      a5b7444 has them if they are needed again.)
 
-- **NEXT, reported 2026-10-22 — some of Apple's built-in effects crash the app.**
+- **Effects that crash on adding — fix built 2026-10-29, to test on device.** Graham:
+  Nembrini Audio Crunk, Wah and Analog Delay, and Apple's Sound Isolation crash the app
+  at once. Likely cause: `engine.connect` raises an NSException (uncatchable in Swift)
+  when an effect refuses the offered format (guitar effects often mono-only). Now
+  `rebuildChainLocked` connects each effect via `connectEffectLocked` under
+  `FWDExceptionCatcher` (Bridge/, Objective-C @try/@catch); refused, it inserts an
+  `AVAudioMixerNode` converter (`effectAdapters`) trying mono/stereo at the track's
+  rate, 48k, 44.1k; still refused → left out (`refusedUnits`, excluded from latency)
+  and `onEffectRefused` posts a notice. NSLog lines `[FWD] … connected through a
+  converter` / `would not connect` show which path was taken. If crashes persist, they
+  are elsewhere (state restore, editor, render) — get the Xcode console.
+- **Earlier report, 2026-10-22 — some of Apple's built-in effects crash the app** (may be
+  the same cause as above).
   Seen in Graham's testing on 2026-10-21, adding Apple's own AU effects (the ones that
   ship with iPadOS, e.g. AUDelay, AUReverb, AUDistortion) to a track. Not yet looked
   at. Ask which effects, and when it crashes (on adding, on opening Edit, on play, on
