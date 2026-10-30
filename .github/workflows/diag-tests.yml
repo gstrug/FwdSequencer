@@ -1,0 +1,18 @@
+name: Diagnostic - test failures
+on:
+  push:
+    branches: ['diag/**']
+jobs:
+  tests:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test
+        run: |
+          set +e
+          swift test > /tmp/t.txt 2>&1
+          grep -E "error:|failed|XCTAssert|Executed .* tests" /tmp/t.txt | grep -v "^\[" | head -40 > /tmp/out.txt
+          out=$(cat /tmp/out.txt)
+          out="${out//'%'/'%25'}"
+          out="${out//$'\n'/'%0A'}"
+          echo "::notice title=Tests::$out"
