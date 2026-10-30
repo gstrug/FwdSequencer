@@ -167,7 +167,15 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   target tracks ("Before MIDI import"), sets scale chromatic. "Use the File's Tempo and Time Signature" sets both (on by
   default when the song has no notes) and bars are then counted in the file's metre.
   The exporter writes each built-in track's GM program (drum kit on channel 10), so
-  export → import plays the same (test: Happy Birthday round trip). Round-trip test: what the
+  export → import plays the same (test: Happy Birthday round trip).
+  Export (2026-10-30): the exporter's clock is 24/quarter like the engine (it was a
+  32nd clock, which skipped 2 of 3 triplet steps) and held notes span their Holds up
+  front × gate, as in the engine. Export offers "MIDI (on the Grid)" =
+  `data(for:includingFeel: false)`, Feel left out. Import groups rolled chords
+  (`groupingChords`) and suggests the step size from chord starts and how far they
+  would move (≥ 1/3 step in over 1% rules a size out).
+- **Clear** (2026-10-30): the only section can't be deleted, so its Delete reads Clear
+  (`SongStore.clearSection`): notes and steps go, tracks stay, snapshot "Before clearing". Round-trip test: what the
   exporter writes imports back to the same steps. Parts are named after the file's GM
   program ("Fretless Bass · Verse bass", "Drums" on ch 10); new tracks start on that
   built-in sound ("Use the File's Instruments").
