@@ -167,7 +167,9 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   target tracks ("Before MIDI import"), sets scale chromatic. "Use the File's Tempo and Time Signature" sets both (on by
   default when the song has no notes) and bars are then counted in the file's metre.
   The exporter writes each built-in track's GM program (drum kit on channel 10), so
-  export → import plays the same (test: Happy Birthday round trip).
+  export → import plays the same (test: Happy Birthday round trip). Parts are named
+  after the file's GM program ("Fretless Bass · Verse bass", "Drums" on ch 10); new
+  tracks start on that built-in sound ("Use the File's Instruments").
   Export (2026-10-30): the exporter's clock is 24/quarter like the engine (it was a
   32nd clock, which skipped 2 of 3 triplet steps) and held notes span their Holds up
   front × gate, as in the engine. Export offers "MIDI (on the Grid)" =
@@ -175,10 +177,19 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   (`groupingChords`) and suggests the step size from chord starts and how far they
   would move (≥ 1/3 step in over 1% rules a size out).
 - **Clear** (2026-10-30): the only section can't be deleted, so its Delete reads Clear
-  (`SongStore.clearSection`): notes and steps go, tracks stay, snapshot "Before clearing". Round-trip test: what the
-  exporter writes imports back to the same steps. Parts are named after the file's GM
-  program ("Fretless Bass · Verse bass", "Drums" on ch 10); new tracks start on that
-  built-in sound ("Use the File's Instruments").
+  (`SongStore.clearSection`): notes and steps go, tracks stay, snapshot "Before clearing".
+- **Templates and examples** (2026-10-30, Graham: a fresh start, more musicality). New
+  Song: Blank, Instrument Host, Sequencer, From a MIDI File… (blank song, opens Import
+  MIDI via `SongStore.startsWithMIDIImport`), Pattern Pads (= Night Market). New Song ▸
+  Examples (`ExampleSong`): Night Market (deep house pads, opens in Trigger Mode),
+  Corner Café (bossa nova, Play keyboard = Vibraphone "Your Solo", arrangement), Lighthouse
+  (ballad in Song Parts, dynamics), Sunday Strut (funk, Feel), Glasshouse (generative
+  ambient, loops). Installed once (`didInstallExamplesV3`). **They are JSON in
+  `Resources/` written by `Tools/make_examples.py`** — edit the music there and rerun
+  (it has a small note/drum-grid notation); `BundledSongTests` checks them. The first
+  examples (Midnight Current etc.) now live only in `Tests/.../TestSongs.swift`, Happy
+  Birthday in `Tests/.../Fixtures`. Songs save `opensInTriggerMode` and
+  `showsPlayKeyboard` and open that way.
 - **Built-in sound** (2026-10-27): `SongTrack.builtInSound` (nil = program 0, 0–127, or
   `GeneralMIDI.drumKit` = 128, the percussion bank 0x78). `AudioEngineManager` keeps
   `builtInSounds[trackID]` so any sampler made later (plugin removed / failed) starts on

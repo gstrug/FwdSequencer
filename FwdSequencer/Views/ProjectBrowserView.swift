@@ -328,8 +328,8 @@ struct ProjectBrowserView: View {
             VStack(spacing: 18) {
                 emptyState(icon: "music.note.list", title: "Make something move",
                            subtitle: "Start from a playable example, then change its notes and steps.")
-                Button { createSongAndOpen(.midnightCurrent) } label: {
-                    Label("Play Midnight Current", systemImage: "play.fill")
+                Button { addExample(.lighthouse) } label: {
+                    Label("Play Lighthouse", systemImage: "play.fill")
                 }
                 .buttonStyle(.borderedProminent)
                 Button { createSongAndOpen(.starter) } label: {
