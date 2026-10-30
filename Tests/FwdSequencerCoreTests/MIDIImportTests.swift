@@ -176,7 +176,7 @@ final class MIDIImportTests: XCTestCase {
     func testTheHappyBirthdayExampleExportedAndImportedPlaysTheSame() throws {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("FwdSequencer/Resources/HappyBirthdayJazz.json")
+            .appendingPathComponent("Tests/FwdSequencerCoreTests/Fixtures/HappyBirthdayJazz.json")
         let original = try SongStorage.decodeDocument(Data(contentsOf: url))
         let file = try MIDIFileReader.read(try SongMIDIExporter.data(for: original))
         XCTAssertEqual(file.usableTimeSignature, original.timeSignature)
@@ -280,7 +280,7 @@ final class MIDIImportTests: XCTestCase {
     private func happyBirthday() throws -> Song {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("FwdSequencer/Resources/HappyBirthdayJazz.json")
+            .appendingPathComponent("Tests/FwdSequencerCoreTests/Fixtures/HappyBirthdayJazz.json")
         return try SongStorage.decodeDocument(Data(contentsOf: url))
     }
 

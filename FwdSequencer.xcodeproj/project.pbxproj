@@ -133,7 +133,6 @@
 /* Begin PBXShellScriptBuildPhase section */
 		0CF1B0012FF6000000AB0001 /* Join sound bank */ = {
 			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 0;
 			buildActionMask = 2147483647;
 			files = (
 			);

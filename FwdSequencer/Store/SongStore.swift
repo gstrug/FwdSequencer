@@ -185,9 +185,16 @@ class SongStore: ObservableObject {
     //
     // Persisted like the MIDI clock setting rather than reset per song, since someone
     // working this way will want to stay in it.
+    /// Set by New Song ▸ From a MIDI File…: the song view opens Import MIDI once.
+    var startsWithMIDIImport = false
+
     @Published var triggerMode: Bool = UserDefaults.standard.bool(forKey: "PatternTriggerMode") {
         didSet {
             UserDefaults.standard.set(triggerMode, forKey: "PatternTriggerMode")
+            // The song remembers it, and opens in it next time.
+            if hasActiveSong, (song.opensInTriggerMode ?? false) != triggerMode {
+                song.opensInTriggerMode = triggerMode
+            }
             if !triggerMode, isPlaying { stop() }
             // Pads trigger sections, not arrangement slots: give the sequencer the plain
             // sections so a pressed pad has something to switch to.
@@ -571,6 +578,8 @@ class SongStore: ObservableObject {
         self.song = song
         hasActiveSong = true
         loopEnabled = song.loops ?? false
+        // Each song opens the way it was left: in Trigger Mode or not.
+        triggerMode = song.opensInTriggerMode ?? false
         // Hold is a transient editing mode; a freshly opened song plays its arrangement.
         holdsSection = false
         selectedSection = 0

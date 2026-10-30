@@ -244,7 +244,7 @@ enum HelpTopic: String {
         switch self {
         // Song list
         case .newSong:
-            return "Start a new song from scratch or open an example template. Give new songs a name. If a name is already in use, a suffix is added."
+            return "Start a new song from scratch or open an example template. Give new songs a name. If a name is already in use, a suffix is added. Templates: Blank; Instrument Host, for playing your instruments from a MIDI keyboard; Sequencer, with starting patterns; From a MIDI File, which goes straight to Import MIDI; Pattern Pads, sections to fire live. Examples adds a copy of one of the example songs."
         case .importSong:
             return "Import Song: bring in a .fwdsong file from Files or another app. It is added as a new song."
         case .songRow:

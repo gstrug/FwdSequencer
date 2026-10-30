@@ -246,7 +246,7 @@ final class FwdSequencerCoreTests: XCTestCase {
     }
 
     func testMidnightCurrentIsACompleteDeterministicShowcase() throws {
-        let song = SongTemplate.midnightCurrent.makeSong()
+        let song = TestSongs.midnightCurrent()
         let validated = try SongValidator.validateAndNormalize(song)
         let steps = song.sections.flatMap { $0.parts }.flatMap { $0.steps }
         let operations = Set(steps.map { $0.type.rawValue })
@@ -267,7 +267,7 @@ final class FwdSequencerCoreTests: XCTestCase {
 
         // Creating another copy for the New Song menu must never identify as the
         // preinstalled document or overwrite a user's edited demo.
-        XCTAssertNotEqual(song.id, SongTemplate.midnightCurrent.makeSong().id)
+        XCTAssertNotEqual(song.id, TestSongs.midnightCurrent().id)
     }
 
     func testMidnightCurrentRoundTripsThroughSongLibrary() throws {
@@ -279,7 +279,7 @@ final class FwdSequencerCoreTests: XCTestCase {
             try? FileManager.default.removeItem(at: root)
         }
 
-        let song = SongTemplate.midnightCurrent.makeSong()
+        let song = TestSongs.midnightCurrent()
         try SongStorage.saveResult(song).get()
 
         let snapshot = try SongStorage.loadLibrary().get()
@@ -288,7 +288,7 @@ final class FwdSequencerCoreTests: XCTestCase {
     }
 
     func testValidatorRejectsZeroTimeSignatureDenominator() {
-        var song = SongTemplate.ambientCanon.makeSong()
+        var song = TestSongs.ambientCanon()
         song.timeSignature.denominator = 0
 
         XCTAssertThrowsError(try SongValidator.validateAndNormalize(song)) { error in
@@ -297,7 +297,7 @@ final class FwdSequencerCoreTests: XCTestCase {
     }
 
     func testValidatorRejectsOutOfRangeMIDI() {
-        var song = SongTemplate.ambientCanon.makeSong()
+        var song = TestSongs.ambientCanon()
         song.sections[0].parts[0].notePool[0].midiNote = 256
 
         XCTAssertThrowsError(try SongValidator.validateAndNormalize(song)) { error in
@@ -306,7 +306,7 @@ final class FwdSequencerCoreTests: XCTestCase {
     }
 
     func testValidatorRejectsDuplicateTrackIdentity() {
-        var song = SongTemplate.ambientCanon.makeSong()
+        var song = TestSongs.ambientCanon()
         song.tracks.append(song.tracks[0])
 
         XCTAssertThrowsError(try SongValidator.validateAndNormalize(song)) { error in
@@ -315,7 +315,7 @@ final class FwdSequencerCoreTests: XCTestCase {
     }
 
     func testValidatorRepairsMissingLegacyPartAndMetadata() throws {
-        var song = SongTemplate.ambientCanon.makeSong()
+        var song = TestSongs.ambientCanon()
         let missingTrackID = song.tracks[0].id
         song.formatVersion = nil
         song.randomSeed = nil
@@ -329,7 +329,7 @@ final class FwdSequencerCoreTests: XCTestCase {
     }
 
     func testValidatorRejectsFutureFormat() {
-        var song = SongTemplate.ambientCanon.makeSong()
+        var song = TestSongs.ambientCanon()
         song.formatVersion = SongValidator.currentFormatVersion + 1
 
         XCTAssertThrowsError(try SongValidator.validateAndNormalize(song)) { error in
@@ -377,7 +377,7 @@ final class FwdSequencerCoreTests: XCTestCase {
     }
 
     func testValidatorRejectsUnsafeStepPerformanceValues() {
-        var song = SongTemplate.bassPulse.makeSong()
+        var song = TestSongs.bassPulse()
         song.sections[0].parts[0].steps[0].ratchets = 9
         XCTAssertThrowsError(try SongValidator.validateAndNormalize(song))
 
@@ -387,7 +387,7 @@ final class FwdSequencerCoreTests: XCTestCase {
     }
 
     func testValidatorRejectsOversizedTrackAndPluginLabels() {
-        var song = SongTemplate.bassPulse.makeSong()
+        var song = TestSongs.bassPulse()
         song.tracks[0].name = String(repeating: "T", count: SongValidator.maximumNameLength + 1)
         XCTAssertThrowsError(try SongValidator.validateAndNormalize(song))
 
@@ -403,7 +403,7 @@ final class FwdSequencerCoreTests: XCTestCase {
     }
 
     func testSectionVariationsRoundTrip() throws {
-        var song = SongTemplate.ambientCanon.makeSong()
+        var song = TestSongs.ambientCanon()
         song.sections[0].variations = [
             SectionVariation(name: "Sparse", parts: song.sections[0].parts)
         ]
@@ -416,7 +416,7 @@ final class FwdSequencerCoreTests: XCTestCase {
     }
 
     func testMIDIExportIsDeterministicAndWellFormed() throws {
-        let song = SongTemplate.ambientCanon.makeSong()
+        let song = TestSongs.ambientCanon()
         let first = try SongMIDIExporter.data(for: song)
         let second = try SongMIDIExporter.data(for: song)
 
@@ -2189,7 +2189,7 @@ final class FwdSequencerCoreTests: XCTestCase {
             try? FileManager.default.removeItem(at: root)
         }
 
-        var original = SongTemplate.bassPulse.makeSong()
+        var original = TestSongs.bassPulse()
         original.name = "Known Good"
         guard case .success = SongStorage.saveResult(original) else {
             return XCTFail("Initial save failed")
@@ -2235,7 +2235,7 @@ final class FwdSequencerCoreTests: XCTestCase {
             try? FileManager.default.removeItem(at: root)
         }
 
-        var song = SongTemplate.bassPulse.makeSong()
+        var song = TestSongs.bassPulse()
         song.name = "First"
         guard case .success = SongStorage.saveResult(song) else { return XCTFail("Initial save failed") }
         song.name = "Last Known Good"

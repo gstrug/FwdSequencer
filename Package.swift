@@ -47,7 +47,9 @@ let package = Package(
         .testTarget(
             name: "FwdSequencerCoreTests",
             dependencies: ["FwdSequencerCore"],
-            path: "Tests/FwdSequencerCoreTests"
+            path: "Tests/FwdSequencerCoreTests",
+            // Song documents the tests read from the source tree.
+            exclude: ["Fixtures"]
         )
     ]
 )

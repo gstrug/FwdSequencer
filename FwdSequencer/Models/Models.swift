@@ -65,6 +65,11 @@ nonisolated struct Song: Codable, Identifiable, Equatable {
     /// Named groups of sections ("Verse" = Sections 1–4), placed in the arrangement as
     /// one. Optional so older songs decode.
     var songParts: [SongPart]? = nil
+    /// How the song opens, as it was left: in Pattern Trigger Mode, and with the Play
+    /// keyboard showing. Optional so older songs decode (nil = off), so a song made
+    /// for pads or for playing live opens ready for it.
+    var opensInTriggerMode: Bool? = nil
+    var showsPlayKeyboard: Bool? = nil
 }
 
 /// A named run of sections, played in order, placed in the arrangement as one block.

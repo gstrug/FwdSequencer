@@ -3,12 +3,9 @@ import UniformTypeIdentifiers
 
 struct ProjectBrowserView: View {
     @EnvironmentObject var songStore: SongStore
-    @AppStorage("didInstallMidnightCurrentDemoV1") private var didInstallMidnightCurrentDemo = false
-    /// Its own flag, so the example reaches people who already have the app rather than
-    /// only a fresh install. V2 because the arrangement was replaced with a corrected
-    /// one — anybody who installed V1 gets the new version alongside it, rather than
-    /// keeping a copy nobody meant to ship.
-    @AppStorage("didInstallHappyBirthdayDemoV2") private var didInstallHappyBirthdayDemo = false
+    /// The example songs are added to the list once (2026-10-30: a fresh set replaced
+    /// the first examples). New Song ▸ Examples adds another copy any time.
+    @AppStorage("didInstallExamplesV3") private var didInstallExamples = false
     @State private var songs: [Song] = []
     @State private var showingSong = false
     @State private var songDeleteTarget: Song? = nil
@@ -61,6 +58,23 @@ struct ProjectBrowserView: View {
                                             Image(systemName: template.systemImage)
                                         }
                                     }
+                                }
+                                Divider()
+                                Menu {
+                                    ForEach(ExampleSong.allCases) { example in
+                                        Button { addExample(example) } label: {
+                                            Label {
+                                                VStack(alignment: .leading) {
+                                                    Text(example.name)
+                                                    Text(example.summary)
+                                                }
+                                            } icon: {
+                                                Image(systemName: example.systemImage)
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    Label("Examples", systemImage: "music.note.list")
                                 }
                             } label: {
                                 Label("New Song", systemImage: "plus")
@@ -462,28 +476,32 @@ struct ProjectBrowserView: View {
     /// from every existing document; after installation it is an ordinary song
     /// that can be edited, duplicated, exported, or deleted without returning.
     private func installBundledDemoIfNeeded() {
-        var installedAny = false
-        if !didInstallMidnightCurrentDemo {
-            installedAny = install(SongTemplate.midnightCurrent, marking: &didInstallMidnightCurrentDemo)
+        guard !didInstallExamples else { return }
+        // The flag is set only if every example saved, so a failure is retried next
+        // launch rather than silently skipping a song for good. (A retry may add a
+        // second copy of one that did save; that is the safer side.)
+        var allSaved = true
+        for example in ExampleSong.allCases {
+            guard let song = example.makeSong() else { allSaved = false; continue }
+            if case .failure(let error) = SongStorage.saveResult(song) {
+                notice = "\(example.name) could not be installed. \(error.localizedDescription)"
+                allSaved = false
+            }
         }
-        if !didInstallHappyBirthdayDemo {
-            installedAny = install(SongTemplate.happyBirthday, marking: &didInstallHappyBirthdayDemo)
-                || installedAny
-        }
-        if installedAny { reload() }
+        didInstallExamples = allSaved
+        reload()
     }
 
-    /// One example. Its flag is set only on a successful save, so a failure here is
-    /// retried next launch rather than silently skipping the song for good.
-    private func install(_ template: SongTemplate, marking installed: inout Bool) -> Bool {
-        switch SongStorage.saveResult(template.makeSong()) {
-        case .success:
-            installed = true
-            return true
-        case .failure(let error):
-            notice = "\(template.name) could not be installed. \(error.localizedDescription)"
-            return false
+    /// New Song ▸ Examples: a fresh copy, opened straight away.
+    private func addExample(_ example: ExampleSong) {
+        guard var song = example.makeSong() else {
+            notice = "\(example.name) could not be found in the app."
+            return
         }
+        song.name = SongNaming.uniqueName(song.name, among: songs.map(\.name))
+        songStore.open(song)
+        songStore.saveNow()
+        showingSong = true
     }
 
     private func openSong(_ song: Song) {
@@ -494,7 +512,7 @@ struct ProjectBrowserView: View {
     /// New Song: ask for the name first. The suggestion is the template's own name, with
     /// a number if a song already has it.
     private func createSongAndOpen(_ template: SongTemplate = .starter) {
-        newSongName = SongNaming.uniqueName(template.makeSong().name, among: songs.map(\.name))
+        newSongName = SongNaming.uniqueName(template.songName, among: songs.map(\.name))
         newSongTemplate = template
     }
 
@@ -504,6 +522,8 @@ struct ProjectBrowserView: View {
         s.name = SongNaming.uniqueName(name, among: songs.map(\.name))
         songStore.open(s)
         songStore.saveNow()
+        // From a MIDI File…: the song opens on the import, file timing on.
+        songStore.startsWithMIDIImport = template.startsWithMIDIImport
         showingSong = true
     }
 

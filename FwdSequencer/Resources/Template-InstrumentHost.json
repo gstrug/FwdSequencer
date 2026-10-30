@@ -1,0 +1,101 @@
+{
+ "formatVersion": 2,
+ "id": "4320E5FE-1411-5727-BFBA-6A4AA306C3B4",
+ "name": "Instrument Host",
+ "tempo": 100.0,
+ "timeSignature": {
+  "numerator": 4,
+  "denominator": 4
+ },
+ "masterVolume": 1.0,
+ "tracks": [
+  {
+   "id": "F7EC7C7A-61E9-5585-9DC1-F717EB8F44FC",
+   "name": "Piano",
+   "mixer": {
+    "volume": 0.8,
+    "pan": 0.0,
+    "isMuted": false,
+    "isSoloed": false
+   }
+  },
+  {
+   "id": "A3C8BBD4-AA4E-5B4A-8B5C-23DC1B1981D4",
+   "name": "Electric Piano",
+   "mixer": {
+    "volume": 0.75,
+    "pan": -0.1,
+    "isMuted": false,
+    "isSoloed": false
+   },
+   "builtInSound": 4
+  },
+  {
+   "id": "15B7B3E1-80C9-54A2-91D5-E11A87268962",
+   "name": "Strings",
+   "mixer": {
+    "volume": 0.65,
+    "pan": 0.1,
+    "isMuted": false,
+    "isSoloed": false
+   },
+   "builtInSound": 48
+  },
+  {
+   "id": "CBD34FDE-71B1-5E73-87DA-B4FA1CD440E9",
+   "name": "Bass",
+   "mixer": {
+    "volume": 0.8,
+    "pan": 0.0,
+    "isMuted": false,
+    "isSoloed": false
+   },
+   "builtInSound": 33
+  }
+ ],
+ "sections": [
+  {
+   "id": "444D8C67-3A58-5755-A5FD-434FB88876BC",
+   "name": "Live",
+   "numberOfBars": 4,
+   "variations": [],
+   "parts": [
+    {
+     "trackID": "F7EC7C7A-61E9-5585-9DC1-F717EB8F44FC",
+     "notePool": [],
+     "steps": [],
+     "tempoDivision": "Quarter",
+     "key": 0,
+     "scale": "Chromatic"
+    },
+    {
+     "trackID": "A3C8BBD4-AA4E-5B4A-8B5C-23DC1B1981D4",
+     "notePool": [],
+     "steps": [],
+     "tempoDivision": "Quarter",
+     "key": 0,
+     "scale": "Chromatic"
+    },
+    {
+     "trackID": "15B7B3E1-80C9-54A2-91D5-E11A87268962",
+     "notePool": [],
+     "steps": [],
+     "tempoDivision": "Quarter",
+     "key": 0,
+     "scale": "Chromatic"
+    },
+    {
+     "trackID": "CBD34FDE-71B1-5E73-87DA-B4FA1CD440E9",
+     "notePool": [],
+     "steps": [],
+     "tempoDivision": "Quarter",
+     "key": 0,
+     "scale": "Chromatic"
+    }
+   ]
+  }
+ ],
+ "randomSeed": 1180124192,
+ "loops": true,
+ "showsPlayKeyboard": true
+}

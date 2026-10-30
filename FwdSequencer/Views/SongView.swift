@@ -92,6 +92,12 @@ struct SongView: View {
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: showPlayDock)
+        // The song remembers whether the Play keyboard was showing, and opens that way.
+        .onAppear { showPlayDock = songStore.song.showsPlayKeyboard ?? false }
+        .onChange(of: songStore.song.id) { _ in showPlayDock = songStore.song.showsPlayKeyboard ?? false }
+        .onChange(of: showPlayDock) { shown in
+            if (songStore.song.showsPlayKeyboard ?? false) != shown { songStore.song.showsPlayKeyboard = shown }
+        }
         // The help card, when help mode is on. Above the Play keyboard.
         .helpHost()
         // BLOCKING while instruments load/restore — this must capture touches.
@@ -834,7 +840,14 @@ private struct ArrangementStrip: View {
         .background(.regularMaterial)
         // Started once and left running: the pulse is only visible where a chip opts in,
         // so there is nothing to start and stop as the queue changes.
-        .onAppear { queuePulse = true }
+        .onAppear {
+            queuePulse = true
+            // New Song ▸ From a MIDI File…: straight to the import, once the song is up.
+            if songStore.startsWithMIDIImport {
+                songStore.startsWithMIDIImport = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { importingMIDI = true }
+            }
+        }
         .sheet(item: $editingSection) { target in
             SectionEditorSheet(sectionIndex: target.index, field: target.field)
         }
