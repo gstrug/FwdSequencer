@@ -450,125 +450,112 @@ def night_market():
     })
     return s.build(loops=True, opensInTriggerMode=True)
 
-# ================================================================= CORNER CAFÉ
-# Bossa nova in D. A head on flute, then two choruses for you on the Play keyboard.
+# ================================================================= BLUES IN A
+# A 12-bar shuffle in A to play along with: drums, walking bass, a boogie rhythm
+# guitar and organ. The Play keyboard is an overdriven guitar for your solo; the
+# A blues scale (A C D Eb E G) fits everywhere.
 
-def corner_cafe():
-    s = SongBuilder("Corner Café", 132, seed=0x46574431)
-    s.track("guitar", "Nylon Guitar", 24, 0.72, -0.25, spread=16, variation=10, jitter=4)
-    s.track("bass", "Upright Bass", 32, 0.82, 0.05, variation=6)
-    s.track("perc", "Brushes & Shaker", DRUMS, 0.62, 0.15, variation=14, jitter=4)
-    s.track("flute", "Flute", 73, 0.66, 0.2, jitter=6, variation=6)
+def blues_in_a():
+    s = SongBuilder("12-Bar Blues in A", 96, seed=0x46574435)
+    s.track("drums", "Drums", DRUMS, 0.82, 0.0, accent=10, variation=10, jitter=3)
+    s.track("bass", "Bass", 33, 0.82, 0.0, variation=8, jitter=2)
+    s.track("guitar", "Rhythm Guitar", 27, 0.6, -0.3, variation=10, jitter=3)
+    s.track("organ", "Organ", 16, 0.42, 0.25, variation=6)
 
-    V = {
-        "Dmaj7": (ch("D3 A3 C#4 F#4"), "D2", "A2"), "D7": (ch("D3 A3 C4 F#4"), "D2", "A2"),
-        "Em7": (ch("E3 B3 D4 G4"), "E2", "B2"), "A7": (ch("G3 A3 C#4 E4"), "A2", "E2"), "D6": (ch("D3 A3 B3 F#4"), "D2", "A2"),
-        "F#m7": (ch("F#3 A3 C#4 E4"), "F#2", "C#3"), "B7": (ch("A3 C4 D#4 F#4"), "B2", "F#2"),
-        "Gmaj7": (ch("G3 B3 D4 F#4"), "G2", "D3"), "Gm6": (ch("G3 Bb3 D4 E4"), "G2", "D3"),
-    }
-    a_bars = ["Dmaj7", "Dmaj7", "Em7", "A7", "F#m7", "B7", "Em7", "A7"]
-    # D6 where the flute sits on D: a major 7th under it would rub.
-    b_bars = ["D6", "D7", "Gmaj7", "Gm6", "F#m7", "B7", ("Em7", "A7"), "D6"]
-    intro_bars = ["Em7", "A7", "Em7", "A7"]
+    # Everything is on a triplet grid: three steps a beat, twelve a bar, so the
+    # shuffle is in the notes (long-short on the first and third triplet).
+    WALK = {"A7": "A2 C#3 E3 F#3 G3 F#3 E3 C#3", "D7": "D2 F#2 A2 B2 C3 B2 A2 F#2",
+            "E7": "E2 G#2 B2 C#3 D3 C#3 B2 G#2"}
+    BOOGIE = {"A7": ("A2+E3", "A2+F#3"), "D7": ("D3+A3", "D3+B3"), "E7": ("E2+B2", "E2+C#3")}
+    # Third, fifth and ninth: the 7th is in the walking bass, and here it would rub
+    # against the guitar's boogie sixth.
+    ORGAN = {"A7": ch("C#4 E4 B4"), "D7": ch("F#3 A3 E4"), "E7": ch("G#3 B3 F#4")}
+    FORM = ["A7", "D7", "A7", "A7", "D7", "D7", "A7", "A7", "E7", "D7", "A7", "E7"]
 
-    rhythm = [[0, 3, 6, 10, 13], [2, 6, 9, 12]]   # the two-bar batida, in 16ths
-
-    def guitar(bars, vel=70):
-        line = Line(vel=vel, gate=0.55)
+    def bass(bars, vel=92):
+        line = Line(vel=vel, gate=0.9)
         for b, chord in enumerate(bars):
-            hits = rhythm[b % 2]
-            for i, h in enumerate(hits):
-                end = hits[i + 1] if i + 1 < len(hits) else 16
-                name = chord if isinstance(chord, str) else (chord[0] if h < 8 else chord[1])
-                line.at(b * 16 + h, end - h, V[name][0], vel=vel + (8 if i == 0 else 0))
-        line.t = len(bars) * 16
+            notes = ch(WALK[chord])
+            for beat in range(4):
+                line.at(b * 12 + beat * 3, 2, [notes[beat * 2]], vel=vel + (6 if beat % 2 == 0 else 0))
+                line.at(b * 12 + beat * 3 + 2, 1, [notes[beat * 2 + 1]], vel=vel - 14)
+        line.t = len(bars) * 12
         return line
 
-    def bass(bars, vel=88):
-        line = Line(vel=vel, gate=0.85)
+    def guitar(bars, vel=80):
+        line = Line(vel=vel, gate=0.62)
         for b, chord in enumerate(bars):
-            if isinstance(chord, tuple):
-                (r1, f1), (r2, f2) = V[chord[0]][1:], V[chord[1]][1:]
-                pat = [(0, 6, r1), (6, 2, f1), (8, 6, r2), (14, 2, f2)]
+            five, six = BOOGIE[chord]
+            for beat in range(4):
+                shape = five if beat % 2 == 0 else six
+                notes = shape.split("+")
+                line.at(b * 12 + beat * 3, 2, notes, vel=vel)
+                line.at(b * 12 + beat * 3 + 2, 1, notes, vel=vel - 20)
+        line.t = len(bars) * 12
+        return line
+
+    def organ(bars, vel=52, stabs=False):
+        line = Line(vel=vel, gate=1.0)
+        for b, chord in enumerate(bars):
+            if stabs:   # pushes on the last triplet of beats 2 and 4, a long chord on 1
+                line.at(b * 12, 5, ORGAN[chord], vel=vel)
+                line.at(b * 12 + 5, 6, ORGAN[chord], vel=vel + 12, gate=0.5)
+                line.at(b * 12 + 11, 1, ORGAN[chord], vel=vel + 14, gate=0.8)
             else:
-                r, f = V[chord][1:]
-                pat = [(0, 6, r), (6, 2, r), (8, 6, f), (14, 2, f)]
-            for st, ln, n in pat:
-                line.at(b * 16 + st, ln, [n], vel=vel - (14 if ln == 2 else 0))
-        line.t = len(bars) * 16
+                line.at(b * 12, 12, ORGAN[chord], vel=vel)
+        line.t = len(bars) * 12
         return line
 
-    perc_grid = {37: "x..x..x.........", 36: "o......-o......-", 69: "-o-o-o-o-o-o-o-o"}
-    perc_grid2 = {37: "....x.....x.....", 36: "o......-o......-", 69: "-o-o-o-o-o-o-o-o"}
-
-    def perc(bars=2, levels=None):
+    def drums(ride=False, last_fill=False, bars=12, vel_scale=0):
+        cymbal = 51 if ride else 42
+        bar = {cymbal: "x.ox.ox.ox.o", 36: "x.....x.....", 38: "...x.....x.-", 44: "...o.....o.."}
         line = Line()
-        a = Line().drums(perc_grid, levels)
-        b = Line().drums(perc_grid2, levels)
-        for e in a.events:
-            line.events.append(e)
-        for e in b.events:
-            line.events.append((e[0] + 16, *e[1:]))
-        line.t = 32
+        one = Line().drums(bar)
+        for b in range(bars):
+            for e in one.events:
+                line.events.append((b * 12 + e[0], e[1], e[2], min(127, e[3] + vel_scale), e[4]))
+        if last_fill:   # into the next chorus: snare triplets on beat 4
+            line.events = [e for e in line.events if e[0] < (bars - 1) * 12 + 9]
+            for i, v in enumerate([70, 84, 100]):
+                line.events.append(((bars - 1) * 12 + 9 + i, 1, [38], v + vel_scale, 0.5))
+        line.t = bars * 12
         return line
 
-    head_a = Line(vel=84, gate=0.92).add(
-        "r:1 A4:1 F#5:4@90 E5:2 "
-        "C#5:6 r:2 "
-        "r:1 B4:1 G5:4@90 F#5:2 "
-        "E5:6 r:2 "
-        "r:1 C#5:1 A5:4@94 F#5:2 "
-        "D#5:6 r:2 "
-        "r:1 E5:1 G5:2 B5:2@92 A5:2 "
-        "G5:4 E5:2 C#5:2")
-    head_b = Line(vel=84, gate=0.92).add(
-        "D5:4 F#5:2 A5:2@92 "
-        "C5:6 r:2 "
-        "B4:2 D5:2 F#5:4@90 "
-        "E5:4 Bb4:2 D5:2 "
-        "C#5:4 E5:2 A5:2@94 "
-        "A5:4 F#5:2 D#5:2 "
-        "E5:4 C#5:4 "
-        "D5:6 r:2")
+    intro = ["E7", "D7", "A7", "E7"]
     s.section("intro", "Intro", 4, {
-        "guitar": ("1/16", guitar(intro_bars, 66)),
-        "bass": ("1/16", bass(intro_bars, 80)),
-        "perc": ("1/16", Line().drums({69: "-o-o-o-o-o-o-o-o"}), 16),
+        "drums": ("1/8T", drums(bars=4, last_fill=True, vel_scale=-6)),
+        "bass": ("1/8T", bass(intro, 88)), "guitar": ("1/8T", guitar(intro, 76)),
+        "organ": ("1/8T", organ(intro, 46)),
     })
-    s.section("headA", "Head A", 8, {
-        "guitar": ("1/16", guitar(a_bars)), "bass": ("1/16", bass(a_bars)),
-        "perc": ("1/16", perc(), 32), "flute": ("1/8", head_a),
+    s.section("chorus1", "Chorus", 12, {
+        "drums": ("1/8T", drums(last_fill=True, vel_scale=-10)),
+        "bass": ("1/8T", bass(FORM, 88)), "guitar": ("1/8T", guitar(FORM, 74)),
+        "organ": ("1/8T", organ(FORM, 46)),
     })
-    s.section("headB", "Head B", 8, {
-        "guitar": ("1/16", guitar(b_bars)), "bass": ("1/16", bass(b_bars)),
-        "perc": ("1/16", perc(), 32), "flute": ("1/8", head_b),
+    s.section("chorus2", "Chorus (Lift)", 12, {
+        "drums": ("1/8T", drums(ride=True, last_fill=True)),
+        "bass": ("1/8T", bass(FORM, 96)), "guitar": ("1/8T", guitar(FORM, 82)),
+        "organ": ("1/8T", organ(FORM, 54, stabs=True)),
     })
-    s.section("soloA", "Solo A", 8, {
-        "guitar": ("1/16", guitar(a_bars, 74)), "bass": ("1/16", bass(a_bars, 92)),
-        "perc": ("1/16", perc(), 32),
-    })
-    s.section("soloB", "Solo B", 8, {
-        "guitar": ("1/16", guitar(b_bars, 74)), "bass": ("1/16", bass(b_bars, 92)),
-        "perc": ("1/16", perc(), 32),
-    })
-    ending = ["Em7", "A7", "Dmaj7", "Dmaj7"]
-    end_guitar = guitar(ending[:2], 68)
-    end_guitar.at(32, 32, V["Dmaj7"][0], vel=62, gate=1.0)
-    end_guitar.t = 64
+    end = Line()
+    for e in drums(bars=3).events:
+        end.events.append(e)
+    for drum, v in [(36, 112), (49, 112), (38, 100)]:
+        end.events.append((36, 1, [drum], v, 0.5))
+    end.t = 48
+    ending = ["A7", "D7", "A7"]
+    end_bass = bass(ending, 92).at(36, 12, ["A1"], vel=104, gate=1.0)
+    end_guitar = guitar(ending, 80).at(36, 12, ch("A2 E3 G3 C#4 E4"), vel=96, gate=1.0)
+    end_organ = organ(ending, 50).at(36, 12, ch("G3 C#4 E4 B4"), vel=68)
     s.section("ending", "Ending", 4, {
-        "guitar": ("1/16", end_guitar),
-        "bass": ("1/16", bass(ending[:2], 84).at(32, 32, ["D2"], vel=80, gate=1.0)),
-        "perc": ("1/16", Line().drums({37: "x..x..x.........""....x.....x....." "x...............",
-                                       69: "-o-o-o-o-o-o-o-o" * 2})),
-        "flute": ("1/8", Line(vel=78, gate=0.95).add("B4:4 D5:4 C#5:4 E5:4 F#5:16")),
+        "drums": ("1/8T", end), "bass": ("1/8T", end_bass),
+        "guitar": ("1/8T", end_guitar), "organ": ("1/8T", end_organ),
     })
-    head = s.song_part("head", "Head", ["headA", "headB"])
-    solo = s.song_part("solo", "Your Solo", ["soloA", "soloB"])
-    s.arrange(["intro", head, solo, solo, head, "ending"])
+    s.arrange(["intro", "chorus1", "chorus2", "chorus1", "chorus2", "chorus1", "chorus2", "ending"])
     song = s.build(loops=False, showsPlayKeyboard=True)
-    song["performance"] = {"id": uid("Corner Café", "performance"), "name": "Your Solo",
+    song["performance"] = {"id": uid("12-Bar Blues in A", "performance"), "name": "Your Solo",
                            "mixer": {"volume": 0.72, "pan": 0.0, "isMuted": False, "isSoloed": False},
-                           "builtInSound": 11}
+                           "builtInSound": 29}
     return song
 
 # ================================================================= LIGHTHOUSE
@@ -788,92 +775,15 @@ def sunday_strut():
     s.section("end", "Final Hit", 1, hit)
     return s.build(loops=False)
 
-# ================================================================= GLASSHOUSE
-# Generative ambient in D Lydian. Random, Back, Repeat, probability and loops of
-# different lengths, so it keeps changing. Leave it running.
-
-def glasshouse():
-    s = SongBuilder("Glasshouse", 66, seed=0x46574434)
-    s.track("celesta", "Celesta", 8, 0.62, 0.2, variation=10, jitter=8)
-    s.track("harp", "Harp", 46, 0.55, -0.25, variation=12, jitter=6)
-    s.track("pad", "Halo Pad", 94, 0.5, 0.0)
-    s.track("drone", "Low Strings", 42, 0.55, -0.05)
-    s.track("bells", "Vibraphone", 11, 0.5, 0.3, jitter=10)
-    lydian = (2, "Lydian")
-
-    def celesta(notes, vels, gentle=False):
-        pool = [{"midiNote": pitch(n), "velocity": v, "gateLength": 0.85} for n, v in zip(notes, vels)]
-        steps = [S("random", prob=0.85), S("hold"), S("fwd", prob=0.7), S("fwd", 2),
-                 S("pause", 2), S("back"), S("rep", prob=0.6), S("random", prob=0.5),
-                 S("hold", 2), S("back", 2, prob=0.7), S("pause")]
-        if gentle:
-            steps = [S("random", prob=0.7), S("hold", 2), S("fwd", prob=0.5), S("pause", 3),
-                     S("back", prob=0.6), S("hold"), S("random", prob=0.4), S("pause", 4)]
-        return pool, steps
-
-    def harp(notes, vel=70, busy=False):
-        pool = pool_of(notes, vel, 0.9)
-        steps = [S("play", 1), S("fwd"), S("fwd"), S("fwd", prob=0.75), S("fwd"),
-                 S("back", prob=0.6), S("fwd", 2), S("pause", 3)]
-        if busy:
-            steps = [S("play", 1), S("fwd"), S("fwd"), S("fwd"), S("fwd", prob=0.85), S("back"),
-                     S("fwd", 2), S("rep", prob=0.5), S("back", 3), S("pause")]
-        return pool, steps
-
-    def pad(chords, bars_each, vel=58):
-        line = Line(vel=vel, gate=1.0)
-        for i, c in enumerate(chords):
-            line.at(i * bars_each, bars_each, ch(c), vel=vel)
-        line.t = len(chords) * bars_each
-        return line
-
-    def bells(notes, vel=62):
-        return (pool_of(notes, vel, 1.0),
-                [S("pause", 3), S("random", prob=0.55), S("hold", 2), S("random", prob=0.35), S("hold")])
-
-    D_LYD = ["D4", "E4", "F#4", "G#4", "A4", "B4", "C#5", "D5", "E5", "F#5"]
-    s.section("dawn", "Dawn", 8, {
-        "celesta": ("1/8", *celesta(D_LYD, [52, 48, 56, 50, 54, 48, 58, 52, 50, 56], gentle=True), lydian),
-        "pad": ("1/1", pad(["D3 A3 E4 F#4", "D3 G#3 B3 E4"], 4, 50)),
-        "drone": ("1/2", pool_of(["D2", "D3"], 54, 1.0), [S("play", 1), S("hold", 3), S("play", 2), S("hold", 3)], lydian),
-    })
-    s.section("bloom", "Bloom", 8, {
-        "celesta": ("1/8", *celesta(D_LYD, [62, 56, 66, 58, 64, 56, 70, 62, 58, 66]), lydian),
-        "harp": ("1/16", *harp(["D3", "A3", "E4", "F#4", "A4", "B4", "D5"], 62), lydian),
-        "pad": ("1/1", pad(["D3 A3 E4 F#4", "D3 G#3 B3 E4"] * 2, 2, 56)),
-        "drone": ("1/2", pool_of(["D2", "D3"], 60, 1.0), [S("play", 1), S("hold", 3), S("play", 2), S("hold", 3)], lydian),
-        "bells": ("1/4", *bells(["A4", "C#5", "E5", "F#5", "G#5"]), lydian),
-    })
-    s.section("canopy", "Canopy", 8, {
-        "celesta": ("1/8", *celesta(["F#4", "G#4", "A4", "B4", "C#5", "D5", "E5", "F#5", "A5", "B5"],
-                                     [70, 62, 74, 66, 80, 68, 76, 72, 66, 70]), lydian),
-        "harp": ("1/16", *harp(["B2", "F#3", "A3", "C#4", "E4", "F#4", "A4", "C#5"], 72, busy=True), lydian),
-        "pad": ("1/1", pad(["B2 F#3 A3 C#4 D4", "A2 E3 G#3 C#4", "F#2 C#3 E3 A3", "D3 G#3 B3 E4"], 2, 62)),
-        "drone": ("1/2", pool_of(["B1", "A1", "F#1", "D2"], 62, 1.0),
-                  [S("play", 1), S("hold", 3), S("fwd"), S("hold", 3)], lydian),
-        "bells": ("1/4", *bells(["F#5", "A5", "C#6", "E5", "B5"], 66), lydian),
-    })
-    s.section("dusk", "Dusk", 8, {
-        "celesta": ("1/8", *celesta(D_LYD, [50, 46, 54, 48, 52, 46, 56, 50, 48, 52], gentle=True), lydian),
-        "harp": ("1/16", pool_of(["D3", "A3", "C#4", "E4", "F#4", "A4"], 54, 0.9),
-                 [S("play", 1), S("fwd"), S("fwd"), S("fwd", prob=0.6), S("pause", 12)], lydian),
-        "pad": ("1/1", pad(["D3 A3 C#4 F#4"], 8, 52)),
-        "drone": ("1/1", pool_of(["D2"], 52, 1.0), [S("play", 1), S("hold", 7)], lydian),
-        "bells": ("1/4", pool_of(["A4", "E5", "F#5"], 54, 1.0),
-                  [S("pause", 6), S("random", prob=0.4), S("hold", 5)], lydian),
-    })
-    return s.build(loops=True)
-
 # ================================================================= write
 
 SONGS = {
     "Template-InstrumentHost": instrument_host,
     "Template-Sequencer": sequencer,
     "Example-NightMarket": night_market,
-    "Example-CornerCafe": corner_cafe,
+    "Example-BluesInA": blues_in_a,
     "Example-Lighthouse": lighthouse,
     "Example-SundayStrut": sunday_strut,
-    "Example-Glasshouse": glasshouse,
 }
 
 if __name__ == "__main__":

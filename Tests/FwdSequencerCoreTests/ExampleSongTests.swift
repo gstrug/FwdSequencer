@@ -29,7 +29,7 @@ final class ExampleSongTests: XCTestCase {
     func testTheHappyBirthdayExampleSequencesItsNotes() throws {
         let url = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Tests/FwdSequencerCoreTests/Fixtures/HappyBirthdayJazz.json")
+            .appendingPathComponent("FwdSequencer/Resources/Example-HappyBirthdayJazz.json")
         let song = try SongStorage.decodeDocument(Data(contentsOf: url))
         assertEveryPartWithNotesHasSteps(song, "Happy Birthday")
     }

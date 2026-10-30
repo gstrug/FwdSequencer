@@ -3,9 +3,13 @@ import UniformTypeIdentifiers
 
 struct ProjectBrowserView: View {
     @EnvironmentObject var songStore: SongStore
-    /// The example songs are added to the list once (2026-10-30: a fresh set replaced
-    /// the first examples). New Song ▸ Examples adds another copy any time.
-    @AppStorage("didInstallExamplesV3") private var didInstallExamples = false
+    /// Which example songs have been added to the list, by `ExampleSong` raw value, so
+    /// each is added once — including any added to the app later. New Song ▸ Examples
+    /// adds another copy any time.
+    @AppStorage("installedExamples") private var installedExamplesRaw = ""
+    /// Earlier records of the same thing, read once to carry them over.
+    @AppStorage("didInstallExamplesV3") private var didInstallExamplesV3 = false
+    @AppStorage("didInstallHappyBirthdayDemoV2") private var didInstallHappyBirthdayDemo = false
     @State private var songs: [Song] = []
     @State private var showingSong = false
     @State private var songDeleteTarget: Song? = nil
@@ -476,20 +480,24 @@ struct ProjectBrowserView: View {
     /// from every existing document; after installation it is an ordinary song
     /// that can be edited, duplicated, exported, or deleted without returning.
     private func installBundledDemoIfNeeded() {
-        guard !didInstallExamples else { return }
-        // The flag is set only if every example saved, so a failure is retried next
-        // launch rather than silently skipping a song for good. (A retry may add a
-        // second copy of one that did save; that is the safer side.)
-        var allSaved = true
-        for example in ExampleSong.allCases {
-            guard let song = example.makeSong() else { allSaved = false; continue }
-            if case .failure(let error) = SongStorage.saveResult(song) {
+        var installed = Set(installedExamplesRaw.split(separator: ",").map(String.init))
+        // Carried over from before the list: the 2026-10-30 set, and Happy Birthday.
+        if didInstallExamplesV3 { installed.formUnion(["nightMarket", "lighthouse", "sundayStrut"]) }
+        if didInstallHappyBirthdayDemo { installed.insert(ExampleSong.happyBirthday.rawValue) }
+        var added = false
+        for example in ExampleSong.allCases where !installed.contains(example.rawValue) {
+            // Recorded only once saved, so a failure is retried next launch.
+            guard let song = example.makeSong() else { continue }
+            switch SongStorage.saveResult(song) {
+            case .success:
+                installed.insert(example.rawValue)
+                added = true
+            case .failure(let error):
                 notice = "\(example.name) could not be installed. \(error.localizedDescription)"
-                allSaved = false
             }
         }
-        didInstallExamples = allSaved
-        reload()
+        installedExamplesRaw = installed.sorted().joined(separator: ",")
+        if added { reload() }
     }
 
     /// New Song ▸ Examples: a fresh copy, opened straight away.

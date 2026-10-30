@@ -181,14 +181,16 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
 - **Templates and examples** (2026-10-30, Graham: a fresh start, more musicality). New
   Song: Blank, Instrument Host, Sequencer, From a MIDI File… (blank song, opens Import
   MIDI via `SongStore.startsWithMIDIImport`), Pattern Pads (= Night Market). New Song ▸
-  Examples (`ExampleSong`): Night Market (deep house pads, opens in Trigger Mode),
-  Corner Café (bossa nova, Play keyboard = Vibraphone "Your Solo", arrangement), Lighthouse
-  (ballad in Song Parts, dynamics), Sunday Strut (funk, Feel), Glasshouse (generative
-  ambient, loops). Installed once (`didInstallExamplesV3`). **They are JSON in
-  `Resources/` written by `Tools/make_examples.py`** — edit the music there and rerun
-  (it has a small note/drum-grid notation); `BundledSongTests` checks them. The first
-  examples (Midnight Current etc.) now live only in `Tests/.../TestSongs.swift`, Happy
-  Birthday in `Tests/.../Fixtures`. Songs save `opensInTriggerMode` and
+  Examples (`ExampleSong`, Graham's picks 2026-10-30): Night Market (deep house pads,
+  opens in Trigger Mode), 12-Bar Blues in A (shuffle backing track on a triplet grid,
+  arrangement; Play keyboard = Overdriven Guitar "Your Solo"), Lighthouse (ballad in Song
+  Parts, dynamics), Sunday Strut (funk, Feel), Happy Birthday in C (Jazz). Corner Café
+  and Glasshouse were tried and dropped. Each example is added to the song list once
+  (UserDefaults "installedExamples", raw values — don't rename them). **They are JSON in
+  `Resources/` written by `Tools/make_examples.py`** (except Happy Birthday, transcribed
+  by hand) — edit the music there and rerun (it has a small note/drum-grid notation);
+  `BundledSongTests` checks them. The first examples (Midnight Current etc.) now live
+  only in `Tests/.../TestSongs.swift`. Songs save `opensInTriggerMode` and
   `showsPlayKeyboard` and open that way.
 - **Built-in sound** (2026-10-27): `SongTrack.builtInSound` (nil = program 0, 0–127, or
   `GeneralMIDI.drumKit` = 128, the percussion bank 0x78). `AudioEngineManager` keeps

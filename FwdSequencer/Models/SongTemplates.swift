@@ -98,52 +98,53 @@ enum SongTemplate: String, CaseIterable, Identifiable {
 
 /// The example songs: each a different style, and each showing a way of using the app.
 /// Added to the song list once; New Song ▸ Examples adds a fresh copy any time.
+/// The raw values are kept in the installed list, so they must not change.
 enum ExampleSong: String, CaseIterable, Identifiable {
     case nightMarket
-    case cornerCafe
+    case bluesInA
     case lighthouse
     case sundayStrut
-    case glasshouse
+    case happyBirthday
 
     var id: String { rawValue }
 
     var resource: String {
         switch self {
         case .nightMarket: return "Example-NightMarket"
-        case .cornerCafe: return "Example-CornerCafe"
+        case .bluesInA: return "Example-BluesInA"
         case .lighthouse: return "Example-Lighthouse"
         case .sundayStrut: return "Example-SundayStrut"
-        case .glasshouse: return "Example-Glasshouse"
+        case .happyBirthday: return "Example-HappyBirthdayJazz"
         }
     }
 
     var name: String {
         switch self {
         case .nightMarket: return "Night Market"
-        case .cornerCafe: return "Corner Café"
+        case .bluesInA: return "12-Bar Blues in A"
         case .lighthouse: return "Lighthouse"
         case .sundayStrut: return "Sunday Strut"
-        case .glasshouse: return "Glasshouse"
+        case .happyBirthday: return "Happy Birthday in C (Jazz)"
         }
     }
 
     var summary: String {
         switch self {
         case .nightMarket: return "Deep house on eight pads. Opens in Trigger Mode"
-        case .cornerCafe: return "Bossa nova to solo over on the Play keyboard"
+        case .bluesInA: return "A shuffle backing track to solo over on the Play keyboard"
         case .lighthouse: return "A ballad arranged in Song Parts, quiet to full and back"
         case .sundayStrut: return "Funk with swing, accent and chord roll in its Feel"
-        case .glasshouse: return "Generative ambient that keeps changing. Leave it running"
+        case .happyBirthday: return "A jazz arrangement transcribed bar by bar, in 3/4"
         }
     }
 
     var systemImage: String {
         switch self {
         case .nightMarket: return "square.grid.2x2"
-        case .cornerCafe: return "cup.and.saucer"
+        case .bluesInA: return "guitars"
         case .lighthouse: return "light.beacon.max"
         case .sundayStrut: return "figure.dance"
-        case .glasshouse: return "leaf"
+        case .happyBirthday: return "birthday.cake"
         }
     }
 

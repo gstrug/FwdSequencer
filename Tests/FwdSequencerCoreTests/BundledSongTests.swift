@@ -57,10 +57,13 @@ final class BundledSongTests: XCTestCase {
         XCTAssertEqual(pads.loops, true)
         XCTAssertEqual(pads.sections.count, 8)
 
-        let cafe = try XCTUnwrap(songs["Example-CornerCafe"])
-        XCTAssertEqual(cafe.showsPlayKeyboard, true)
-        XCTAssertEqual(cafe.performance?.builtInSound, 11)
-        XCTAssertTrue(cafe.arrangementIsActive)
+        let blues = try XCTUnwrap(songs["Example-BluesInA"])
+        XCTAssertEqual(blues.showsPlayKeyboard, true)
+        XCTAssertEqual(blues.performance?.builtInSound, 29)
+        XCTAssertTrue(blues.arrangementIsActive)
+        XCTAssertEqual(blues.sections.map(\.numberOfBars), [4, 12, 12, 4])
+
+        XCTAssertEqual(songs["Example-HappyBirthdayJazz"]?.timeSignature, TimeSignature(numerator: 3, denominator: 4))
 
         let ballad = try XCTUnwrap(songs["Example-Lighthouse"])
         XCTAssertTrue(ballad.arrangementIsActive)
@@ -69,12 +72,6 @@ final class BundledSongTests: XCTestCase {
         let funk = try XCTUnwrap(songs["Example-SundayStrut"])
         XCTAssertTrue(funk.tracks.contains { $0.effectiveSwing > 0 })
         XCTAssertTrue(funk.tracks.contains { $0.effectiveChordSpread > 0 })
-
-        let ambient = try XCTUnwrap(songs["Example-Glasshouse"])
-        let steps = ambient.sections.flatMap(\.parts).flatMap(\.steps)
-        XCTAssertTrue(steps.contains { $0.type == .random })
-        XCTAssertTrue(steps.contains { $0.probability < 1 })
-        XCTAssertEqual(ambient.loops, true)
 
         let host = try XCTUnwrap(songs["Template-InstrumentHost"])
         XCTAssertEqual(host.showsPlayKeyboard, true)
