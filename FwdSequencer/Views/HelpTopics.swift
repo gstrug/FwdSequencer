@@ -128,7 +128,7 @@ enum HelpTopic: String {
         case .midiImportStepSize: return "Step Size"
         case .midiImportStart: return "Start at the First Note"
         case .midiImportFit: return "Set Section Length to Fit"
-        case .midiImportTempo: return "Use the File's Tempo"
+        case .midiImportTempo: return "Use the File's Tempo and Time Signature"
         case .midiImportButton: return "Import"
         case .midiImportInstruments: return "Use the File's Instruments"
         case .trackBuiltInSound: return "Built-in Sound"
@@ -358,7 +358,7 @@ enum HelpTopic: String {
         case .midiImportFit:
             return "On: the section's number of bars is set to fit the music. Off: it keeps its length, and notes after the end are left out."
         case .midiImportTempo:
-            return "Sets the song's tempo to the file's."
+            return "Sets the song's tempo and time signature to the file's, so it plays as the file does. On for a song with no notes yet. The time signature applies to the whole song."
         case .midiImportButton:
             return "Imports the chosen parts into the section."
         case .midiImportInstruments:

@@ -100,6 +100,13 @@ nonisolated enum SongMIDIExporter {
         ]))
 
         let channels = (0..<16).filter { $0 != 9 }
+        // A track on the built-in drum kit is written on channel 10, where General MIDI
+        // keeps drums; the others take the remaining channels in turn.
+        func channelFor(_ trackIndex: Int) -> UInt8 {
+            let track = song.tracks[trackIndex]
+            if track.pluginInfo == nil, track.builtInSound == GeneralMIDI.drumKit { return 9 }
+            return UInt8(channels[trackIndex % channels.count])
+        }
         var absoluteTick = 0
         // The order the song plays in — the arrangement when it is on — so the file
         // matches what Play sounds (export parity). Indices are play positions, as in
@@ -126,7 +133,7 @@ nonisolated enum SongMIDIExporter {
                             // Releases already due fire first, as they would have live.
                             expireEvents(before: absoluteTick + localTick, state: &state,
                                          events: &trackEvents[trackIndex])
-                            let channel = UInt8(channels[trackIndex % channels.count])
+                            let channel = channelFor(trackIndex)
                             cancelPending(state: &state, events: &trackEvents[trackIndex])
                             stopLastNotes(at: absoluteTick + localTick, channel: channel,
                                           state: &state, events: &trackEvents[trackIndex])
@@ -147,7 +154,7 @@ nonisolated enum SongMIDIExporter {
                         resolved.stopPrevious = true
                     }
 
-                    let channel = UInt8(channels[trackIndex % channels.count])
+                    let channel = channelFor(trackIndex)
                     if resolved.stopPrevious {
                         cancelPending(state: &state, events: &trackEvents[trackIndex])
                         stopLastNotes(at: currentTick, channel: channel,
@@ -279,7 +286,7 @@ nonisolated enum SongMIDIExporter {
             let hasNextSection = sectionIndex + 1 < playedSections.count
             for (trackIndex, track) in song.tracks.enumerated() {
                 guard var state = states[track.id] else { continue }
-                let channel = UInt8(channels[trackIndex % channels.count])
+                let channel = channelFor(trackIndex)
                 expireEvents(before: absoluteTick, state: &state, events: &trackEvents[trackIndex])
 
                 let part = section.parts.first(where: { $0.trackID == track.id })
@@ -328,6 +335,14 @@ nonisolated enum SongMIDIExporter {
             guard song.isAudible(track) else { continue }
             var events = trackEvents[index]
             events.append(event(0, -7, metaText(0x03, track.name)))
+            // A track on the built-in sampler says which General MIDI sound it uses, so
+            // the file sounds the same elsewhere and imports back onto that sound.
+            if track.pluginInfo == nil {
+                let sound = track.builtInSound ?? 0
+                if (0...127).contains(sound) {
+                    events.append(event(0, -6, [0xC0 | channelFor(index), UInt8(sound)]))
+                }
+            }
             chunks.append(trackChunk(events: events, endTick: absoluteTick))
         }
 

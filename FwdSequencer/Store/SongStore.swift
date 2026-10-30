@@ -1229,9 +1229,11 @@ class SongStore: ObservableObject {
     /// (MIDIImportConverter). Everything is converted before anything changes, so a part
     /// that can't be imported leaves the song as it was. Existing tracks' notes and steps
     /// in the section are saved first as a snapshot, "Before MIDI import".
+    /// `useFileTiming` sets the song's tempo and time signature to the file's, and
+    /// bars are then counted in the file's time signature.
     func importMIDI(_ file: ImportedMIDIFile, intoSection sectionID: UUID,
                     targets: [Int: MIDIImportTarget], division: TempoDivision,
-                    startAtFirstNote: Bool, fitLength: Bool, setTempo: Bool,
+                    startAtFirstNote: Bool, fitLength: Bool, useFileTiming: Bool,
                     useFileInstruments: Bool = true) throws {
         guard let sectionIndex = song.sections.firstIndex(where: { $0.id == sectionID }) else { return }
         let chosen = file.parts.filter { part in
@@ -1239,7 +1241,9 @@ class SongStore: ObservableObject {
             return target != .skip
         }
         guard !chosen.isEmpty else { return }
-        let plan = MIDIImportPlan(file: file, parts: chosen, timeSignature: song.timeSignature,
+        let timeSignature = useFileTiming ? (file.usableTimeSignature ?? song.timeSignature)
+                                          : song.timeSignature
+        let plan = MIDIImportPlan(file: file, parts: chosen, timeSignature: timeSignature,
                                   division: division, startAtFirstNote: startAtFirstNote,
                                   fitLength: fitLength,
                                   currentBars: song.sections[sectionIndex].numberOfBars)
@@ -1309,7 +1313,10 @@ class SongStore: ObservableObject {
             updated.sections[sectionIndex].parts[partIndex] = target
         }
         updated.sections[sectionIndex].numberOfBars = plan.bars
-        if setTempo, let tempo = file.tempo { updated.tempo = min(400, max(20, tempo.rounded())) }
+        if useFileTiming {
+            if let tempo = file.usableTempo { updated.tempo = tempo }
+            updated.timeSignature = timeSignature
+        }
         song = updated
         selectedSection = sectionIndex
     }

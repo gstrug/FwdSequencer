@@ -161,9 +161,13 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   fit length, file tempo). Core in `Models/MIDIImport.swift` (tested): `MIDIFileReader`
   (SMF 0/1, running status, a track with several channels splits into parts) and
   `MIDIImportConverter` (notes → pool + Play/Hold/Pause steps, quantised; a new onset
-  ends the previous note; velocities bucketed by 8). `MIDIImportPlan` gives every part
+  ends the previous note; each Play's gate keeps the note's real length, pool
+  entries are full length; velocities exact, rounded to 8 only if the pool passes 512). `MIDIImportPlan` gives every part
   one origin and length. `SongStore.importMIDI` converts all first, snapshots existing
-  target tracks ("Before MIDI import"), sets scale chromatic. Round-trip test: what the
+  target tracks ("Before MIDI import"), sets scale chromatic. "Use the File's Tempo and Time Signature" sets both (on by
+  default when the song has no notes) and bars are then counted in the file's metre.
+  The exporter writes each built-in track's GM program (drum kit on channel 10), so
+  export → import plays the same (test: Happy Birthday round trip). Round-trip test: what the
   exporter writes imports back to the same steps. Parts are named after the file's GM
   program ("Fretless Bass · Verse bass", "Drums" on ch 10); new tracks start on that
   built-in sound ("Use the File's Instruments").

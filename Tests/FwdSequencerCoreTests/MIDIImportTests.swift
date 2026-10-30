@@ -170,4 +170,83 @@ final class MIDIImportTests: XCTestCase {
         XCTAssertEqual(result.notePool.map(\.midiNote), [60, 62, 64])
         XCTAssertEqual(describe(result.steps), describe(steps))
     }
+
+    /// The Happy Birthday example, exported and imported back with the file's tempo and
+    /// time signature, plays exactly the same notes: same times, lengths and loudness.
+    func testTheHappyBirthdayExampleExportedAndImportedPlaysTheSame() throws {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("FwdSequencer/Resources/HappyBirthdayJazz.json")
+        let original = try SongStorage.decodeDocument(Data(contentsOf: url))
+        let file = try MIDIFileReader.read(try SongMIDIExporter.data(for: original))
+        XCTAssertEqual(file.usableTimeSignature, original.timeSignature)
+        XCTAssertEqual(file.usableTempo, original.tempo)
+
+        let parts = file.parts.filter { !$0.notes.isEmpty }
+        XCTAssertEqual(parts.count, 2)
+        let division = MIDIImportConverter.suggestedDivision(for: parts.flatMap(\.notes),
+                                                             ticksPerQuarter: file.ticksPerQuarter)
+        XCTAssertEqual(division, .eighthTriplet)
+        let timeSignature = try XCTUnwrap(file.usableTimeSignature)
+        let plan = MIDIImportPlan(file: file, parts: parts, timeSignature: timeSignature,
+                                  division: division, startAtFirstNote: true, fitLength: true,
+                                  currentBars: 4)
+
+        var imported = Song()
+        imported.tempo = try XCTUnwrap(file.usableTempo)
+        imported.timeSignature = timeSignature
+        imported.randomSeed = original.randomSeed
+        imported.tracks = parts.map { SongTrack(name: $0.name) }
+        var importedParts: [Part] = []
+        for (part, track) in zip(parts, imported.tracks) {
+            let result = try plan.convert(part)
+            XCTAssertEqual(result.notesLeftOut, 0)
+            importedParts.append(Part(trackID: track.id, notePool: result.notePool,
+                                      steps: result.steps, tempoDivision: division))
+        }
+        imported.sections = [SongSection(name: "All", numberOfBars: plan.bars, parts: importedParts)]
+        let again = try MIDIFileReader.read(try SongMIDIExporter.data(for: imported))
+        let partsAgain = again.parts.filter { !$0.notes.isEmpty }
+        XCTAssertEqual(partsAgain.count, parts.count)
+        func ordered(_ notes: [ImportedNote]) -> [ImportedNote] {
+            notes.sorted { ($0.start, $0.pitch) < ($1.start, $1.pitch) }
+        }
+        for (before, after) in zip(parts, partsAgain) {
+            XCTAssertEqual(ordered(after.notes), ordered(before.notes), before.name)
+        }
+    }
+
+    func testVelocitiesAreKeptAsPlayed() throws {
+        let notes = [ImportedNote(start: 0, end: 96, pitch: 60, velocity: 101),
+                     ImportedNote(start: 96, end: 192, pitch: 60, velocity: 97)]
+        let result = try MIDIImportConverter.convert(notes, from: 0, bars: 1, ticksPerQuarter: 96,
+                                                     timeSignature: fourFour, division: .quarter)
+        XCTAssertEqual(result.notePool.map(\.velocity), [97, 101])
+        XCTAssertEqual(describe(result.steps), ["Play 2", "Play 1", "Pause 2"])
+    }
+
+    func testANotesOwnLengthIsKeptThroughTheGate() throws {
+        // A dotted-quarter-ish note on a quarter grid: two steps, sounding 0.75 of them.
+        let notes = [ImportedNote(start: 0, end: 144, pitch: 60, velocity: 100)]
+        let result = try MIDIImportConverter.convert(notes, from: 0, bars: 1, ticksPerQuarter: 96,
+                                                     timeSignature: fourFour, division: .quarter)
+        XCTAssertEqual(describe(result.steps), ["Play 1", "Hold 1", "Pause 2"])
+        XCTAssertEqual(result.steps[0].gate, 0.75, accuracy: 0.001)
+        XCTAssertEqual(result.notePool.first?.gateLength, 1.0)
+    }
+
+    func testTheExportWritesEachTracksBuiltInSound() throws {
+        var bass = SongTrack(name: "Bass")
+        bass.builtInSound = 35
+        var song = Song()
+        song.tracks = [bass]
+        song.sections = [SongSection(name: "A", numberOfBars: 1, parts: [
+            Part(trackID: bass.id, notePool: [NoteEntry(midiNote: 40, velocity: 100, gateLength: 1.0)],
+                 steps: [Step(type: .play, n: 1)], tempoDivision: .quarter)
+        ])]
+        let file = try MIDIFileReader.read(try SongMIDIExporter.data(for: song))
+        let part = try XCTUnwrap(file.parts.first { !$0.notes.isEmpty })
+        XCTAssertEqual(part.program, 35)
+        XCTAssertEqual(GeneralMIDI.sound(for: part), 35)
+    }
 }

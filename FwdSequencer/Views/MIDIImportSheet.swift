@@ -65,7 +65,7 @@ private struct MIDIImportSheet: View {
     @State private var division: TempoDivision = .sixteenth
     @State private var startAtFirstNote = true
     @State private var fitLength = true
-    @State private var setTempo = false
+    @State private var useFileTiming = false
     @State private var useFileInstruments = true
     @State private var failure: String?
 
@@ -126,8 +126,8 @@ private struct MIDIImportSheet: View {
                         Toggle("Use the File's Instruments", isOn: $useFileInstruments)
                             .helpTag(.midiImportInstruments)
                     }
-                    if let tempo = request.file.tempo {
-                        Toggle("Use the File's Tempo (\(Int(tempo.rounded())) BPM)", isOn: $setTempo)
+                    if request.file.hasTiming {
+                        Toggle(fileTimingLabel, isOn: $useFileTiming)
                             .helpTag(.midiImportTempo)
                     }
                 } header: {
@@ -189,6 +189,10 @@ private struct MIDIImportSheet: View {
                 targets[part.id] = .skip
             }
         }
+        // A song with no notes yet takes the file's tempo and time signature.
+        useFileTiming = songStore.song.sections.allSatisfy { section in
+            section.parts.allSatisfy { $0.notePool.isEmpty }
+        }
         division = MIDIImportConverter.suggestedDivision(for: parts.flatMap(\.notes),
                                                          ticksPerQuarter: request.file.ticksPerQuarter)
     }
@@ -213,9 +217,22 @@ private struct MIDIImportSheet: View {
         return "\(names[midi % 12])\(midi / 12 - 1)"
     }
 
+    /// The time signature bars are counted in: the file's when its timing is used.
+    private var timeSignature: TimeSignature {
+        useFileTiming ? (request.file.usableTimeSignature ?? songStore.song.timeSignature)
+                      : songStore.song.timeSignature
+    }
+
+    private var fileTimingLabel: String {
+        var details: [String] = []
+        if let tempo = request.file.usableTempo { details.append("\(Int(tempo)) BPM") }
+        if let ts = request.file.usableTimeSignature { details.append("\(ts.numerator)/\(ts.denominator)") }
+        return "Use the File's Tempo and Time Signature (\(details.joined(separator: ", ")))"
+    }
+
     private var plan: MIDIImportPlan {
         MIDIImportPlan(file: request.file, parts: chosen.isEmpty ? parts : chosen,
-                       timeSignature: songStore.song.timeSignature, division: division,
+                       timeSignature: timeSignature, division: division,
                        startAtFirstNote: startAtFirstNote, fitLength: fitLength,
                        currentBars: section?.numberOfBars ?? 4)
     }
@@ -228,10 +245,8 @@ private struct MIDIImportSheet: View {
 
     private var timingFooter: String {
         var text = "Notes are moved to the nearest step. The suggested size fits the file's rhythm; a smaller one keeps more detail but makes more steps."
-        if let ts = request.file.timeSignature,
-           ts.numerator != songStore.song.timeSignature.numerator
-            || ts.denominator != songStore.song.timeSignature.denominator {
-            text += " The file is in \(ts.numerator)/\(ts.denominator); bars are counted in the song's \(songStore.song.timeSignature.numerator)/\(songStore.song.timeSignature.denominator)."
+        if let ts = request.file.usableTimeSignature, ts != timeSignature {
+            text += " The file is in \(ts.numerator)/\(ts.denominator); bars are counted in the song's \(timeSignature.numerator)/\(timeSignature.denominator)."
         }
         return text
     }
@@ -256,7 +271,7 @@ private struct MIDIImportSheet: View {
         do {
             try songStore.importMIDI(request.file, intoSection: request.sectionID, targets: targets,
                                      division: division, startAtFirstNote: startAtFirstNote,
-                                     fitLength: fitLength, setTempo: setTempo,
+                                     fitLength: fitLength, useFileTiming: useFileTiming,
                                      useFileInstruments: useFileInstruments)
             dismiss()
         } catch {

@@ -46,6 +46,22 @@ nonisolated struct ImportedMIDIFile: Equatable {
     var parts: [ImportedPart]
     var tempo: Double?                  // BPM, the file's first tempo
     var timeSignature: TimeSignature?   // the file's first
+
+    /// The file's time signature when a song can use it (1–32 over 1, 2, 4 … 32).
+    var usableTimeSignature: TimeSignature? {
+        guard let ts = timeSignature, (1...32).contains(ts.numerator),
+              [1, 2, 4, 8, 16, 32].contains(ts.denominator) else { return nil }
+        return ts
+    }
+
+    /// The file's tempo, rounded and kept within what a song allows.
+    var usableTempo: Double? {
+        guard let tempo, tempo.isFinite, tempo > 0 else { return nil }
+        return min(400, max(20, tempo.rounded()))
+    }
+
+    /// Whether the file has a tempo or time signature that can be used.
+    var hasTiming: Bool { usableTempo != nil || usableTimeSignature != nil }
 }
 
 nonisolated enum MIDIImportError: LocalizedError, Equatable {
@@ -295,47 +311,59 @@ nonisolated enum MIDIImportConverter {
         let total = slots(inBars: bars, timeSignature: timeSignature, division: division)
 
         // Onsets per slot. The same pitch struck twice in one slot is one note, at the
-        // louder velocity and the longer length.
-        var onsets: [Int: [Int: (velocity: Int, end: Int)]] = [:]
+        // louder velocity and the longer length. `exact` is how long the note really
+        // is, in steps, so its length can be kept with the Play step's gate.
+        var onsets: [Int: [Int: (velocity: Int, end: Int, exact: Double)]] = [:]
         var leftOut = 0
         for note in notes where note.start >= origin {
             let s = slot(of: note.start - origin, grid: grid)
             guard s < total else { leftOut += 1; continue }
             let e = min(total, max(s + 1, slot(of: note.end - origin, grid: grid)))
+            let exact = Double(max(0, note.end - note.start)) / grid
             let existing = onsets[s]?[note.pitch]
             onsets[s, default: [:]][note.pitch] = (max(existing?.velocity ?? 0, note.velocity),
-                                                  max(existing?.end ?? 0, e))
+                                                  max(existing?.end ?? 0, e),
+                                                  max(existing?.exact ?? 0, exact))
         }
 
-        // The pool: each pitch and velocity used, low to high. Velocities are rounded
-        // to steps of 8 so a played part does not need a pool entry per touch; if the
-        // pool would still be too big, one entry per pitch.
-        func entryKey(_ pitch: Int, _ velocity: Int, perPitch: Bool) -> Int {
-            perPitch ? pitch * 128 : pitch * 128 + min(127, max(1, (velocity + 4) / 8 * 8))
+        // The pool: each pitch and velocity used, low to high. Velocities are kept as
+        // played; only if that makes the pool too big are they rounded to steps of 8,
+        // and failing that one entry per pitch, at its average velocity.
+        enum Detail { case exact, rounded, perPitch }
+        func entryKey(_ pitch: Int, _ velocity: Int, _ detail: Detail) -> Int {
+            switch detail {
+            case .exact: return pitch * 128 + min(127, max(1, velocity))
+            case .rounded: return pitch * 128 + min(127, max(1, (velocity + 4) / 8 * 8))
+            case .perPitch: return pitch * 128
+            }
         }
         let all = onsets.values.flatMap { $0.map { ($0.key, $0.value.velocity) } }
-        var perPitch = Set(all.map { entryKey($0.0, $0.1, perPitch: false) }).count > maxPool
-        var keys = Set(all.map { entryKey($0.0, $0.1, perPitch: perPitch) }).sorted()
-        if keys.count > maxPool { perPitch = true; keys = Set(all.map { entryKey($0.0, $0.1, perPitch: true) }).sorted() }
+        var detail = Detail.exact
+        var keys = Set(all.map { entryKey($0.0, $0.1, .exact) }).sorted()
+        if keys.count > maxPool { detail = .rounded; keys = Set(all.map { entryKey($0.0, $0.1, .rounded) }).sorted() }
+        if keys.count > maxPool { detail = .perPitch; keys = Set(all.map { entryKey($0.0, $0.1, .perPitch) }).sorted() }
         guard keys.count <= maxPool else {
             throw MIDIImportError.tooLong("That part uses more than \(maxPool) different notes.")
         }
         var averageVelocity: [Int: Int] = [:]
-        if perPitch {
+        if detail == .perPitch {
             var sums: [Int: (Int, Int)] = [:]
             for (pitch, velocity) in all { sums[pitch, default: (0, 0)].0 += velocity; sums[pitch, default: (0, 0)].1 += 1 }
             for (pitch, sum) in sums { averageVelocity[pitch] = sum.0 / max(1, sum.1) }
         }
+        // Full-length entries: each note's own length is set by its Play step's gate.
         let pool = keys.map { key -> NoteEntry in
             let pitch = key / 128
-            let velocity = perPitch ? (averageVelocity[pitch] ?? 100) : key % 128
-            return NoteEntry(midiNote: pitch, velocity: velocity, gateLength: 0.9)
+            let velocity = detail == .perPitch ? (averageVelocity[pitch] ?? 100) : key % 128
+            return NoteEntry(midiNote: pitch, velocity: velocity, gateLength: 1.0)
         }
         var position: [Int: Int] = [:]
         for (index, key) in keys.enumerated() { position[key] = index + 1 }
 
         // Walk the section: a note or chord is Play, its length a Hold after it, and a
-        // gap a Rest. A new onset ends whatever was sounding.
+        // gap a Rest. A new onset ends whatever was sounding. A note that ends before its
+        // last step does keeps that length through the Play step's gate, which scales
+        // the whole note, Holds included — so a detached part stays detached.
         var steps: [Step] = []
         let onsetSlots = onsets.keys.sorted()
         var nextOnset = 0
@@ -344,15 +372,18 @@ nonisolated enum MIDIImportConverter {
             while nextOnset < onsetSlots.count && onsetSlots[nextOnset] < s { nextOnset += 1 }
             let following = nextOnset < onsetSlots.count ? onsetSlots[nextOnset] : total
             if let chord = onsets[s] {
-                let positions = chord.map { position[entryKey($0.key, $0.value.velocity, perPitch: perPitch)] ?? 1 }
+                let positions = chord.map { position[entryKey($0.key, $0.value.velocity, detail)] ?? 1 }
                     .sorted()
                 let after = nextOnset + 1 < onsetSlots.count ? onsetSlots[nextOnset + 1] : total
                 let ends = chord.values.map(\.end).max() ?? (s + 1)
                 let length = max(1, min(ends, after) - s)
+                let cut = ends > after
+                let exact = chord.values.map(\.exact).max() ?? Double(length)
+                let gate = cut ? 1.0 : min(1.0, max(0.05, (exact / Double(length) * 10_000).rounded() / 10_000))
                 if positions.count > 1 {
-                    steps.append(Step(type: .play, n: positions[0], chordPositions: positions, gate: 1.0))
+                    steps.append(Step(type: .play, n: positions[0], chordPositions: positions, gate: gate))
                 } else {
-                    steps.append(Step(type: .play, n: positions[0], gate: 1.0))
+                    steps.append(Step(type: .play, n: positions[0], gate: gate))
                 }
                 if length > 1 { steps.append(Step(type: .hold, n: length - 1)) }
                 s += length
