@@ -267,12 +267,17 @@ nonisolated enum MIDIImportConverter {
         guard !notes.isEmpty else { return .sixteenth }
         for division in divisions {
             let grid = gridTicks(division, ticksPerQuarter: ticksPerQuarter)
-            let error = notes.reduce(0.0) { total, note in
+            let offsets = notes.map { note -> Double in
                 let offset = Double(note.start).truncatingRemainder(dividingBy: grid)
-                return total + min(offset, grid - offset)
-            } / Double(notes.count)
+                return min(offset, grid - offset)
+            }
+            let error = offsets.reduce(0, +) / Double(notes.count)
+            // A note moved by a third of a step or more is a different rhythm (a
+            // triplet squashed onto straight steps), not a looser touch. Even a few of
+            // them — a swung pickup — rule the step size out.
+            let moved = offsets.filter { $0 >= grid / 3 - 0.5 }.count
             // Within 1/24 of a beat on average: a played note, not a different rhythm.
-            if error <= Double(ticksPerQuarter) / 24 { return division }
+            if error <= Double(ticksPerQuarter) / 24 && moved * 100 <= notes.count { return division }
         }
         return .thirtysecond
     }

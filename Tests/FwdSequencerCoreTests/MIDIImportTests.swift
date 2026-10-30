@@ -208,12 +208,34 @@ final class MIDIImportTests: XCTestCase {
         let again = try MIDIFileReader.read(try SongMIDIExporter.data(for: imported))
         let partsAgain = again.parts.filter { !$0.notes.isEmpty }
         XCTAssertEqual(partsAgain.count, parts.count)
-        func ordered(_ notes: [ImportedNote]) -> [ImportedNote] {
-            notes.sorted { ($0.start, $0.pitch) < ($1.start, $1.pitch) }
+        // Start at the First Note drops empty bars before the music, so both files are
+        // compared from their first bar with a note.
+        func fromFirstBar(_ parts: [ImportedPart], ticksPerQuarter: Int) -> [[ImportedNote]] {
+            let origin = MIDIImportConverter.firstBarStart(of: parts.flatMap(\.notes),
+                                                           ticksPerQuarter: ticksPerQuarter,
+                                                           timeSignature: timeSignature)
+            return parts.map { part in
+                part.notes.map { ImportedNote(start: $0.start - origin, end: $0.end - origin,
+                                              pitch: $0.pitch, velocity: $0.velocity) }
+                    .sorted { ($0.start, $0.pitch) < ($1.start, $1.pitch) }
+            }
         }
-        for (before, after) in zip(parts, partsAgain) {
-            XCTAssertEqual(ordered(after.notes), ordered(before.notes), before.name)
+        let before = fromFirstBar(parts, ticksPerQuarter: file.ticksPerQuarter)
+        let after = fromFirstBar(partsAgain, ticksPerQuarter: again.ticksPerQuarter)
+        for index in before.indices where after.indices.contains(index) {
+            XCTAssertEqual(after[index].count, before[index].count, parts[index].name)
+            for (a, b) in zip(after[index], before[index]) where a != b {
+                XCTFail("\(parts[index].name): \(a) instead of \(b)")
+                break
+            }
         }
+    }
+
+    func testASwungPickupKeepsTripletSteps() {
+        // Mostly quarter notes, with one triplet pickup: straight steps would move it.
+        var notes = (0..<40).map { ImportedNote(start: 96 + $0 * 96, end: 96 + $0 * 96 + 90, pitch: 60, velocity: 100) }
+        notes.append(ImportedNote(start: 64, end: 90, pitch: 62, velocity: 100))
+        XCTAssertEqual(MIDIImportConverter.suggestedDivision(for: notes, ticksPerQuarter: 96), .eighthTriplet)
     }
 
     func testVelocitiesAreKeptAsPlayed() throws {
