@@ -5,7 +5,11 @@ import Foundation
 /// section markers, track names, and the generated note performance.
 nonisolated enum SongMIDIExporter {
     static let ticksPerQuarter = 480
-    private static let baseTick = ticksPerQuarter / 8 // live engine's 32nd-note clock
+    // The live engine's clock: 24 per quarter (TempoDivision.sequencerTicks), 20 file
+    // ticks each. Every step size, the triplets included, falls on it. (It used to be
+    // a 32nd-note clock, which triplet steps miss: a 1/8T track then played only
+    // every third step in the file.)
+    private static let baseTick = ticksPerQuarter / 24
     private static let maximumNoteEvents = 1_000_000
     private static let maximumVariableLength = 0x0FFF_FFFF
 
@@ -159,9 +163,12 @@ nonisolated enum SongMIDIExporter {
                         cancelPending(state: &state, events: &trackEvents[trackIndex])
                         stopLastNotes(at: currentTick, channel: channel,
                                       state: &state, events: &trackEvents[trackIndex])
-                    } else if !state.pendingEventIndices.isEmpty {
-                        // Hold: cancel delayed ratchets/releases and move the release
-                        // one complete track step later, matching the live scheduler.
+                    } else if isCarrying, !state.pendingEventIndices.isEmpty {
+                        // A Hold carried in from the section before: its release was
+                        // written over there, without sight of this section, so it is
+                        // moved a step at a time, matching the live scheduler. A Hold
+                        // within a section needs nothing: the note before it was
+                        // written to span it (sustainTriggers below).
                         cancelPending(state: &state, events: &trackEvents[trackIndex])
                         let heldNotes = state.lastMIDINotes
                         for note in heldNotes {
@@ -181,6 +188,20 @@ nonisolated enum SongMIDIExporter {
 
                     let ratchets = min(8, max(1, activeStep?.ratchets ?? 1))
                     let subdivision = Double(trigger) / Double(ratchets)
+                    // How long the note is meant to sound: its own step plus every Hold
+                    // straight after it, scaled by its gate — as SequencerEngine does.
+                    // Extending the release at each Hold instead only worked when the
+                    // note outlived its step, so with any gate below 1 held notes came
+                    // out one step long.
+                    var sustainTriggers = 1
+                    if ratchets == 1 {
+                        var scan = state.stepIndex % part.steps.count
+                        for _ in 0..<part.steps.count {
+                            guard part.steps[scan].type == .hold else { break }
+                            sustainTriggers += max(1, part.steps[scan].n)
+                            scan = (scan + 1) % part.steps.count
+                        }
+                    }
 
                     // Feel, matched to the live scheduler. This must mirror
                     // SequencerEngine exactly or the file disagrees with what was
@@ -253,7 +274,7 @@ nonisolated enum SongMIDIExporter {
                             gateScale = 1.0 + g * (Double(track.effectiveVariation) / 40.0) * 0.3
                         }
                         let gate = max(0.01, note.gateLength * resolved.gate * gateScale)
-                        let duration = max(1, Int((subdivision * gate).rounded()))
+                        let duration = max(1, Int((subdivision * gate * Double(sustainTriggers)).rounded()))
                         let velocity = UInt8(min(max(note.velocity + velocityOffset, 1), 127))
                         let spreadOffset = Int((spreadTicks * Double(order)).rounded())
                         for ratchet in 0..<ratchets {

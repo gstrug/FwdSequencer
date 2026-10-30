@@ -464,6 +464,34 @@ final class FwdSequencerCoreTests: XCTestCase {
         XCTAssertEqual(noteOffs.map(\.tick), [2_400])
     }
 
+    /// Triplet steps used to fall between the exporter's 32nd-note clock, so a 1/8T
+    /// track was written with only every third step.
+    func testMIDIExportWritesEveryTripletStep() throws {
+        let track = SongTrack(name: "Triplets")
+        let part = Part(trackID: track.id, notePool: [NoteEntry(midiNote: 60, velocity: 100, gateLength: 0.5)],
+                        steps: [Step(type: .play)], tempoDivision: .eighthTriplet)
+        let song = Song(name: "Triplets", tempo: 120, timeSignature: TimeSignature(numerator: 3, denominator: 4),
+                        tracks: [track],
+                        sections: [SongSection(name: "One", numberOfBars: 1, parts: [part])], randomSeed: 1)
+        let events = try channelEvents(in: SongMIDIExporter.data(for: song), track: 1)
+        let noteOns = events.filter { ($0.status & 0xF0) == 0x90 }
+        XCTAssertEqual(noteOns.map(\.tick), (0..<9).map { $0 * 160 })
+    }
+
+    /// A note followed by Holds lasts through them, scaled by its gate — as the live
+    /// scheduler plays it — even when the gate is below 1.
+    func testMIDIExportHoldsANoteWithAShortGate() throws {
+        let track = SongTrack(name: "Held")
+        let part = Part(trackID: track.id, notePool: [NoteEntry(midiNote: 60, velocity: 100, gateLength: 0.5)],
+                        steps: [Step(type: .play), Step(type: .hold, n: 3)], tempoDivision: .quarter)
+        let song = Song(name: "Held", tracks: [track],
+                        sections: [SongSection(name: "One", numberOfBars: 1, parts: [part])], randomSeed: 1)
+        let events = try channelEvents(in: SongMIDIExporter.data(for: song), track: 1)
+        XCTAssertEqual(events.filter { ($0.status & 0xF0) == 0x90 }.map(\.tick), [0])
+        // Four beats of 480 ticks at half gate.
+        XCTAssertEqual(events.filter { ($0.status & 0xF0) == 0x80 }.map(\.tick), [960])
+    }
+
     func testMIDIExportSplitsVeryLongEmptyTrackDeltas() throws {
         let track = SongTrack(name: "Silent")
         let part = Part(trackID: track.id)

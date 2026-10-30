@@ -184,11 +184,14 @@ final class MIDIImportTests: XCTestCase {
 
         let parts = file.parts.filter { !$0.notes.isEmpty }
         XCTAssertEqual(parts.count, 2)
+        // The pickup ("Hap-py") is on triplet steps 7 and 9 of the first bar, each
+        // held to 95% of its length.
+        let rightHand = parts[0].notes.sorted { ($0.start, $0.pitch) < ($1.start, $1.pitch) }
+        XCTAssertEqual(rightHand.prefix(4).map { [$0.start, $0.end, $0.pitch] },
+                       [[960, 1264, 55], [960, 1264, 67], [1280, 1432, 55], [1280, 1432, 67]])
         let division = MIDIImportConverter.suggestedDivision(for: parts.flatMap(\.notes),
                                                              ticksPerQuarter: file.ticksPerQuarter)
-        // Every onset falls on a beat, so quarter steps are suggested; that must still
-        // play the same, lengths included.
-        XCTAssertEqual(division, .quarter)
+        XCTAssertEqual(division, .eighthTriplet)
         let timeSignature = try XCTUnwrap(file.usableTimeSignature)
         let plan = MIDIImportPlan(file: file, parts: parts, timeSignature: timeSignature,
                                   division: division, startAtFirstNote: true, fitLength: true,
