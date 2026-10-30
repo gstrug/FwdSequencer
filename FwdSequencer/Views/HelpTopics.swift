@@ -316,7 +316,7 @@ enum HelpTopic: String {
         case .sectionMove:
             return "Move the position of the section in a song."
         case .sectionDelete:
-            return "Deletes the selected section. A song must always have at least one section."
+            return "Deletes the selected section. A song must always have at least one section, so when there is only one this reads Clear: it empties the section's notes and steps and keeps the tracks and their instruments. What was there is kept as a snapshot, \"Before clearing\"."
         case .arranger:
             return "Opens the Arranger: set the order your sections play in, using any section as often as you like."
         case .arrangerPlay:

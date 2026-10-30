@@ -285,8 +285,9 @@ struct ProjectBrowserView: View {
                 exportDocument = SongDocument(song: target.song)
                 exportFilename = name
                 exportingSong = true
-            case .midi:
-                data = try SongMIDIExporter.data(for: target.song)
+            case .midi, .midiOnGrid:
+                data = try SongMIDIExporter.data(for: target.song,
+                                                 includingFeel: target.format == .midi)
                 midiDocument = MIDIFileDocument(data: data)
                 midiFilename = name
                 exportingMIDI = true

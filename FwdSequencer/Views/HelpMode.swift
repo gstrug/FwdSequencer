@@ -104,7 +104,7 @@ struct HelpMenuPage: Identifiable {
             Item(icon: "plus", label: "Add Section", topic: .sectionAdd),
             Item(icon: "plus.square.on.square", label: "Duplicate", topic: .sectionDuplicate),
             Item(icon: "arrow.left.arrow.right", label: "Move Earlier / Move Later", topic: .sectionMove),
-            Item(icon: "trash", label: "Delete", topic: .sectionDelete),
+            Item(icon: "trash", label: "Delete (Clear for the only section)", topic: .sectionDelete),
         ]),
     ])
 

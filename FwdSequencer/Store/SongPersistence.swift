@@ -49,6 +49,7 @@ struct AudioRecordingDocument: FileDocument {
 nonisolated enum SongExportFormat: String, CaseIterable, Identifiable {
     case fwdSong
     case midi
+    case midiOnGrid
 
     var id: String { rawValue }
 
@@ -56,20 +57,22 @@ nonisolated enum SongExportFormat: String, CaseIterable, Identifiable {
         switch self {
         case .fwdSong: return "FWD Song"
         case .midi:    return "MIDI"
+        case .midiOnGrid: return "MIDI (on the Grid)"
         }
     }
 
     var detail: String {
         switch self {
         case .fwdSong: return "The whole song, to reopen here or share."
-        case .midi:    return "Notes only, for a DAW. Muted tracks are omitted."
+        case .midi:    return "Notes as they play, Feel included, for a DAW. Muted tracks are omitted."
+        case .midiOnGrid: return "Notes exactly on their steps, without Feel: tidiest in GarageBand, Logic or a notation app."
         }
     }
 
     var fileExtension: String {
         switch self {
         case .fwdSong: return "fwdsong"
-        case .midi:    return "mid"
+        case .midi, .midiOnGrid: return "mid"
         }
     }
 }

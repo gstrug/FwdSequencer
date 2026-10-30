@@ -42,8 +42,20 @@ nonisolated enum SongMIDIExporter {
         var pendingEventIndices: [Int] = []
     }
 
-    static func data(for input: Song) throws -> Data {
-        let song = try SongValidator.validateAndNormalize(input)
+    /// `includingFeel` false writes every note exactly on its step, as written: no
+    /// accent, variation, swing, push and pull or chord roll. Tidiest for a DAW or a
+    /// notation app, and it imports back onto the same step size.
+    static func data(for input: Song, includingFeel: Bool = true) throws -> Data {
+        var song = try SongValidator.validateAndNormalize(input)
+        if !includingFeel {
+            for index in song.tracks.indices {
+                song.tracks[index].accent = nil
+                song.tracks[index].variation = nil
+                song.tracks[index].swing = nil
+                song.tracks[index].timingJitter = nil
+                song.tracks[index].chordSpread = nil
+            }
+        }
         guard estimatedNoteEvents(in: song) <= maximumNoteEvents else {
             throw ExportError.tooLarge
         }

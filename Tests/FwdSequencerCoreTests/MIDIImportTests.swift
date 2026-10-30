@@ -276,4 +276,78 @@ final class MIDIImportTests: XCTestCase {
         XCTAssertEqual(part.program, 35)
         XCTAssertEqual(GeneralMIDI.sound(for: part), 35)
     }
+
+    private func happyBirthday() throws -> Song {
+        let url = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("FwdSequencer/Resources/HappyBirthdayJazz.json")
+        return try SongStorage.decodeDocument(Data(contentsOf: url))
+    }
+
+    /// The rhythm of the steps: where notes start, how many sound together, and how
+    /// long they hold — but not which notes, since Feel changes velocities.
+    private func rhythm(_ steps: [Step]) -> [String] {
+        steps.map { step in
+            step.type == .play ? "Play ×\(max(1, step.chordPositions.count))" : "\(step.type.rawValue) \(step.n)"
+        }
+    }
+
+    /// With Feel on — rolled chords, push and pull, accent — the export is loose,
+    /// but it still imports at 1/8T to the same rhythm as the tidy one.
+    func testAnExportWithFeelImportsToTheSameRhythm() throws {
+        var song = try happyBirthday()
+        for index in song.tracks.indices {
+            song.tracks[index].chordSpread = 40
+            song.tracks[index].timingJitter = 20
+            song.tracks[index].accent = 10
+        }
+        func imported(_ data: Data) throws -> (TempoDivision, [[String]]) {
+            let file = try MIDIFileReader.read(data)
+            let parts = file.parts.filter { !$0.notes.isEmpty }
+            let division = MIDIImportConverter.suggestedDivision(for: parts.flatMap(\.notes),
+                                                                 ticksPerQuarter: file.ticksPerQuarter)
+            let plan = MIDIImportPlan(file: file, parts: parts, timeSignature: song.timeSignature,
+                                      division: .eighthTriplet, startAtFirstNote: true, fitLength: true,
+                                      currentBars: 4)
+            return (division, try parts.map { rhythm(try plan.convert($0).steps) })
+        }
+        let loose = try imported(SongMIDIExporter.data(for: song))
+        let tidy = try imported(SongMIDIExporter.data(for: song, includingFeel: false))
+        XCTAssertEqual(loose.0, .eighthTriplet)
+        XCTAssertEqual(tidy.0, .eighthTriplet)
+        XCTAssertEqual(loose.1, tidy.1)
+    }
+
+    func testExportingOnTheGridLeavesOutFeel() throws {
+        var song = try happyBirthday()
+        let plain = try MIDIFileReader.read(SongMIDIExporter.data(for: song))
+        for index in song.tracks.indices {
+            song.tracks[index].chordSpread = 40
+            song.tracks[index].swing = 50
+            song.tracks[index].timingJitter = 20
+            song.tracks[index].variation = 15
+        }
+        XCTAssertNotEqual(try MIDIFileReader.read(SongMIDIExporter.data(for: song)).parts.map(\.notes),
+                          plain.parts.map(\.notes))
+        XCTAssertEqual(try MIDIFileReader.read(SongMIDIExporter.data(for: song, includingFeel: false)).parts.map(\.notes),
+                       plain.parts.map(\.notes))
+    }
+
+    func testARolledChordStaysOneChord() throws {
+        // C E G rolled upwards, 20 ticks apart, each held; then a note a beat later.
+        let notes = [ImportedNote(start: 0, end: 90, pitch: 60, velocity: 100),
+                     ImportedNote(start: 20, end: 92, pitch: 64, velocity: 100),
+                     ImportedNote(start: 40, end: 94, pitch: 67, velocity: 100),
+                     ImportedNote(start: 96, end: 180, pitch: 72, velocity: 100)]
+        let result = try MIDIImportConverter.convert(notes, from: 0, bars: 1, ticksPerQuarter: 96,
+                                                     timeSignature: fourFour, division: .quarter)
+        XCTAssertEqual(describe(result.steps), ["Play [1, 2, 3]", "Play 4", "Pause 2"])
+        XCTAssertEqual(MIDIImportConverter.suggestedDivision(for: notes, ticksPerQuarter: 96), .quarter)
+    }
+
+    func testNotesPlayedOneAfterAnotherAreNotAChord() {
+        // Quick sixteenths, each released before the next: a run, not a roll.
+        let notes = (0..<8).map { ImportedNote(start: $0 * 24, end: $0 * 24 + 22, pitch: 60 + $0, velocity: 100) }
+        XCTAssertEqual(MIDIImportConverter.groupingChords(notes, grid: 96).map(\.start), notes.map(\.start))
+    }
 }

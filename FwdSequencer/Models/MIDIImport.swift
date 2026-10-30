@@ -263,23 +263,55 @@ nonisolated enum MIDIImportConverter {
 
     /// The coarsest step size that places the notes' starts close to where they were
     /// played — fewer steps to read and edit — falling back to the finest.
+    ///
+    /// Judged on chords, not single notes (see `groupingChords`), so a rolled chord
+    /// counts as one onset, and by how far notes would move: loose timing moves them a
+    /// little, a different rhythm (a triplet on straight steps) moves them a third of
+    /// a step or more. Even a few of those — a swung pickup — rule a step size out.
     static func suggestedDivision(for notes: [ImportedNote], ticksPerQuarter: Int) -> TempoDivision {
         guard !notes.isEmpty else { return .sixteenth }
         for division in divisions {
             let grid = gridTicks(division, ticksPerQuarter: ticksPerQuarter)
-            let offsets = notes.map { note -> Double in
-                let offset = Double(note.start).truncatingRemainder(dividingBy: grid)
+            let starts = Set(groupingChords(notes, grid: grid).map(\.start))
+            let offsets = starts.map { start -> Double in
+                let offset = Double(start).truncatingRemainder(dividingBy: grid)
                 return min(offset, grid - offset)
             }
-            let error = offsets.reduce(0, +) / Double(notes.count)
-            // A note moved by a third of a step or more is a different rhythm (a
-            // triplet squashed onto straight steps), not a looser touch. Even a few of
-            // them — a swung pickup — rule the step size out.
+            let error = offsets.reduce(0, +) / Double(offsets.count)
             let moved = offsets.filter { $0 >= grid / 3 - 0.5 }.count
-            // Within 1/24 of a beat on average: a played note, not a different rhythm.
-            if error <= Double(ticksPerQuarter) / 24 && moved * 100 <= notes.count { return division }
+            if error <= grid / 5 && moved * 100 <= offsets.count { return division }
         }
         return .thirtysecond
+    }
+
+    /// Notes struck as one chord but spread out in time — a rolled chord, or a loose
+    /// hand — moved to start with the chord's first note, keeping their own lengths.
+    /// A note joins the chord when the note before it is still sounding, it starts
+    /// within a third of a step of that note, and the chord spans under 0.7 of a step;
+    /// notes played one after another (the last one released) never join.
+    static func groupingChords(_ notes: [ImportedNote], grid: Double) -> [ImportedNote] {
+        let sorted = notes.sorted { ($0.start, $0.pitch) < ($1.start, $1.pitch) }
+        var result: [ImportedNote] = []
+        result.reserveCapacity(sorted.count)
+        var chordStart = Int.min
+        var previous: ImportedNote?
+        for note in sorted {
+            if let last = previous, chordStart != Int.min,
+               note.start > last.start,
+               last.end > note.start,
+               Double(note.start - last.start) <= grid / 3,
+               Double(note.start - chordStart) < grid * 0.7 {
+                // Joins the chord.
+            } else if let last = previous, note.start == last.start {
+                // Struck together with the note before: same chord.
+            } else {
+                chordStart = note.start
+            }
+            result.append(ImportedNote(start: chordStart, end: chordStart + (note.end - note.start),
+                                       pitch: note.pitch, velocity: note.velocity))
+            previous = note
+        }
+        return result
     }
 
     /// The first bar holding a note, in file ticks, measured in the song's bars.
@@ -314,6 +346,8 @@ nonisolated enum MIDIImportConverter {
                         division: TempoDivision) throws -> Result {
         let grid = gridTicks(division, ticksPerQuarter: ticksPerQuarter)
         let total = slots(inBars: bars, timeSignature: timeSignature, division: division)
+        // A rolled chord goes on one step, not split across two.
+        let notes = groupingChords(notes, grid: grid)
 
         // Onsets per slot. The same pitch struck twice in one slot is one note, at the
         // louder velocity and the longer length. `exact` is how long the note really

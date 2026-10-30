@@ -876,10 +876,17 @@ private struct ArrangementStrip: View {
         }
         .disabled(!help.isOn && index >= songStore.song.sections.count - 1)
         Divider()
-        Button(role: .destructive) { help.perform(.sectionDelete) { songStore.deleteSection(at: index) } } label: {
-            Label("Delete", systemImage: "trash")
+        // A song keeps at least one section, so for the only one Delete becomes Clear:
+        // its notes and steps go (kept as a snapshot), its tracks stay.
+        if songStore.song.sections.count <= 1 {
+            Button(role: .destructive) { help.perform(.sectionDelete) { songStore.clearSection(at: index) } } label: {
+                Label("Clear", systemImage: "eraser")
+            }
+        } else {
+            Button(role: .destructive) { help.perform(.sectionDelete) { songStore.deleteSection(at: index) } } label: {
+                Label("Delete", systemImage: "trash")
+            }
         }
-        .disabled(!help.isOn && songStore.song.sections.count <= 1)
     }
 
     /// Built outside the view body: inline, this concatenation pushed the SwiftUI

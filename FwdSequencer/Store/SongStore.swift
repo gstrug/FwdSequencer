@@ -1202,6 +1202,21 @@ class SongStore: ObservableObject {
         selectedSection = min(selectedSection, song.sections.count - 1)
     }
 
+    /// Empty a section: every track's notes and steps go, the tracks and their
+    /// instruments stay. What was there is kept first as a snapshot, "Before
+    /// clearing". It is what Delete does for a song's only section, which can't go.
+    func clearSection(at index: Int) {
+        guard song.sections.indices.contains(index) else { return }
+        var section = song.sections[index]
+        guard section.parts.contains(where: { !$0.notePool.isEmpty || !$0.steps.isEmpty }) else { return }
+        reportDroppedSnapshot(section.saveSnapshot(named: "Before clearing"))
+        for i in section.parts.indices {
+            section.parts[i].notePool = []
+            section.parts[i].steps = []
+        }
+        song.sections[index] = section
+    }
+
     // MARK: - Built-in sound
 
     /// The General MIDI sound a track plays when it has no plugin.
