@@ -186,7 +186,9 @@ final class MIDIImportTests: XCTestCase {
         XCTAssertEqual(parts.count, 2)
         let division = MIDIImportConverter.suggestedDivision(for: parts.flatMap(\.notes),
                                                              ticksPerQuarter: file.ticksPerQuarter)
-        XCTAssertEqual(division, .eighthTriplet)
+        // Every onset falls on a beat, so quarter steps are suggested; that must still
+        // play the same, lengths included.
+        XCTAssertEqual(division, .quarter)
         let timeSignature = try XCTUnwrap(file.usableTimeSignature)
         let plan = MIDIImportPlan(file: file, parts: parts, timeSignature: timeSignature,
                                   division: division, startAtFirstNote: true, fitLength: true,
