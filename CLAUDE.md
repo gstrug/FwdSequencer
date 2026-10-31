@@ -293,6 +293,10 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   wrongly says the lead is 50 ms; `TIMING.md` §5 still says 15 ms. Check export parity
   if this is ever touched.
 - Parameter automation deferred; per-section tempo deferred.
+- **iPad only, by decision (Graham, 2026-10-31).** `TARGETED_DEVICE_FAMILY = 2` since the
+  first commit. iPhone was discussed and left for after 1.0: it needs a phone layout for
+  every screen, and Apple won't let iPhone support be removed once shipped. Revisit if
+  buyers ask (idea: a simpler phone layout — one track, Play keyboard, Trigger pads).
 - Finish and tick `RELEASE_CHECKLIST.md` before any App Store submission (privacy
   answers, screenshots, accessibility, oldest/newest iPadOS smoke test).
 
