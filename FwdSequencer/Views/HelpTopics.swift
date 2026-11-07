@@ -37,7 +37,7 @@ enum HelpTopic: String {
 
     // Play keyboard
     case playInstrument, playEditInstrument, playVolume, playMute, playSolo, playEffects,
-         playKeys, playClose, playOctave
+         playKeys, playClose, playOctave, playScale
 
     // Mixer
     case mixerMaster, mixerFader, mixerPan
@@ -171,6 +171,7 @@ enum HelpTopic: String {
         case .playKeys: return "Keys"
         case .playClose: return "Close"
         case .playOctave: return "Octave"
+        case .playScale: return "Play Keyboard Key and Scale"
 
         case .mixerMaster: return "Master"
         case .mixerFader: return "Channel Fader"
@@ -445,6 +446,8 @@ enum HelpTopic: String {
             return "Hides the Play keyboard."
         case .playOctave:
             return "Moves the virtual keyboard down or up an octave. The note in the middle shows which C you are on."
+        case .playScale:
+            return "Choose a key and scale for the virtual keyboard, or match one of the tracks in the selected section. Keys outside the scale are dimmed and play nothing, from the screen or a MIDI keyboard. All Keys plays every key."
 
         // Mixer
         case .mixerMaster:

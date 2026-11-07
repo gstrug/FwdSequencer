@@ -70,6 +70,37 @@ nonisolated struct Song: Codable, Identifiable, Equatable {
     /// for pads or for playing live opens ready for it.
     var opensInTriggerMode: Bool? = nil
     var showsPlayKeyboard: Bool? = nil
+    /// The Play keyboard's own key and scale: keys outside it are greyed out and play
+    /// nothing, on screen or from a MIDI keyboard. Optional so older songs decode;
+    /// nil (or Chromatic) = every key plays.
+    var playKeyboardScale: PlayKeyboardScale? = nil
+}
+
+/// A key and scale for the Play keyboard, separate from the tracks' (which are per
+/// track, per section) so it holds whatever section is playing.
+nonisolated struct PlayKeyboardScale: Codable, Equatable {
+    var key: Int = 0                        // 0 = C … 11 = B
+    var scale: MusicalScale = .chromatic
+
+    /// Whether any key is left out. Chromatic keeps every key.
+    var limitsKeys: Bool { scale != .chromatic }
+
+    /// The pitch classes (0 = C … 11 = B) that play.
+    var allowedPitchClasses: Set<Int> {
+        Set(scale.intervals.map { (($0 + key) % 12 + 12) % 12 })
+    }
+
+    func allows(_ midiNote: Int) -> Bool {
+        allowedPitchClasses.contains((midiNote % 12 + 12) % 12)
+    }
+}
+
+nonisolated extension Song {
+    /// The pitch classes the Play keyboard plays, or nil when every key plays.
+    var playKeyboardPitchClasses: Set<Int>? {
+        guard let s = playKeyboardScale, s.limitsKeys else { return nil }
+        return s.allowedPitchClasses
+    }
 }
 
 /// A named run of sections, played in order, placed in the arrangement as one block.

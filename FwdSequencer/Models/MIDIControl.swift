@@ -273,6 +273,9 @@ nonisolated struct MIDIKeyRouting {
         var learning = false
         /// No song open, or instruments restoring: keys must not reach a plugin.
         var paused = true
+        /// Per instrument: the pitch classes (0 = C … 11 = B) it accepts. No entry:
+        /// every note. The Play keyboard's when it follows a key and scale.
+        var allowedPitchClasses: [UUID: Set<Int>] = [:]
     }
 
     enum Action: Equatable {
@@ -318,7 +321,10 @@ nonisolated struct MIDIKeyRouting {
         if config.linkedNotes[device]?.contains(MIDIControlSource(message)) == true {
             return Decision(passOn: true)
         }
-        let instruments = config.destinations[device] ?? []
+        let pitchClass = Int(note) % 12
+        let instruments = (config.destinations[device] ?? []).filter {
+            config.allowedPitchClasses[$0]?.contains(pitchClass) ?? true
+        }
         guard !config.paused, !instruments.isEmpty else { return Decision(passOn: true) }
         var actions: [Action] = []
         // A second note-on without a release in between: end the first, or it hangs.

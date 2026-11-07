@@ -16,6 +16,7 @@ struct PlayDockView: View {
 
     @State private var showBuiltInSounds = false
     @State private var showPluginPicker = false
+    @State private var showScalePicker = false
     @State private var activeNotes = Set<UInt8>()
 
     private var perf: SongTrack? { songStore.song.performance }
@@ -26,6 +27,7 @@ struct PlayDockView: View {
             if let p = perf {
                 PlayableKeyboard(
                     performanceID: p.id,
+                    scale: songStore.song.playKeyboardScale,
                     onNoteOn: { note in
                         activeNotes.insert(note)
                         // Mute and solo apply here as they do to a track: muted, or
@@ -62,6 +64,13 @@ struct PlayDockView: View {
                 if let id = songStore.song.performance?.id { songStore.setBuiltInSound(sound, forTrack: id) }
             }
         }
+        .sheet(isPresented: $showScalePicker) {
+            let current = songStore.song.playKeyboardScale ?? PlayKeyboardScale()
+            KeyScalePickerView(currentKey: current.key, currentScale: current.scale,
+                               droppedCount: { _, _ in 0 }) { key, scale in
+                setScale(PlayKeyboardScale(key: key, scale: scale))
+            }
+        }
         .fullScreenCover(isPresented: $showPluginEditor) {
             if let p = perf {
                 PluginEditorView(trackID: p.id, trackName: p.name,
@@ -82,6 +91,7 @@ struct PlayDockView: View {
         HStack(spacing: 12) {
             instrumentButton
             editSoundButton
+            scaleButton
             volumeControls
             closeButton
         }
@@ -96,6 +106,7 @@ struct PlayDockView: View {
             }
             HStack(spacing: 8) {
                 editSoundButton
+                scaleButton
                 volumeControls
             }
         }
@@ -124,6 +135,79 @@ struct PlayDockView: View {
             .buttonStyle(.bordered).tint(.purple)
             .helpTag(.playEditInstrument)
         }
+    }
+
+    private static let noteNames = ["C", "C♯", "D", "D♯", "E", "F",
+                                    "F♯", "G", "G♯", "A", "A♯", "B"]
+
+    private static func name(key: Int, scale: MusicalScale) -> String {
+        "\(noteNames[((key % 12) + 12) % 12]) \(scale.rawValue)"
+    }
+
+    private struct TrackScale: Identifiable {
+        let id: UUID
+        let name: String
+        let key: Int
+        let scale: MusicalScale
+    }
+
+    /// The tracks in the selected section that follow a scale, to copy one from.
+    private var trackScales: [TrackScale] {
+        let song = songStore.song
+        guard song.sections.indices.contains(songStore.selectedSection) else { return [] }
+        let parts = song.sections[songStore.selectedSection].parts
+        return song.tracks.compactMap { track in
+            guard let part = parts.first(where: { $0.trackID == track.id }),
+                  part.scale != .chromatic else { return nil }
+            return TrackScale(id: track.id, name: track.name, key: part.key, scale: part.scale)
+        }
+    }
+
+    /// Key and scale for the Play keyboard: its own, a track's, or every key.
+    @ViewBuilder
+    private var scaleButton: some View {
+        if perf != nil {
+            let current = songStore.song.playKeyboardScale
+            let limits = current?.limitsKeys ?? false
+            Menu {
+                Button { showScalePicker = true } label: {
+                    Label("Choose Key & Scale…", systemImage: "music.quarternote.3")
+                }
+                let tracks = trackScales
+                if !tracks.isEmpty {
+                    Section("Match a Track") {
+                        ForEach(tracks) { t in
+                            Button("\(t.name): \(Self.name(key: t.key, scale: t.scale))") {
+                                setScale(PlayKeyboardScale(key: t.key, scale: t.scale))
+                            }
+                        }
+                    }
+                }
+                if limits {
+                    Button { setScale(nil) } label: {
+                        Label("All Keys", systemImage: "pianokeys")
+                    }
+                }
+            } label: {
+                Label(limits ? Self.name(key: current!.key, scale: current!.scale) : "All Keys",
+                      systemImage: "music.quarternote.3")
+                    .font(.caption).lineLimit(1)
+            }
+            .buttonStyle(.bordered)
+            .tint(limits ? .accentColor : .secondary)
+            .accessibilityLabel("Play keyboard key and scale")
+            .accessibilityValue(limits ? Self.name(key: current!.key, scale: current!.scale) : "All keys")
+            .helpTag(.playScale)
+        }
+    }
+
+    /// Chromatic is saved as nil: it is the same as every key.
+    private func setScale(_ scale: PlayKeyboardScale?) {
+        let value = (scale?.limitsKeys ?? false) ? scale : nil
+        guard songStore.song.playKeyboardScale != value else { return }
+        // Keys held on screen are released by the keyboard itself; this only changes
+        // which keys play from now on.
+        songStore.song.playKeyboardScale = value
     }
 
     @ViewBuilder
@@ -193,6 +277,8 @@ struct PlayDockView: View {
 private struct PlayableKeyboard: View {
     /// The Play keyboard's instrument, to light keys held on a MIDI controller.
     let performanceID: UUID
+    /// Keys outside it are dimmed and play nothing. nil: every key plays.
+    let scale: PlayKeyboardScale?
     @EnvironmentObject private var playback: PlaybackMonitor
     let onNoteOn: (UInt8) -> Void
     let onNoteOff: (UInt8) -> Void
@@ -217,6 +303,11 @@ private struct PlayableKeyboard: View {
     @State private var held = Set<Int>()
     /// Notes held on a MIDI controller routed to the Play keyboard.
     private var controllerHeld: Set<Int> { playback.heldKeys[performanceID] ?? [] }
+
+    private func plays(_ m: Int) -> Bool {
+        guard let scale, scale.limitsKeys else { return true }
+        return scale.allows(m)
+    }
 
     private var layout: KeyboardLayout {
         KeyboardLayout(whiteKeys: Self.whiteKeys, whiteWidth: whiteW,
@@ -259,6 +350,7 @@ private struct PlayableKeyboard: View {
                         ForEach(Self.whiteKeys, id: \.self) { m in
                             PlayKey(midi: m, isBlack: false, width: whiteW, height: keyH,
                                     pressed: held.contains(m) || controllerHeld.contains(m),
+                                    enabled: plays(m),
                                     onNoteOn: onNoteOn, onNoteOff: onNoteOff)
                                 .overlay(alignment: .bottom) { octaveLabel(m) }
                         }
@@ -266,6 +358,7 @@ private struct PlayableKeyboard: View {
                     ForEach(Self.blackKeys, id: \.self) { m in
                         PlayKey(midi: m, isBlack: true, width: blackW, height: blackH,
                                 pressed: held.contains(m) || controllerHeld.contains(m),
+                                enabled: plays(m),
                                 onNoteOn: onNoteOn, onNoteOff: onNoteOff)
                             .offset(x: blackX(m))
                     }
@@ -275,8 +368,16 @@ private struct PlayableKeyboard: View {
                 .overlay {
                     KeyboardTouchSurface(
                         keyAt: { layout.key(at: $0) },
-                        onPress: { note in held.insert(note); onNoteOn(UInt8(note)) },
-                        onRelease: { note in held.remove(note); onNoteOff(UInt8(note)) }
+                        // A key outside the scale plays nothing. A release is sent only
+                        // for a note that was played, so changing the scale while a key
+                        // is down still lets it go.
+                        onPress: { note in
+                            guard plays(note) else { return }
+                            held.insert(note); onNoteOn(UInt8(note))
+                        },
+                        onRelease: { note in
+                            if held.remove(note) != nil { onNoteOff(UInt8(note)) }
+                        }
                     )
                     // VoiceOver plays the keys through their own actions instead.
                     .accessibilityHidden(true)
@@ -328,6 +429,8 @@ private struct PlayKey: View {
     let width: CGFloat
     let height: CGFloat
     let pressed: Bool
+    /// In the Play keyboard's scale. Outside it the key is dimmed and plays nothing.
+    var enabled: Bool = true
     let onNoteOn: (UInt8) -> Void
     let onNoteOff: (UInt8) -> Void
 
@@ -339,14 +442,15 @@ private struct PlayKey: View {
 
     var body: some View {
         PianoKeyFace(isBlack: isBlack,
-                     tint: pressed ? .colored(.accentColor) : .natural,
+                     tint: pressed ? .colored(.accentColor) : (enabled ? .natural : .dimmed),
                      pressed: pressed, width: width, height: height)
             .frame(width: width, height: height)
             .accessibilityElement()
             .accessibilityLabel(noteName)
-            .accessibilityValue(pressed ? "Playing" : "Ready")
+            .accessibilityValue(pressed ? "Playing" : (enabled ? "Ready" : "Outside the scale"))
             .accessibilityAddTraits(.isButton)
             .accessibilityAction {
+                guard enabled else { return }
                 onNoteOn(UInt8(midi))
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onNoteOff(UInt8(midi)) }
             }

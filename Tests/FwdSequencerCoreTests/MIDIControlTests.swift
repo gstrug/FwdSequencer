@@ -233,6 +233,48 @@ final class MIDIControlTests: XCTestCase {
         XCTAssertEqual(r.route(device: "Other", note(65, 70)), .init(passOn: true))
     }
 
+    func testPlayKeyboardScaleAllowsOnlyItsNotes() {
+        let aMinor = PlayKeyboardScale(key: 9, scale: .minor)
+        XCTAssertEqual(aMinor.allowedPitchClasses, [9, 11, 0, 2, 4, 5, 7])
+        XCTAssertTrue(aMinor.allows(57))       // A3
+        XCTAssertTrue(aMinor.allows(60))       // C4
+        XCTAssertFalse(aMinor.allows(61))      // C♯4
+        XCTAssertFalse(PlayKeyboardScale().limitsKeys, "Chromatic plays every key")
+        var song = Song()
+        XCTAssertNil(song.playKeyboardPitchClasses)
+        song.playKeyboardScale = PlayKeyboardScale(key: 0, scale: .chromatic)
+        XCTAssertNil(song.playKeyboardPitchClasses)
+        song.playKeyboardScale = aMinor
+        XCTAssertEqual(song.playKeyboardPitchClasses, aMinor.allowedPitchClasses)
+    }
+
+    func testOlderSongsHaveNoPlayKeyboardScale() throws {
+        let data = try JSONEncoder().encode(Song())
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object.removeValue(forKey: "playKeyboardScale")
+        let old = try JSONDecoder().decode(Song.self, from: JSONSerialization.data(withJSONObject: object))
+        XCTAssertNil(old.playKeyboardScale)
+    }
+
+    func testKeysOutsideAnInstrumentsScaleDoNotReachIt() {
+        let play = UUID(), track = UUID()
+        var r = MIDIKeyRouting()
+        _ = r.reconfigure {
+            $0.destinations = ["Keys": [play, track]]
+            $0.allowedPitchClasses = [play: PlayKeyboardScale(key: 0, scale: .major).allowedPitchClasses]
+            $0.paused = false
+        }
+        // In C major: both play. C♯: only the track, which has no scale.
+        XCTAssertEqual(r.route(device: "Keys", note(60, 90)).actions,
+                       [.play(play, note: 60, velocity: 90), .play(track, note: 60, velocity: 90)])
+        XCTAssertEqual(r.route(device: "Keys", note(61, 90)).actions, [.play(track, note: 61, velocity: 90)])
+        XCTAssertEqual(r.route(device: "Keys", note(61, 0)).actions, [.stop(track, note: 61)])
+        // With only the Play keyboard listening, an outside note plays nothing at all.
+        _ = r.reconfigure { $0.destinations = ["Keys": [play]] }
+        XCTAssertTrue(r.route(device: "Keys", note(63, 90)).actions.isEmpty)
+        XCTAssertEqual(r.heldCount, 0)
+    }
+
     func testKeysPlaySeveralInstrumentsAtOnceAndReleaseThemAll() {
         let play = UUID(), trackA = UUID(), trackB = UUID()
         var r = MIDIKeyRouting()

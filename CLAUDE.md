@@ -117,6 +117,14 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   to the sequencer as muted, and used by `SongMIDIExporter`, so export parity holds);
   a soloed track silences Play keys unless Play is soloed. Keys routed to a muted or
   solo-silenced channel are silent. Also learnable: Show Play Keyboard, Trigger Mode.
+- **Play keyboard key and scale** (2026-11-07, Graham's request): `Song.playKeyboardScale`
+  (`PlayKeyboardScale`: key + scale; optional, nil/Chromatic = every key, saved with
+  the song). Its own setting, not a track's (those are per track, per section), set
+  from a menu on the Play dock: Choose Key & Scale… (`KeyScalePickerView`), Match a
+  Track (tracks in the selected section that have a scale), All Keys. Keys outside are
+  drawn `.dimmed` and play nothing from the screen; from a MIDI controller,
+  `MIDIKeyRouting.Config.allowedPitchClasses[performance.id]` drops them for the Play
+  keyboard only (tracks played by the same keys are unaffected). Help topic `.playScale`.
 - **Help mode** (2026-10-17): a ? button on each screen (`HelpButton`) turns on
   `HelpCenter`; controls tagged `.helpTag(.topic, instance:)` are outlined and a tap
   shows that topic in a card at the bottom (`.helpHost()` once per screen/sheet), using

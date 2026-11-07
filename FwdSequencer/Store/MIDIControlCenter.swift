@@ -221,6 +221,8 @@ final class MIDIControlCenter: ObservableObject {
                 .map { song in
                     song.tracks.map { "\($0.id)\(song.isAudible($0))" }
                         + [song.performance.map { "\($0.id)\(song.isPlayKeyboardAudible)" }].compactMap { $0 }
+                        // and the Play keyboard's scale, which decides which keys reach it.
+                        + [song.playKeyboardPitchClasses.map { "\($0.sorted())" } ?? "all"]
                 }
                 .removeDuplicates()
                 .receive(on: DispatchQueue.main)
@@ -297,7 +299,13 @@ final class MIDIControlCenter: ObservableObject {
         let paused = store.map { $0.isLoading } ?? true
         let learning = learn.isOn
         let disabled = disabledDevices
+        var allowed: [UUID: Set<Int>] = [:]
+        if let store, let performance = store.song.performance,
+           let classes = store.song.playKeyboardPitchClasses {
+            allowed[performance.id] = classes
+        }
         keyRouter.reconfigure { c in
+            c.allowedPitchClasses = allowed
             c.destinations = destinations
             c.writingDevices = writingDevices
             c.linkedNotes = linked
