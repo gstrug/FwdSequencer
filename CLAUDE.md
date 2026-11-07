@@ -18,6 +18,14 @@ as the source of truth; if this file disagrees with them, the repo wins.
 - Commit often with plain-English messages stating *why* (see `git log` for the style).
   Author commits as `Graham Struwig <g.struwig@gmail.com>`.
 
+- **Open `FwdSequencer.xcodeproj`, not the folder or `Package.swift`** (2026-11-07):
+  opening the folder gives the test-only package `FwdSequencerCore`, which builds but
+  can't run (Cmd-R beeps, "Unable to resolve module dependency: Swift").
+- **Deployment target must stay `16.6`** in the app target (both configurations).
+  Xcode 27.1's "update to recommended settings" changed it to
+  `$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)` (commit 8553837), which broke the CI
+  build; restored 2026-11-07. Decline that suggestion or re-check this after it.
+
 ### Release workflow — Graham's rule (2026-10-13)
 
 1. Make the change and **commit locally only**. **Do not push to GitHub.**
