@@ -262,6 +262,17 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
      first. (The timing messages used to find this were removed afterwards; commit
      a5b7444 has them if they are needed again.)
 
+- **Plugin window size and icons, reported 2026-11-07 — built, to test on device.**
+  1. Roland ZENOLOGY's editor came up tiny in the middle (AUM/Loopy Pro show it full
+     width). It declares a small size and was shown at exactly that. Now every plugin
+     that isn't large is grown to the largest size that keeps its declared shape
+     (aspect fit, Auto Layout, no zoom), and is laid out again if it announces a new
+     size later (`preferredContentSizeDidChange`, capped at 6). Large/undeclared still
+     fill, unchanged. If ZENOLOGY still looks wrong, next step: offer it view
+     configurations (`supportedViewConfigurations` / `select`) as AUM does.
+  2. Plugin lists show each plugin's icon (`AVAudioUnitComponent.icon`, gathered in
+     `PluginManager.performScan` into `icons`, shown by `PluginIcon` in Select
+     Instrument and Add Effect; a puzzle-piece symbol when there is none).
 - **Effects that crash on adding — fix built 2026-10-29, to test on device.** Graham:
   Nembrini Audio Crunk, Wah and Analog Delay, and Apple's Sound Isolation crash the app
   at once. Likely cause: `engine.connect` raises an NSException (uncatchable in Swift)

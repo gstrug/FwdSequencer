@@ -104,7 +104,8 @@ struct PluginPickerView: View {
                 selectedPlugin = plugin
                 dismiss()
             } label: {
-                HStack {
+                HStack(spacing: 12) {
+                    PluginIcon(plugin: plugin)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(plugin.name)
                             .font(.body)
@@ -191,5 +192,30 @@ private struct BuiltInSoundList: View {
             }
             .contentShape(Rectangle())
         }
+    }
+}
+
+/// A plugin's icon, as AUM and Loopy Pro show them: its app's icon when iPadOS
+/// provides one, otherwise a plain symbol so rows still line up.
+struct PluginIcon: View {
+    let plugin: PluginInfo
+    var size: CGFloat = 36
+    @ObservedObject private var manager = PluginManager.shared
+
+    var body: some View {
+        Group {
+            if let icon = manager.icons[plugin.componentIdentifier] {
+                Image(uiImage: icon).resizable().scaledToFill()
+            } else {
+                Image(systemName: "puzzlepiece.extension")
+                    .font(.system(size: size * 0.45))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.secondary.opacity(0.12))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.22, style: .continuous))
+        .accessibilityHidden(true)
     }
 }

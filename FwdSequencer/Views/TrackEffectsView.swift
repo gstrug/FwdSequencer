@@ -295,10 +295,13 @@ struct EffectPickerView: View {
                             onSelect(info)
                             dismiss()
                         } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(info.name).lineLimit(1)
-                                Text(info.manufacturerName)
-                                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            HStack(spacing: 12) {
+                                PluginIcon(plugin: info)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(info.name).lineLimit(1)
+                                    Text(info.manufacturerName)
+                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                }
                             }
                         }
                     }

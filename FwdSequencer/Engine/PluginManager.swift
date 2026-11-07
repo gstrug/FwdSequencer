@@ -1,6 +1,7 @@
 import AVFoundation
 import AudioToolbox
 import Combine
+import UIKit
 
 /// Scans the device for installed AUv3 instrument plugins.
 class PluginManager: ObservableObject {
@@ -12,6 +13,10 @@ class PluginManager: ObservableObject {
     /// the same way, so they are listed together.
     @Published var effects: [PluginInfo] = []
     @Published var isScanning = false
+    /// Each plugin's icon (its app's icon, as iPadOS provides it), by
+    /// `componentIdentifier`. Kept here rather than in PluginInfo, which is saved in
+    /// songs. A plugin without one shows a plain symbol (see PluginIcon).
+    @Published private(set) var icons: [String: UIImage] = [:]
     @Published private(set) var favoriteIdentifiers: Set<String>
 
     private var observer: NSObjectProtocol?
@@ -66,21 +71,34 @@ class PluginManager: ObservableObject {
         }
         let foundEffects = (scan(type: kAudioUnitType_Effect) + scan(type: kAudioUnitType_MusicEffect))
             .sorted { $0.name < $1.name }
+        // Icons are fetched here, off the main thread, as each comes from the
+        // plugin's app bundle.
+        var foundIcons: [String: UIImage] = [:]
+        for type in [kAudioUnitType_MusicDevice, kAudioUnitType_Effect, kAudioUnitType_MusicEffect] {
+            for c in components(type: type) {
+                if let icon = c.icon { foundIcons[makeKey(c.audioComponentDescription)] = icon }
+            }
+        }
         DispatchQueue.main.async { [weak self] in
             self?.instruments = foundInstruments
             self?.effects = foundEffects
+            self?.icons = foundIcons
             self?.isScanning = false
         }
+    }
+
+    private func components(type: OSType) -> [AVAudioUnitComponent] {
+        let desc = AudioComponentDescription(
+            componentType: type, componentSubType: 0, componentManufacturer: 0,
+            componentFlags: 0, componentFlagsMask: 0
+        )
+        return AVAudioUnitComponentManager.shared().components(matching: desc)
     }
 
     private func scan(type: OSType) -> [PluginInfo] {
         var seen = Set<String>()
         var results: [PluginInfo] = []
-        let desc = AudioComponentDescription(
-            componentType: type, componentSubType: 0, componentManufacturer: 0,
-            componentFlags: 0, componentFlagsMask: 0
-        )
-        for c in AVAudioUnitComponentManager.shared().components(matching: desc) {
+        for c in components(type: type) {
             guard seen.insert(makeKey(c.audioComponentDescription)).inserted else { continue }
             results.append(makeInfo(c))
         }

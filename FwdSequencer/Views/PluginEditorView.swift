@@ -72,7 +72,17 @@ final class AUPluginHostController: UIViewController {
         get { .zero }
         set {}
     }
-    override func preferredContentSizeDidChange(forChildContentContainer container: UIContentContainer) {}
+    /// Still not passed on to SwiftUI, but a plugin that announces its size only after
+    /// its view is up (or changes shape) is laid out again to match. Capped, in case a
+    /// plugin answers each new layout with a new size.
+    override func preferredContentSizeDidChange(forChildContentContainer container: UIContentContainer) {
+        guard let child = container as? UIViewController, child === children.first,
+              relayoutCount < 6 else { return }
+        let size = child.preferredContentSize
+        guard Self.layoutChanges(from: laidOutSize, to: size) else { return }
+        relayoutCount += 1
+        layOut(child.view, declared: size)
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -102,50 +112,77 @@ final class AUPluginHostController: UIViewController {
 
     /// Every plugin view is placed by Auto Layout — sized, never transformed (see
     /// CLAUDE.md lesson 2: a transform on an out-of-process view can blank its scene).
-    ///
-    /// - Large plugins, or ones that declare no usable size, fill the whole area.
-    /// - The rest are shown at their own declared size, centred — and shrunk to fit,
-    ///   by resizing, if that is bigger than the space available.
-    ///
-    /// Mid-sized plugins used to go in a scroll view zoomed to FILL the area in both
-    /// directions, so a wide plugin in a tall space was blown up until its sides were
-    /// off screen (KAGARIBI: "zoomed in, can't reach the controls"). The scroll view
-    /// also took drags meant for the plugin's knobs and faders, and the zoom was a
-    /// transform on the plugin's view. Both are gone.
     private func embed(_ vc: UIViewController) {
         addChild(vc)
         let pv = vc.view!
-        let declared = vc.preferredContentSize
-        let wantsFill = declared.width < 100 || declared.height < 100
-                     || declared.width >= 900 || declared.height >= 700
         pv.translatesAutoresizingMaskIntoConstraints = false
         vc.beginAppearanceTransition(true, animated: false)
         view.addSubview(pv)
-        if wantsFill {
-            NSLayoutConstraint.activate([
+        layOut(pv, declared: vc.preferredContentSize)
+        vc.didMove(toParent: self)
+        vc.endAppearanceTransition()
+        signalViewReady()
+    }
+
+    private var pluginConstraints: [NSLayoutConstraint] = []
+    private var laidOutSize: CGSize = .zero
+    private var relayoutCount = 0
+
+    /// - A large plugin, or one that declares no usable size, fills the whole area
+    ///   (unchanged; tested on device 2026-10-20).
+    /// - Every other plugin is made as large as the area allows while keeping the
+    ///   shape it declared ("aspect fit"), centred — so a wide plugin spans the full
+    ///   width, a tall one the full height, and nothing is ever cut off.
+    ///
+    /// History: mid-sized plugins were once zoomed to aspect-FILL in a scroll view
+    /// (KAGARIBI came up zoomed in with controls off screen). That was replaced by
+    /// showing them at exactly their declared size — but a declared size is a
+    /// starting point, not a limit, and Roland ZENOLOGY declares a small one, so it
+    /// came up tiny in the middle of the screen. AUM and Loopy Pro grow plugins to
+    /// the window; this does the same, by resizing, never by zooming.
+    private func layOut(_ pv: UIView, declared: CGSize) {
+        NSLayoutConstraint.deactivate(pluginConstraints)
+        laidOutSize = declared
+        if Self.fills(declared) {
+            pluginConstraints = [
                 pv.topAnchor.constraint(equalTo: view.topAnchor),
                 pv.leadingAnchor.constraint(equalTo: view.leadingAnchor),
                 pv.trailingAnchor.constraint(equalTo: view.trailingAnchor),
                 pv.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-            ])
+            ]
         } else {
-            // Its own size where it fits (high priority, so it gives way), never larger
-            // than the area (required), centred in it.
-            let width = pv.widthAnchor.constraint(equalToConstant: declared.width)
-            let height = pv.heightAnchor.constraint(equalToConstant: declared.height)
-            width.priority = .defaultHigh
-            height.priority = .defaultHigh
-            NSLayoutConstraint.activate([
-                width, height,
+            // Keep the declared shape (required), stay inside the area (required), and
+            // reach for the full width and height (high, so whichever doesn't fit gives
+            // way) — Auto Layout then settles on the largest fitting size.
+            let fullWidth = pv.widthAnchor.constraint(equalTo: view.widthAnchor)
+            let fullHeight = pv.heightAnchor.constraint(equalTo: view.heightAnchor)
+            fullWidth.priority = .defaultHigh
+            fullHeight.priority = .defaultHigh
+            pluginConstraints = [
+                pv.widthAnchor.constraint(equalTo: pv.heightAnchor,
+                                          multiplier: declared.width / declared.height),
                 pv.widthAnchor.constraint(lessThanOrEqualTo: view.widthAnchor),
                 pv.heightAnchor.constraint(lessThanOrEqualTo: view.heightAnchor),
+                fullWidth, fullHeight,
                 pv.centerXAnchor.constraint(equalTo: view.centerXAnchor),
                 pv.centerYAnchor.constraint(equalTo: view.centerYAnchor),
-            ])
+            ]
         }
-        vc.didMove(toParent: self)
-        vc.endAppearanceTransition()
-        signalViewReady()
+        NSLayoutConstraint.activate(pluginConstraints)
+    }
+
+    private static func fills(_ declared: CGSize) -> Bool {
+        declared.width < 100 || declared.height < 100
+            || declared.width >= 900 || declared.height >= 700
+    }
+
+    /// Whether a newly announced size would lay the plugin out differently: a change
+    /// between filling and fitting, or a shape change of more than 2%.
+    private static func layoutChanges(from old: CGSize, to new: CGSize) -> Bool {
+        if fills(old) != fills(new) { return true }
+        guard !fills(new) else { return false }
+        let oldShape = old.width / old.height, newShape = new.width / new.height
+        return abs(newShape - oldShape) / oldShape > 0.02
     }
 
     /// The counterpart to `embed`: Apple's documented teardown for a child view
