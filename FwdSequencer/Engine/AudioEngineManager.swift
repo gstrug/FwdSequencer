@@ -44,19 +44,17 @@ nonisolated enum AudioRecordingError: LocalizedError {
     }
 }
 
-/// Audio graph access is protected by `auLock`; MIDI-clock state is confined to
-/// `midiClockQueue`; recording writes are protected by `recordingLock`; callbacks
-/// shared by the main and render threads are copied under `callbackLock`.
+/// Audio graph access is protected by `auLock`; recording writes are protected by
+/// `recordingLock`; callbacks and settings shared by the main and render threads
+/// (the MIDI clock switch among them) are copied under `callbackLock`.
 nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sendable {
-    // One shared audio engine / session for the whole app. Pattern playback and
-    // song playback both route through it (only one document plays at a time).
+    // One shared audio engine / session for the whole app (one song plays at a time).
     static let shared = AudioEngineManager()
 
     private var engine = AVAudioEngine()
     private var masterTapInstalled = false
     private let recordingLock = NSLock()
     private var recordingFile: AVAudioFile?
-    private let midiClockQueue = DispatchQueue(label: "com.fwd.midi-clock", qos: .userInteractive)
     /// Serial, for outputs that cannot be stamped (the built-in sampler): a concurrent
     /// queue could let a note-off overtake its note-on and hang the note.
     private let scheduleQueue = DispatchQueue(label: "com.fwd.schedule", qos: .userInteractive)
@@ -479,6 +477,27 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
+    /// Make sure audio is running before playback starts.
+    ///
+    /// An interruption pauses the engine, and it is only restarted by itself when the
+    /// system says playback should resume. When it does not say so (the other audio
+    /// simply ended), the engine stayed paused and pressing Play was silent until the
+    /// song was reopened. Does nothing while the engine is running, which is every
+    /// ordinary press of Play. A failure here is left for the interruption handling to
+    /// report: this must never turn a silent Play into an error message.
+    func ensureRunning() {
+        withLock {
+            guard !engine.isRunning, !trackMixers.isEmpty else { return }
+            do {
+                try AVAudioSession.sharedInstance().setActive(true)
+                try engine.start()
+                setStatus(.ready)
+            } catch {
+                NSLog("[FWD] Audio could not be restarted before playing: %@", error.localizedDescription)
+            }
+        }
+    }
+
     private func registerForAudioSessionEvents() {
         let center = NotificationCenter.default
         let session = AVAudioSession.sharedInstance()
@@ -775,8 +794,12 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                 if let stateData {
                     DispatchQueue.main.asyncAfter(deadline: .now() + Self.instrumentSettleDelay) {
                         self.withLock {
-                            guard let chain = self.effectUnits[trackID], index < chain.count else { return }
-                            self.applyPluginStateLocked(stateData, to: chain[index])
+                            // The unit itself, not whatever is at `index` by now: the
+                            // chain can be reordered, or the effect removed, during
+                            // the settle delay.
+                            guard let chain = self.effectUnits[trackID],
+                                  chain.contains(where: { $0 === unit }) else { return }
+                            self.applyPluginStateLocked(stateData, to: unit)
                         }
                         self.deliver(.success(()), to: completion)
                     }
@@ -818,6 +841,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             let unit = chain.remove(at: index)
             effectUnits[trackID] = chain
             bypassedUnits.remove(ObjectIdentifier(unit))
+            refusedUnits.remove(ObjectIdentifier(unit))
             engine.disconnectNodeOutput(unit)
             engine.detach(unit)
             rebuildChainLocked(for: trackID)
@@ -858,8 +882,6 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
     }
 
-    func effectCount(for trackID: UUID) -> Int { withLock { effectUnits[trackID]?.count ?? 0 } }
-
     /// Capture an effect's state, with the track quiesced — same reasoning as
     /// `captureState` for an instrument.
     func captureEffectState(at index: Int, for trackID: UUID) -> Data? {
@@ -875,6 +897,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         forgetLatencyLocked(for: trackID)
         for unit in effectUnits.removeValue(forKey: trackID) ?? [] {
             bypassedUnits.remove(ObjectIdentifier(unit))
+            refusedUnits.remove(ObjectIdentifier(unit))
             engine.disconnectNodeOutput(unit)
             engine.detach(unit)
         }
