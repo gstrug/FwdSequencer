@@ -27,9 +27,7 @@
 - [ ] AUv3 load status remains visible until restoration actually completes
 - [ ] Failed and timed-out AUv3 instruments show GM fallback and a retryable error
 - [ ] Calls/Siri, headphone removal, Bluetooth changes, and Media Services Reset recover
-- [ ] After an interruption that does not resume by itself (another app's audio ends), Play sounds again without reopening the song
 - [ ] Effects that used to crash on adding (Nembrini Crunk, Wah, Analog Delay; Apple Sound Isolation and Apple's built-in effects) are added, bypassed, reordered and removed without a crash
-- [ ] Duplicating a track that has effects gives a copy that plays through its effects straight away
 - [ ] Roland ZENOLOGY and other small plugin windows fill the screen sensibly
 - [ ] Background playback does not cut notes merely to autosave
 - [ ] GeoShred and other compatibility exceptions are documented from device evidence
