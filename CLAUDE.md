@@ -338,7 +338,7 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   were reverted for an hour that day while the fault below was blamed on them, then
   brought back at Graham's word.
 - **Built-in sound turned into a dull, clicking tone when an effect was added — fixed
-  2026-11-10, to test on device.** Graham: adding any effect changed the track's sound
+  2026-11-10, tested OK by Graham on his iPad the same day.** Graham: adding any effect changed the track's sound
   completely, the effect's controls did nothing audible, removing it did not bring the
   sound back, and there were clicks at 50% CPU. Cause: **AVAudioUnitSampler drops its
   loaded sound bank instrument when its output is disconnected and reconnected**, and
@@ -348,8 +348,9 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   (`loadGMBank`) when the track's instrument is the sampler. Measured on a GitHub Mac
   with `Tools/EffectInsertTest.swift` (piano brightness 0.0265 → 0.0014 after rewiring,
   with or without an effect; back to 0.0258 after loading again). Plugin instruments
-  are not affected by this. **Not checked:** whether a route change (headphones in or
-  out) does the same to samplers; `handleConfigurationChange` does not reload them.
+  are not affected by this. Headphones in and out do NOT lose the sound (Graham,
+  2026-11-10: plugging in carries on, unplugging pauses and Resume plays correctly), so
+  `handleConfigurationChange` needs no reload.
 
 ## Build and test
 
