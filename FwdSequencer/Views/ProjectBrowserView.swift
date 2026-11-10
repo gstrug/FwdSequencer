@@ -3,13 +3,6 @@ import UniformTypeIdentifiers
 
 struct ProjectBrowserView: View {
     @EnvironmentObject var songStore: SongStore
-    /// Which example songs have been added to the list, by `ExampleSong` raw value, so
-    /// each is added once — including any added to the app later. New Song ▸ Examples
-    /// adds another copy any time.
-    @AppStorage("installedExamples") private var installedExamplesRaw = ""
-    /// Earlier records of the same thing, read once to carry them over.
-    @AppStorage("didInstallExamplesV3") private var didInstallExamplesV3 = false
-    @AppStorage("didInstallHappyBirthdayDemoV2") private var didInstallHappyBirthdayDemo = false
     @State private var songs: [Song] = []
     @State private var showingSong = false
     @State private var songDeleteTarget: Song? = nil
@@ -104,7 +97,6 @@ struct ProjectBrowserView: View {
             SongStorage.prepareExportsFolder()
             SongStorage.installMIDILoops()
             reload()
-            installBundledDemoIfNeeded()
         }
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.willResignActiveNotification)) { _ in
             // Backgrounding is a safe point to snapshot live plugin sounds and persist.
@@ -340,6 +332,13 @@ struct ProjectBrowserView: View {
                     Label("Start Blank", systemImage: "plus")
                 }
                 .buttonStyle(.bordered)
+                // No example arrives on its own any more, so the empty list has to say
+                // where they are. Lighthouse above is the one-tap way in; this is the
+                // list of all six, with what each one shows.
+                Button { showingExamples = true } label: {
+                    Text("See all examples")
+                }
+                .buttonStyle(.borderless)
                 Spacer(minLength: 30)
             }
         } else {
@@ -473,31 +472,6 @@ struct ProjectBrowserView: View {
             notice = error.localizedDescription
         }
         trashedSongs = SongStorage.trashedSongs()
-    }
-
-    /// Install the bundled example exactly once through the same validated,
-    /// atomic save path as a user-created song. A fresh UUID keeps it separate
-    /// from every existing document; after installation it is an ordinary song
-    /// that can be edited, duplicated, exported, or deleted without returning.
-    private func installBundledDemoIfNeeded() {
-        var installed = Set(installedExamplesRaw.split(separator: ",").map(String.init))
-        // Carried over from before the list: the 2026-10-30 set, and Happy Birthday.
-        if didInstallExamplesV3 { installed.formUnion(["nightMarket", "lighthouse", "sundayStrut"]) }
-        if didInstallHappyBirthdayDemo { installed.insert(ExampleSong.happyBirthday.rawValue) }
-        var added = false
-        for example in ExampleSong.allCases where !installed.contains(example.rawValue) {
-            // Recorded only once saved, so a failure is retried next launch.
-            guard let song = example.makeSong() else { continue }
-            switch SongStorage.saveResult(song) {
-            case .success:
-                installed.insert(example.rawValue)
-                added = true
-            case .failure(let error):
-                notice = "\(example.name) could not be installed. \(error.localizedDescription)"
-            }
-        }
-        installedExamplesRaw = installed.sorted().joined(separator: ",")
-        if added { reload() }
     }
 
     /// New Song ▸ Examples: a fresh copy, opened straight away.

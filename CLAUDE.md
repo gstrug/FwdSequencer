@@ -201,8 +201,14 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   opens in Trigger Mode), 12-Bar Blues in A (shuffle backing track on a triplet grid,
   arrangement; Play keyboard = Overdriven Guitar "Your Solo"), Lighthouse (ballad in Song
   Parts, dynamics), Sunday Strut (funk, Feel), Happy Birthday in C (Jazz). Corner Café
-  and Glasshouse were tried and dropped. Each example is added to the song list once
-  (UserDefaults "installedExamples", raw values — don't rename them). **They are JSON in
+  and Glasshouse were tried and dropped. **Examples are NOT added on their own (2026-11-10, Graham: "i
+  would rather the demo songs are not added automatically").** Until then, first launch
+  installed all of them; now a song arrives only when the user picks it from New Song ▸
+  Examples… or the empty list's buttons. `installBundledDemoIfNeeded` and the
+  UserDefaults keys "installedExamples", "didInstallExamplesV3" and
+  "didInstallHappyBirthdayDemoV2" are gone with it (stale keys on existing devices are
+  harmless; don't revive them). Examples already in someone's library stay as ordinary
+  songs and can be deleted for good. **They are JSON in
   `Resources/` written by `Tools/make_examples.py`** (except Happy Birthday, transcribed
   by hand) — edit the music there and rerun (it has a small note/drum-grid notation);
   `BundledSongTests` checks them. The first examples (Midnight Current etc.) now live
@@ -418,7 +424,9 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   (what the song is) and the new `demonstrates` (the one feature to go and look at).
   Keep `demonstrates` feature-first — it is the only place anyone learns what these
   songs are for. The same invisible-second-line problem still applies to the **New Song
-  templates** in that menu; not done.
+  templates** in that menu; not done. The empty song list offers Play Lighthouse, Start
+  Blank and See all examples — the only signposts to the examples now that none install
+  themselves.
 
 ## Build and test
 
