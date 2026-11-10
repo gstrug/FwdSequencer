@@ -327,17 +327,29 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
 - Finish and tick `RELEASE_CHECKLIST.md` before any App Store submission (privacy
   answers, screenshots, accessibility, oldest/newest iPadOS smoke test).
 
-- **Review and clean-up, 2026-11-10 (after build 91).** Kept: meters are only
-  republished when a level moves; unused code removed (`Views/ResetOnDoubleTap.swift`,
-  SongStorage `save`/`all`/`delete`/`duplicate`, `PlaybackBatcher.discard`, the
-  key/scale proxy bindings in the track row); `RELEASE_CHECKLIST.md` updated.
-  **Reverted the same day at Graham's instruction** after he found effects broken on
-  device: every change in `AudioEngineManager.swift` and every plugin-related change in
-  `SongStore.swift` (engine restart before Play, effects loaded on a duplicated track,
-  effect state restored by unit, `refusedUnits` clean-up, batched plugin state
-  capture). Both files are as in build 91 apart from the meter change. Those ideas are
-  NOT to be reapplied without Graham asking and a device test of each. Whether they
-  caused the fault was not established.
+- **Review and clean-up, 2026-11-10 (after build 91; to test on device).** Meters are
+  only republished when a level moves; plugin state is captured into the song in one
+  change; Play, Resume and trigger pads restart the audio engine if an interruption
+  left it paused (`AudioEngineManager.ensureRunning`); a duplicated track loads its
+  copied effects; an effect's saved state is restored into the unit that was loaded;
+  a removed effect is forgotten by `refusedUnits`. Unused code removed
+  (`Views/ResetOnDoubleTap.swift`, SongStorage `save`/`all`/`delete`/`duplicate`,
+  `PlaybackBatcher.discard`, `effectCount`, `midiClockQueue`). The plugin-related ones
+  were reverted for an hour that day while the fault below was blamed on them, then
+  brought back at Graham's word.
+- **Built-in sound turned into a dull, clicking tone when an effect was added — fixed
+  2026-11-10, to test on device.** Graham: adding any effect changed the track's sound
+  completely, the effect's controls did nothing audible, removing it did not bring the
+  sound back, and there were clicks at 50% CPU. Cause: **AVAudioUnitSampler drops its
+  loaded sound bank instrument when its output is disconnected and reconnected**, and
+  plays its default sine (3.5x louder, no envelope, hence clicks). Every chain rebuild
+  does that. Unnoticed before 2026-10-29 because the iPad had no GM bank and built-in
+  tracks were that sine anyway. Fix: `rebuildChainLocked` reloads the bank
+  (`loadGMBank`) when the track's instrument is the sampler. Measured on a GitHub Mac
+  with `Tools/EffectInsertTest.swift` (piano brightness 0.0265 → 0.0014 after rewiring,
+  with or without an effect; back to 0.0258 after loading again). Plugin instruments
+  are not affected by this. **Not checked:** whether a route change (headphones in or
+  out) does the same to samplers; `handleConfigurationChange` does not reload them.
 
 ## Build and test
 

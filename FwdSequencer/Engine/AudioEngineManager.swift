@@ -1254,6 +1254,15 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             _ = FWDExceptionCatcher.catching { engine.connect(source, to: mixer, format: nil) }
         }
 
+        // The built-in sampler forgets its General MIDI sound whenever its output is
+        // disconnected and connected again, and falls back to a plain, loud sine tone:
+        // adding an effect to a built-in track made it dull and clicky, and taking the
+        // effect off again did not bring the sound back. So the sound is loaded again
+        // after every rewiring (measured with Tools/EffectInsertTest.swift).
+        if let sampler = samplers[trackID] {
+            loadGMBank(sampler, sound: builtInSounds[trackID] ?? 0)
+        }
+
         // Effect load, move, remove and bypass, and instrument swap all end here, so this
         // is where the kept latency is brought up to date for a track with a real chain.
         refreshLatencyLocked(for: trackID)
