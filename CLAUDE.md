@@ -388,20 +388,37 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   (`SongStorage.installMIDILoops`, UserDefaults "installedMIDILoops", the `Loop-`
   prefix dropped from the user-facing name); one the user deletes or edits is left
   alone, and a loop added in a later version arrives with it.
-- **Folder review (2026-11-10), findings only — nothing changed.** `UIFileSharingEnabled`
-  shows the whole Documents folder in Files, so the user sees `Songs/`
-  (with `Recently Deleted/`, `Backups/`, `Quarantine/` inside it), `Exports/` and now
-  `MIDI Loops/`. Exports and MIDI Loops read well. Three things do not, worst first:
-  1. Songs are named `<UUID>.fwdsong` on disk, so the library is unreadable in Files.
-     Renaming by song name needs collision and rename handling and a migration — **not
-     before 1.0**; Export is the user-facing way out, and it names files properly.
-  2. `Backups/` and `Quarantine/` are the app's own recovery machinery and, by iOS
-     convention, belong in `Library/Application Support/`, not in the user's Documents.
-     "Quarantine" is jargon no buyer should meet. Low-risk to move (a missing backup
-     just means no recovery copy until the next save), but it is still a file migration.
-  3. `Recently Deleted/` is reachable in the app's own UI, so it does not need to be in
-     Files either; same move as 2 if 2 is done.
-  Graham decides whether 2 and 3 are worth doing before submission.
+- **The song library moved out of Documents (2026-11-10, Graham's instruction, to test
+  on device).** `UIFileSharingEnabled` showed the whole Documents folder in Files, so
+  the library sat there in the open — songs named by UUID, beside the app's own Backups
+  and Quarantine. Graham: "songs on disk can also be hidden unless imported or
+  exported, we don't want users messing with the song structure." `SongStorage.directory`
+  is now **Application Support/Songs** (Recently Deleted, Backups and Quarantine inside
+  it as before), so Documents holds only **Exports** and **MIDI Loops** — what the user
+  is meant to see. Songs still come and go through Import and Export, which name their
+  files properly. (Quarantine, for the record: when a `.fwdsong` will not decode the
+  app never destroys it — the bytes go there, and Needs Attention offers to export
+  them.)
+  **Migration:** `SongStorage.migrateLibrary(fromDocuments:toSupport:)`, run once per
+  launch from `prepareDirectories`. File by file, each keeping its place in the tree; a
+  file already at the destination is left alone, not overwritten; anything that cannot
+  be moved stays and is tried again next launch; `songFileURLs()` reads the OLD folder
+  too until it is empty, so a song can never vanish from the list because a move
+  failed; the old folder is removed only once no file is left in it.
+  `LibraryMigrationTests` covers each case. **Enumerate by path** (`enumerator(atPath:)`)
+  to get each file's relative path — trimming the folder's path off the front of the
+  file's was the first attempt and it failed, because the two can disagree about their
+  prefix (`/var` against `/private/var`); the tests caught it.
+  Still open (not before 1.0): songs are named `<UUID>.fwdsong` on disk. Now that the
+  folder is hidden this matters much less; Export is the user-facing way out.
+- **Examples say what they show (2026-11-10, Graham's request, to test on device).**
+  Each `ExampleSong` already had a `summary`, but it was the second line of a menu
+  item and **iOS menus do not draw one**, so New Song ▸ Examples was six bare names.
+  New Song ▸ **Examples…** now opens `Views/ExamplesSheet.swift`: icon, name, `summary`
+  (what the song is) and the new `demonstrates` (the one feature to go and look at).
+  Keep `demonstrates` feature-first — it is the only place anyone learns what these
+  songs are for. The same invisible-second-line problem still applies to the **New Song
+  templates** in that menu; not done.
 
 ## Build and test
 
