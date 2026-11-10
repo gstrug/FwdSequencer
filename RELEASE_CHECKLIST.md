@@ -19,7 +19,7 @@
 - [ ] Non-looping songs stop once and return the playhead to the start
 - [ ] Chance and Random output repeat after rewind for the same seed
 - [ ] Ratchets stop cleanly on pause, rewind, section change, and track deletion
-- [ ] Applying a saved variation is undoable and never changes another section
+- [ ] Restoring a snapshot never changes another section, and the Original can always be restored
 
 ## Audio and AUv3
 
@@ -27,6 +27,10 @@
 - [ ] AUv3 load status remains visible until restoration actually completes
 - [ ] Failed and timed-out AUv3 instruments show GM fallback and a retryable error
 - [ ] Calls/Siri, headphone removal, Bluetooth changes, and Media Services Reset recover
+- [ ] After an interruption that does not resume by itself (another app's audio ends), Play sounds again without reopening the song
+- [ ] Effects that used to crash on adding (Nembrini Crunk, Wah, Analog Delay; Apple Sound Isolation and Apple's built-in effects) are added, bypassed, reordered and removed without a crash
+- [ ] Duplicating a track that has effects gives a copy that plays through its effects straight away
+- [ ] Roland ZENOLOGY and other small plugin windows fill the screen sensibly
 - [ ] Background playback does not cut notes merely to autosave
 - [ ] GeoShred and other compatibility exceptions are documented from device evidence
 - [ ] Master recording produces a playable CAF and reports route/reset/write failures
@@ -34,13 +38,13 @@
 
 ## Documents
 
-- [ ] Existing build 1–16 songs open and migrate without musical changes
+- [ ] Songs saved by earlier TestFlight builds open and play unchanged
 - [ ] Save failure is visible and does not show a false “Saved” confirmation
 - [ ] Corrupt files appear under Needs Attention
 - [ ] Exported `.fwdsong` files import on a second device
 - [ ] Exported MIDI opens with correct tempo, meter, section markers, and track notes
 - [ ] Delete, restore, and permanent delete behave as labelled
-- [ ] Undo/redo restores destructive structural and key/scale edits
+- [ ] Clearing a section and importing MIDI over a track each leave a snapshot to go back to (there is no undo)
 
 ## Interface and accessibility
 
@@ -58,4 +62,5 @@
 - [ ] App Store privacy answers match the archive privacy report
 - [ ] Microphone permission is absent; the existing Inter-App Audio entitlement required by this target remains present
 - [ ] Support URL, privacy policy, screenshots, subtitle, keywords, and release notes are current
+- [ ] The sound bank's credits (GeneralUser GS by S. Christian Collins; FluidR3_GM by Frank Wen, MIT) can be read somewhere a user can find them: in the app, or on the support page
 - [ ] TestFlight smoke test passes on the oldest and newest supported iPadOS versions

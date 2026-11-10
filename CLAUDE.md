@@ -327,6 +327,22 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
 - Finish and tick `RELEASE_CHECKLIST.md` before any App Store submission (privacy
   answers, screenshots, accessibility, oldest/newest iPadOS smoke test).
 
+- **Review and clean-up, 2026-11-10 (after build 91; to test on device).** Whole-app
+  review before release testing. Changed: meters are only republished when a level
+  moves (they were redrawn 20 times a second while silent or stopped); plugin state is
+  captured into the song in one change, and none when nothing moved; Play, Resume and
+  trigger pads restart the audio engine if an interruption left it paused
+  (`AudioEngineManager.ensureRunning`; it used to stay silent until the song was
+  reopened); a duplicated track now loads its copied effects; an effect's saved state
+  is restored into the unit that was loaded, not whatever is at its index after the
+  settle delay; a removed effect is forgotten by `refusedUnits`. Removed as unused:
+  `Views/ResetOnDoubleTap.swift` (StudioControls do their own double tap), SongStorage
+  `save`/`all`/`delete`/`duplicate`, `PlaybackBatcher.discard`, `effectCount`,
+  `midiClockQueue`, the key/scale proxy bindings in the track row. Nothing in the
+  sequencer tick, note delivery, plugin loading or the song file format was touched.
+  Still open before release: see `RELEASE_CHECKLIST.md` (updated the same day: undo
+  lines replaced, the fixes awaiting a device test added, sound bank credits).
+
 ## Build and test
 
 - Open `FwdSequencer.xcodeproj`, scheme `FwdSequencer`, run on an iPad or simulator.
