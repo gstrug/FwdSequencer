@@ -358,6 +358,51 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   MIT notice has to travel with the bank). App-wide, so it sits on the song list, not
   in a song's Settings. One sentence added to Graham's help text for the ⋯ menu.
 
+- **Export a section as MIDI** (2026-11-10, built, to test on device): Section menu ▸
+  Export MIDI…, under Import MIDI… (`Views/SectionMIDIExport.swift`). Same two choices
+  as the song export (MIDI with Feel, MIDI on the Grid), a copy kept in Exports, named
+  "Song - Section". It calls `SongMIDIExporter.data(for:section:includingFeel:)`, which
+  hands the song exporter a copy of the song holding only that section (arrangement and
+  Song Parts set aside), so a section's file can never place a note differently from
+  the song's — `SectionExportTests` asserts byte equality for every example song and
+  section. A Hold carried in from the section before, and the turn Random steps had
+  reached, are deliberately not in a section's own file.
+- **Malecón, and the MIDI loops in Files** (2026-11-10, built, to test on device).
+  Graham's request: a demo showing sections built from MIDI files, drum loops for a
+  more dynamic feel, the files shipped with the app. Salsa in A minor, 100 BPM, six
+  sections (Intro, Verse, Fill, Chorus, Breakdown, Ending) in a ten-place arrangement,
+  five tracks on built-in GM sounds. **The example is not written by hand or by a
+  script: it is what the app's own importer gives for the six `Loop-Malecon*.mid`
+  files, one file to a section at 1/16.** `LoopExampleTests.buildSong()` builds it and
+  the test holds `Resources/Example-Malecon.json` to that result, so it cannot drift
+  from its loops; remake it with `FWD_WRITE_EXAMPLES=1 swift test --filter
+  LoopExampleTests` (or push to `codex/gen-example`, which runs
+  `.github/workflows/gen.yml` on a Mac runner and commits the JSON back — that is how
+  it was made, since nothing here runs swift). The point it makes that the step-built
+  examples cannot: import keeps each note's own velocity, so the congas have ghosted
+  strokes at 34 against slaps at 112. The loops sit exactly on sixteenths and carry no
+  swing, leaving each track's Swing and Feel to loosen them. Written by
+  `Tools/make_midi_loops.py` (not from a loop pack, so no licence to honour) — edit the
+  music there, rerun, then remake the example. All ten `Loop-*.mid` are copied into
+  **Files ▸ FWD Sequencer ▸ MIDI Loops** on first launch, each once
+  (`SongStorage.installMIDILoops`, UserDefaults "installedMIDILoops", the `Loop-`
+  prefix dropped from the user-facing name); one the user deletes or edits is left
+  alone, and a loop added in a later version arrives with it.
+- **Folder review (2026-11-10), findings only — nothing changed.** `UIFileSharingEnabled`
+  shows the whole Documents folder in Files, so the user sees `Songs/`
+  (with `Recently Deleted/`, `Backups/`, `Quarantine/` inside it), `Exports/` and now
+  `MIDI Loops/`. Exports and MIDI Loops read well. Three things do not, worst first:
+  1. Songs are named `<UUID>.fwdsong` on disk, so the library is unreadable in Files.
+     Renaming by song name needs collision and rename handling and a migration — **not
+     before 1.0**; Export is the user-facing way out, and it names files properly.
+  2. `Backups/` and `Quarantine/` are the app's own recovery machinery and, by iOS
+     convention, belong in `Library/Application Support/`, not in the user's Documents.
+     "Quarantine" is jargon no buyer should meet. Low-risk to move (a missing backup
+     just means no recovery copy until the next save), but it is still a file migration.
+  3. `Recently Deleted/` is reachable in the app's own UI, so it does not need to be in
+     Files either; same move as 2 if 2 is done.
+  Graham decides whether 2 and 3 are worth doing before submission.
+
 ## Build and test
 
 - Open `FwdSequencer.xcodeproj`, scheme `FwdSequencer`, run on an iPad or simulator.
