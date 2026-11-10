@@ -25,6 +25,7 @@ struct ProjectBrowserView: View {
     @State private var notice: String? = nil
     @State private var importingSong = false
     @State private var showingCredits = false
+    @State private var showingExamples = false
     @State private var exportingSong = false
     @State private var exportDocument: SongDocument? = nil
     @State private var exportFilename = "FWD Song"
@@ -65,21 +66,10 @@ struct ProjectBrowserView: View {
                                     }
                                 }
                                 Divider()
-                                Menu {
-                                    ForEach(ExampleSong.allCases) { example in
-                                        Button { addExample(example) } label: {
-                                            Label {
-                                                VStack(alignment: .leading) {
-                                                    Text(example.name)
-                                                    Text(example.summary)
-                                                }
-                                            } icon: {
-                                                Image(systemName: example.systemImage)
-                                            }
-                                        }
-                                    }
-                                } label: {
-                                    Label("Examples", systemImage: "music.note.list")
+                                // A sheet, not a submenu: a menu cannot show each
+                                // example's description (see ExamplesSheet).
+                                Button { showingExamples = true } label: {
+                                    Label("Examples…", systemImage: "music.note.list")
                                 }
                             } label: {
                                 Label("New Song", systemImage: "plus")
@@ -122,6 +112,9 @@ struct ProjectBrowserView: View {
         }
         .onOpenURL { url in importSong(at: url) }
         .sheet(isPresented: $showingCredits) { CreditsView() }
+        .sheet(isPresented: $showingExamples) {
+            ExamplesSheet { example in addExample(example) }
+        }
         // MIDI controllers act on the song only while it is open: from the song list, a
         // Play press must not start a song nobody can see. Tied to this flag rather than
         // the song screen appearing, because a plugin editor opened full screen over the

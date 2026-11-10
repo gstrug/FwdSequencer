@@ -144,6 +144,26 @@ enum ExampleSong: String, CaseIterable, Identifiable {
         }
     }
 
+    /// What this example is here to show: the one feature to go and look at after
+    /// pressing Play. Shown under its name in New Song ▸ Examples, which is the only
+    /// place anyone finds out what these songs are for.
+    var demonstrates: String {
+        switch self {
+        case .nightMarket:
+            return "Trigger Mode: the section chips become pads. Press one to start it, another to queue it next."
+        case .bluesInA:
+            return "A triplet grid with Swing, an arrangement, and a Play keyboard set to the song's key and scale."
+        case .lighthouse:
+            return "Song Parts: sections grouped into named parts, arranged quiet to full and back."
+        case .sundayStrut:
+            return "Feel, per track: swing, accent, variation and chord roll, under the Shape sheet."
+        case .happyBirthday:
+            return "3/4 time, and chords written as Play steps with their own note lengths."
+        case .malecon:
+            return "Sections built by Import MIDI: each one is a MIDI loop, and import keeps every note's own velocity."
+        }
+    }
+
     var systemImage: String {
         switch self {
         case .nightMarket: return "square.grid.2x2"

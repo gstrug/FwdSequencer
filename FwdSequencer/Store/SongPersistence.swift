@@ -160,13 +160,31 @@ struct TrashedSong: Identifiable {
 enum SongStorage {
     private static let fileManager = FileManager.default
     /// Portable tests redirect storage to a unique temporary directory. Production
-    /// never sets this value and continues to use Documents/Songs.
+    /// never sets this value.
     static var directoryOverrideForTesting: URL?
+
+    private static var documentsRoot: URL {
+        fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+
+    /// Where the song library lives: Application Support, not Documents.
+    ///
+    /// `UIFileSharingEnabled` shows the whole Documents folder in the Files app, so the
+    /// library used to sit there in the open — songs named by UUID, beside the app's own
+    /// Backups and Quarantine folders. Nothing there is meant to be handled by hand
+    /// (Graham, 2026-11-10: "we don't want users messing with the song structure"), and
+    /// a song moved, renamed or half-deleted in Files comes back as a song that will not
+    /// open. Application Support is the iOS place for data the app owns and the user
+    /// does not: still backed up, no longer on show. Documents now holds only what the
+    /// user is meant to see — Exports and MIDI Loops. Songs leave and arrive through
+    /// Import and Export, which name their files properly.
+    private static var supportRoot: URL {
+        fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    }
 
     static var directory: URL {
         if let directoryOverrideForTesting { return directoryOverrideForTesting }
-        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        return docs.appendingPathComponent("Songs", isDirectory: true)
+        return supportRoot.appendingPathComponent("Songs", isDirectory: true)
     }
 
     private static var trashDirectory: URL {
@@ -181,7 +199,61 @@ enum SongStorage {
         directory.appendingPathComponent("Quarantine", isDirectory: true)
     }
 
+    /// Carry a library written by an earlier version out of Documents, once.
+    ///
+    /// Every file is moved, whole tree and all — songs, Recently Deleted, Backups,
+    /// Quarantine — and a file already at the destination is left alone rather than
+    /// overwritten, so running this again can never lose the newer copy. Anything that
+    /// cannot be moved stays where it is and is tried again next launch; the loader
+    /// reads the old place too (see `songFileURLs`) so a song is never invisible
+    /// because a move failed.
+    @discardableResult
+    static func migrateLibrary(fromDocuments documents: URL, toSupport support: URL) -> Bool {
+        let old = documents.appendingPathComponent("Songs", isDirectory: true)
+        guard fileManager.fileExists(atPath: old.path) else { return false }
+        guard let walk = fileManager.enumerator(at: old, includingPropertiesForKeys: [.isRegularFileKey],
+                                                options: [.skipsHiddenFiles]) else { return false }
+        var moved = false
+        for case let source as URL in walk {
+            guard (try? source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+            else { continue }
+            // Keep each file's place in the tree: Backups/x.fwdsong stays in Backups.
+            let relative = source.path.dropFirst(old.path.count).drop(while: { $0 == "/" })
+            let destination = support.appendingPathComponent(String(relative))
+            do {
+                try fileManager.createDirectory(at: destination.deletingLastPathComponent(),
+                                                withIntermediateDirectories: true)
+                if fileManager.fileExists(atPath: destination.path) {
+                    try fileManager.removeItem(at: source)   // the newer copy is already there
+                } else {
+                    try fileManager.moveItem(at: source, to: destination)
+                }
+                moved = true
+            } catch {
+                continue    // left behind; tried again at the next launch
+            }
+        }
+        // Only when nothing is left: an empty tree goes, a tree with a file still in it
+        // stays, so nothing is ever thrown away here.
+        if let remaining = fileManager.enumerator(at: old, includingPropertiesForKeys: [.isRegularFileKey],
+                                                  options: [.skipsHiddenFiles]),
+           !remaining.contains(where: { ($0 as? URL).flatMap {
+               try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile } == true }) {
+            try? fileManager.removeItem(at: old)
+        }
+        return moved
+    }
+
+    /// Runs once per launch, before anything is read or written.
+    private static var didMigrate = false
+    private static func migrateLibraryIfNeeded() {
+        guard directoryOverrideForTesting == nil, !didMigrate else { return }
+        didMigrate = true
+        migrateLibrary(fromDocuments: documentsRoot, toSupport: directory)
+    }
+
     private static func prepareDirectories() throws {
+        migrateLibraryIfNeeded()
         do {
             try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
             try fileManager.createDirectory(at: trashDirectory, withIntermediateDirectories: true)
@@ -314,13 +386,7 @@ enum SongStorage {
     static func loadLibrary() -> Result<SongLibrarySnapshot, SongStorageError> {
         do {
             try prepareDirectories()
-            let files = try fileManager.contentsOfDirectory(
-                at: directory,
-                includingPropertiesForKeys: [.contentModificationDateKey],
-                options: .skipsHiddenFiles
-            )
-            let songFiles = files.filter { $0.pathExtension == "fwdsong" }
-                .sorted { modificationDate($0) > modificationDate($1) }
+            let songFiles = songFileURLs()
 
             var songs: [Song] = []
             var failures: [FailedSongFile] = []
@@ -476,6 +542,26 @@ enum SongStorage {
         } catch {
             return .failure(.deleteFailed(error.localizedDescription))
         }
+    }
+
+    /// Every song file to show, newest first. The library's own folder, plus — only if
+    /// a move out of Documents was left unfinished — whatever is still in the old one,
+    /// so a song cannot vanish from the list because a file could not be moved.
+    private static func songFileURLs() -> [URL] {
+        var urls = (try? fileManager.contentsOfDirectory(
+            at: directory, includingPropertiesForKeys: [.contentModificationDateKey],
+            options: .skipsHiddenFiles)) ?? []
+        if directoryOverrideForTesting == nil {
+            let old = documentsRoot.appendingPathComponent("Songs", isDirectory: true)
+            if fileManager.fileExists(atPath: old.path) {
+                urls += (try? fileManager.contentsOfDirectory(
+                    at: old, includingPropertiesForKeys: [.contentModificationDateKey],
+                    options: .skipsHiddenFiles)) ?? []
+            }
+        }
+        var seen = Set<String>()
+        return urls.filter { $0.pathExtension == "fwdsong" && seen.insert($0.lastPathComponent).inserted }
+            .sorted { modificationDate($0) > modificationDate($1) }
     }
 
     private static func modificationDate(_ url: URL) -> Date {
