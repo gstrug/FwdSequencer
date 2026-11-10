@@ -424,9 +424,11 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   (what the song is) and the new `demonstrates` (the one feature to go and look at).
   Keep `demonstrates` feature-first — it is the only place anyone learns what these
   songs are for. The same invisible-second-line problem still applies to the **New Song
-  templates** in that menu; not done. The empty song list offers Play Lighthouse, Start
-  Blank and See all examples — the only signposts to the examples now that none install
-  themselves.
+  templates** in that menu; not done. **The empty song list (2026-11-10, Graham: "Make
+  something move" was too vague) says what to do and has no buttons:** "Use + to add a
+  new song, a template or an example song" / "Tap ? on any screen, then tap anything to
+  find out what it does." It points at the toolbar's + and ?, which are there on every
+  screen, instead of repeating them in the body. Graham's wording — keep it.
 
 ## Build and test
 

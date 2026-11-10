@@ -321,26 +321,14 @@ struct ProjectBrowserView: View {
     @ViewBuilder
     private var songList: some View {
         if songs.isEmpty && failedFiles.isEmpty && trashedSongs.isEmpty {
-            VStack(spacing: 18) {
-                emptyState(icon: "music.note.list", title: "Make something move",
-                           subtitle: "Start from a playable example, then change its notes and steps.")
-                Button { addExample(.lighthouse) } label: {
-                    Label("Play Lighthouse", systemImage: "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                Button { createSongAndOpen(.starter) } label: {
-                    Label("Start Blank", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-                // No example arrives on its own any more, so the empty list has to say
-                // where they are. Lighthouse above is the one-tap way in; this is the
-                // list of all six, with what each one shows.
-                Button { showingExamples = true } label: {
-                    Text("See all examples")
-                }
-                .buttonStyle(.borderless)
-                Spacer(minLength: 30)
-            }
+            // Says what to do, and nothing else (Graham, 2026-11-10: "Make something
+            // move" was too vague). It points at the two buttons already in the
+            // toolbar rather than repeating them here, so the first thing anyone
+            // learns is where + and ? live — which is just as true on every screen
+            // afterwards, when this one is gone.
+            emptyState(icon: "music.note.list",
+                       title: "Use + to add a new song, a template or an example song",
+                       subtitle: "Tap ? on any screen, then tap anything to find out what it does.")
         } else {
             List {
                 if !failedFiles.isEmpty {
@@ -453,9 +441,17 @@ struct ProjectBrowserView: View {
     private func emptyState(icon: String, title: String, subtitle: String) -> some View {
         VStack(spacing: 16) {
             Image(systemName: icon).font(.system(size: 56)).foregroundStyle(.secondary)
-            Text(title).font(.title2.bold())
-            Text(subtitle).foregroundStyle(.secondary)
+            Text(title)
+                .font(.title2.bold())
+                .multilineTextAlignment(.center)
+            Text(subtitle)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
+        // Room for a sentence to wrap on a narrow split-screen width, rather than
+        // running to the edges.
+        .padding(.horizontal, 32)
+        .frame(maxWidth: 520)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
