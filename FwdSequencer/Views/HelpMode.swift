@@ -98,6 +98,7 @@ struct HelpMenuPage: Identifiable {
         ItemGroup(heading: nil, items: [
             Item(icon: "list.number", label: "Arranger…", topic: .arranger),
             Item(icon: "square.and.arrow.down", label: "Import MIDI…", topic: .sectionImportMIDI),
+            Item(icon: "square.and.arrow.up", label: "Export MIDI…", topic: .sectionExportMIDI),
         ]),
         ItemGroup(heading: "The selected section", items: [
             Item(icon: "pencil", label: "Rename…", topic: .sectionRename),

@@ -761,6 +761,7 @@ private struct ArrangementStrip: View {
     @State private var editingSection: SectionTarget? = nil
     @State private var showArranger = false
     @State private var importingMIDI = false
+    @State private var exportingMIDI = false
     /// Drives the queued chip's pulse. A single flag for the strip rather than one per
     /// chip, so every queued pad would flash in step — there is only ever one, but it
     /// keeps the animation owned in one place.
@@ -823,6 +824,9 @@ private struct ArrangementStrip: View {
                 Button { help.perform(.sectionImportMIDI) { importingMIDI = true } } label: {
                     Label("Import MIDI…", systemImage: "square.and.arrow.down")
                 }
+                Button { help.perform(.sectionExportMIDI) { exportingMIDI = true } } label: {
+                    Label("Export MIDI…", systemImage: "square.and.arrow.up")
+                }
                 Divider()
                 sectionActions(for: songStore.selectedSection)
             } label: {
@@ -853,6 +857,7 @@ private struct ArrangementStrip: View {
         }
         .sheet(isPresented: $showArranger) { ArrangerView() }
         .midiImport(isPresented: $importingMIDI)
+        .sectionMIDIExport(isPresented: $exportingMIDI)
     }
 
     /// The actions for one section. Shared by the Section button and by a long press on

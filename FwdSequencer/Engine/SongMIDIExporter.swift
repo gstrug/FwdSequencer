@@ -15,10 +15,33 @@ nonisolated enum SongMIDIExporter {
 
     enum ExportError: LocalizedError {
         case tooLarge
+        case sectionMissing
 
         var errorDescription: String? {
-            "This arrangement is too large to export safely as one MIDI file. Export a shorter copy."
+            switch self {
+            case .tooLarge:
+                return "This arrangement is too large to export safely as one MIDI file. Export a shorter copy."
+            case .sectionMissing:
+                return "That section is no longer in the song."
+            }
         }
+    }
+
+    /// One section on its own, played once: the same file a song holding only that
+    /// section would give, so it goes through the song export below and cannot place a
+    /// note differently. The arrangement and Song Parts are set aside. What a section
+    /// only has because of where it sits in the song is not here: a Hold carried in
+    /// from the section before, and the turn Random steps had reached by then.
+    static func data(for input: Song, section sectionID: UUID, includingFeel: Bool = true) throws -> Data {
+        guard let section = input.sections.first(where: { $0.id == sectionID }) else {
+            throw ExportError.sectionMissing
+        }
+        var song = input
+        song.sections = [section]
+        song.arrangement = nil
+        song.songParts = nil
+        song.playsArrangement = nil
+        return try data(for: song, includingFeel: includingFeel)
     }
 
     private struct Event {

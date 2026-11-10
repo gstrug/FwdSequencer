@@ -24,7 +24,7 @@ enum HelpTopic: String {
          sectionDelete, arranger, arrangerPlay, arrangerSlot, arrangerAdd, arrangerFill,
          arrangerClear, songPartNew, songPartEdit, songPartAdd, songPartName, songPartSection,
          songPartAddSection, songPartDelete, songOrderStrip, songOrderStripOpen,
-         sectionImportMIDI, midiImportPart, midiImportStepSize, midiImportStart, midiImportFit,
+         sectionImportMIDI, sectionExportMIDI, midiImportPart, midiImportStepSize, midiImportStart, midiImportFit,
          midiImportTempo, midiImportButton, midiImportInstruments, trackBuiltInSound
 
     // A track
@@ -124,6 +124,7 @@ enum HelpTopic: String {
         case .songOrderStrip: return "Song Order"
         case .songOrderStripOpen: return "Open the Arranger"
         case .sectionImportMIDI: return "Import MIDI"
+        case .sectionExportMIDI: return "Export MIDI"
         case .midiImportPart: return "A Part of the File"
         case .midiImportStepSize: return "Step Size"
         case .midiImportStart: return "Start at the First Note"
@@ -350,6 +351,8 @@ enum HelpTopic: String {
             return "Opens the Arranger."
         case .sectionImportMIDI:
             return "Imports a MIDI file into the selected section. Each part of the file becomes a track's notes and steps: Play for each note or chord, Hold for its length and Rest for silence."
+        case .sectionExportMIDI:
+            return "Exports the selected section as a MIDI file, played once, with a track for each track that plays. MIDI keeps the Feel; MIDI (on the Grid) puts every note exactly on its step. A copy is kept in the Exports folder."
         case .midiImportPart:
             return "Choose which track this part of the file goes to: a new track, an existing one (its notes and steps in this section are replaced, after saving a snapshot), or none."
         case .midiImportStepSize:
