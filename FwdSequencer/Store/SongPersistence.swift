@@ -211,15 +211,15 @@ enum SongStorage {
     static func migrateLibrary(fromDocuments documents: URL, toSupport support: URL) -> Bool {
         let old = documents.appendingPathComponent("Songs", isDirectory: true)
         guard fileManager.fileExists(atPath: old.path) else { return false }
-        guard let walk = fileManager.enumerator(at: old, includingPropertiesForKeys: [.isRegularFileKey],
-                                                options: [.skipsHiddenFiles]) else { return false }
         var moved = false
-        for case let source as URL in walk {
-            guard (try? source.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
-            else { continue }
+        // Enumerated BY PATH, which hands back each file's path relative to the folder.
+        // Taking the relative part off the absolute URLs instead looks simpler and is
+        // wrong: the two can disagree about their prefix (/var against /private/var),
+        // and the relative path then comes out mangled. Caught by the tests.
+        for relative in filesIn(old) {
+            let source = old.appendingPathComponent(relative)
             // Keep each file's place in the tree: Backups/x.fwdsong stays in Backups.
-            let relative = source.path.dropFirst(old.path.count).drop(while: { $0 == "/" })
-            let destination = support.appendingPathComponent(String(relative))
+            let destination = support.appendingPathComponent(relative)
             do {
                 try fileManager.createDirectory(at: destination.deletingLastPathComponent(),
                                                 withIntermediateDirectories: true)
@@ -235,13 +235,21 @@ enum SongStorage {
         }
         // Only when nothing is left: an empty tree goes, a tree with a file still in it
         // stays, so nothing is ever thrown away here.
-        if let remaining = fileManager.enumerator(at: old, includingPropertiesForKeys: [.isRegularFileKey],
-                                                  options: [.skipsHiddenFiles]),
-           !remaining.contains(where: { ($0 as? URL).flatMap {
-               try? $0.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile } == true }) {
-            try? fileManager.removeItem(at: old)
-        }
+        if filesIn(old).isEmpty { try? fileManager.removeItem(at: old) }
         return moved
+    }
+
+    /// Every regular file under `folder`, as paths relative to it.
+    private static func filesIn(_ folder: URL) -> [String] {
+        guard let walk = fileManager.enumerator(atPath: folder.path) else { return [] }
+        var found: [String] = []
+        for case let relative as String in walk {
+            let url = folder.appendingPathComponent(relative)
+            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true
+            else { continue }
+            found.append(relative)
+        }
+        return found
     }
 
     /// Runs once per launch, before anything is read or written.
