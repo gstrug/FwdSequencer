@@ -204,6 +204,40 @@ enum SongStorage {
         try? fileManager.createDirectory(at: exportsDirectory, withIntermediateDirectories: true)
     }
 
+    /// MIDI loops to try Import MIDI with, in Files under "FWD Sequencer". Without them
+    /// an iPad with no MIDI files of its own has nothing to import.
+    static var midiLoopsDirectory: URL {
+        let docs = fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        return docs.appendingPathComponent("MIDI Loops", isDirectory: true)
+    }
+
+    /// Copy the loops the app carries (Loop-*.mid) into the MIDI Loops folder, each one
+    /// once: a loop the user has deleted or changed is theirs and is left alone, and a
+    /// loop added in a later version of the app arrives with it. Never overwrites.
+    static func installMIDILoops(from bundle: Bundle = .main, defaults: UserDefaults = .standard) {
+        let key = "installedMIDILoops"
+        let prefix = "Loop-"
+        let carried = (bundle.urls(forResourcesWithExtension: "mid", subdirectory: nil) ?? [])
+            .filter { $0.lastPathComponent.hasPrefix(prefix) }
+        var installed = Set(defaults.stringArray(forKey: key) ?? [])
+        let waiting = carried.filter { !installed.contains($0.lastPathComponent) }
+        guard !waiting.isEmpty else { return }
+        do {
+            try fileManager.createDirectory(at: midiLoopsDirectory, withIntermediateDirectories: true)
+        } catch {
+            return      // tried again at the next launch
+        }
+        for source in waiting {
+            let name = String(source.lastPathComponent.dropFirst(prefix.count))
+            let destination = midiLoopsDirectory.appendingPathComponent(name)
+            if !fileManager.fileExists(atPath: destination.path) {
+                guard (try? fileManager.copyItem(at: source, to: destination)) != nil else { continue }
+            }
+            installed.insert(source.lastPathComponent)
+        }
+        defaults.set(installed.sorted(), forKey: key)
+    }
+
     /// Write an export into the app's Exports folder, so a file always exists somewhere
     /// findable even if the system location picker is dismissed. Returns the URL, or nil
     /// if it could not be written. Never overwrites: a duplicate name gains a suffix.

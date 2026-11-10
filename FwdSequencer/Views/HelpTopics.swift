@@ -350,7 +350,7 @@ enum HelpTopic: String {
         case .songOrderStripOpen:
             return "Opens the Arranger."
         case .sectionImportMIDI:
-            return "Imports a MIDI file into the selected section. Each part of the file becomes a track's notes and steps: Play for each note or chord, Hold for its length and Rest for silence."
+            return "Imports a MIDI file into the selected section. Each part of the file becomes a track's notes and steps: Play for each note or chord, Hold for its length and Rest for silence. Loops to try it with are in Files, under FWD Sequencer, in MIDI Loops."
         case .sectionExportMIDI:
             return "Exports the selected section as a MIDI file, played once, with a track for each track that plays. MIDI keeps the Feel; MIDI (on the Grid) puts every note exactly on its step. A copy is kept in the Exports folder."
         case .midiImportPart:

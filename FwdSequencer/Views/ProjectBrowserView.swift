@@ -112,6 +112,7 @@ struct ProjectBrowserView: View {
         }
         .onAppear {
             SongStorage.prepareExportsFolder()
+            SongStorage.installMIDILoops()
             reload()
             installBundledDemoIfNeeded()
         }

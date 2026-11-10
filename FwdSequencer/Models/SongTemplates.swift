@@ -97,6 +97,8 @@ enum SongTemplate: String, CaseIterable, Identifiable {
 }
 
 /// The example songs: each a different style, and each showing a way of using the app.
+/// Malecón is the one made from MIDI files: its sections are the Malecon loops in
+/// Resources, imported by the app's own importer (see LoopExampleTests).
 /// Added to the song list once; New Song ▸ Examples adds a fresh copy any time.
 /// The raw values are kept in the installed list, so they must not change.
 enum ExampleSong: String, CaseIterable, Identifiable {
@@ -105,6 +107,7 @@ enum ExampleSong: String, CaseIterable, Identifiable {
     case lighthouse
     case sundayStrut
     case happyBirthday
+    case malecon
 
     var id: String { rawValue }
 
@@ -115,6 +118,7 @@ enum ExampleSong: String, CaseIterable, Identifiable {
         case .lighthouse: return "Example-Lighthouse"
         case .sundayStrut: return "Example-SundayStrut"
         case .happyBirthday: return "Example-HappyBirthdayJazz"
+        case .malecon: return "Example-Malecon"
         }
     }
 
@@ -125,6 +129,7 @@ enum ExampleSong: String, CaseIterable, Identifiable {
         case .lighthouse: return "Lighthouse"
         case .sundayStrut: return "Sunday Strut"
         case .happyBirthday: return "Happy Birthday in C (Jazz)"
+        case .malecon: return "Malecón"
         }
     }
 
@@ -135,6 +140,7 @@ enum ExampleSong: String, CaseIterable, Identifiable {
         case .lighthouse: return "A ballad arranged in Song Parts, quiet to full and back"
         case .sundayStrut: return "Funk with swing, accent and chord roll in its Feel"
         case .happyBirthday: return "A jazz arrangement transcribed bar by bar, in 3/4"
+        case .malecon: return "Salsa put together from imported MIDI loops, one to a section"
         }
     }
 
@@ -145,6 +151,7 @@ enum ExampleSong: String, CaseIterable, Identifiable {
         case .lighthouse: return "light.beacon.max"
         case .sundayStrut: return "figure.dance"
         case .happyBirthday: return "birthday.cake"
+        case .malecon: return "sun.max"
         }
     }
 
