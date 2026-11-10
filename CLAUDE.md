@@ -428,7 +428,11 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   something move" was too vague) says what to do and has no buttons:** "Use + to add a
   new song, a template or an example song" / "Tap ? on any screen, then tap anything to
   find out what it does." It points at the toolbar's + and ?, which are there on every
-  screen, instead of repeating them in the body. Graham's wording — keep it.
+  screen, instead of repeating them in the body. Graham's wording — keep it. The quarter-note symbol
+  above them is now **the app's own icon** (Graham, 2026-11-10): an icon in an asset
+  catalog cannot be loaded by name at runtime, so `Assets.xcassets/AppMark.imageset`
+  holds its own copies at 112pt — **rerun `Tools/make_app_mark.py` after changing the
+  app icon**, or the two drift apart.
 
 ## Build and test
 

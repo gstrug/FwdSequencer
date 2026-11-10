@@ -326,8 +326,7 @@ struct ProjectBrowserView: View {
             // toolbar rather than repeating them here, so the first thing anyone
             // learns is where + and ? live — which is just as true on every screen
             // afterwards, when this one is gone.
-            emptyState(icon: "music.note.list",
-                       title: "Use + to add a new song, a template or an example song",
+            emptyState(title: "Use + to add a new song, a template or an example song",
                        subtitle: "Tap ? on any screen, then tap anything to find out what it does.")
         } else {
             List {
@@ -438,9 +437,9 @@ struct ProjectBrowserView: View {
         }
     }
 
-    private func emptyState(icon: String, title: String, subtitle: String) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: icon).font(.system(size: 56)).foregroundStyle(.secondary)
+    private func emptyState(title: String, subtitle: String) -> some View {
+        VStack(spacing: 20) {
+            appMark
             Text(title)
                 .font(.title2.bold())
                 .multilineTextAlignment(.center)
@@ -453,6 +452,30 @@ struct ProjectBrowserView: View {
         .padding(.horizontal, 32)
         .frame(maxWidth: 520)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The app's own icon, on the one screen that has room for it.
+    ///
+    /// An icon in an asset catalog cannot be loaded by name at runtime, so `AppMark` is
+    /// an image set of its own, made from the icon by `Tools/make_app_mark.py` — rerun
+    /// that after changing the icon, or the two drift apart. Clipped to the same
+    /// rounded square iOS gives it on the Home screen. If it is ever missing, a symbol
+    /// stands in rather than leaving a gap.
+    @ViewBuilder
+    private var appMark: some View {
+        if UIImage(named: "AppMark") != nil {
+            Image("AppMark")
+                .resizable()
+                .frame(width: 112, height: 112)
+                .clipShape(RoundedRectangle(cornerRadius: 25, style: .continuous))
+                .shadow(color: .black.opacity(0.18), radius: 10, y: 4)
+                .accessibilityHidden(true)
+        } else {
+            Image(systemName: "music.note.list")
+                .font(.system(size: 56))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+        }
     }
 
     // MARK: - Actions
