@@ -4,7 +4,7 @@ import SwiftUI
 //
 // Song editor: transport, an arrangement strip of sections, and track rows split
 // into a constant "instrument zone" and a per-section "note zone" bound to the
-// currently selected section. Parallels ProjectView. See SONG_MODE_PLAN.md.
+// currently selected section. See SONG_MODE_PLAN.md.
 
 struct SongView: View {
     @EnvironmentObject var songStore: SongStore
@@ -78,8 +78,8 @@ struct SongView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             songStore.audioEngine.quietTelemetry(forSeconds: 0.8)
         }
-        // Override the environment monitors for this subtree so telemetry routes
-        // to the song's monitors, not the pattern store's.
+        // The song's monitors for this subtree, so meters and note highlights observe
+        // them directly rather than the whole store.
         .environmentObject(songStore.levels)
         .environmentObject(songStore.playback)
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -1464,7 +1464,7 @@ private struct SongTrackRowView: View {
         return scale.intervals.contains(semitone)
     }
 
-    /// Notes in the pool that would fall outside the given key/scale.
+    /// The section the editors are showing now.
     private var selectedSectionID: UUID? {
         let index = songStore.selectedSection
         guard songStore.song.sections.indices.contains(index) else { return nil }
@@ -1565,30 +1565,6 @@ private struct SongTrackRowView: View {
             // dismissing (presenting both in the same runloop can drop the alert).
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showKeyConflict = true }
         }
-    }
-
-    // Proxy bindings so the pickers route through proposeKeyScale. On cancel the
-    // change is simply never applied, so the picker snaps back to the current value.
-    private var keyBinding: Binding<Int> {
-        Binding(get: { part.key },
-                set: { newKey in
-                    guard let sectionID = selectedSectionID else { return }
-                    let target = pinnedPartBinding(sectionID: sectionID).wrappedValue
-                    proposeKeyScale(sectionID: sectionID, key: newKey, scale: target.scale)
-                })
-    }
-    private var scaleBinding: Binding<MusicalScale> {
-        Binding(
-            get: {
-                guard let sectionID = scaleSectionID else { return part.scale }
-                return pinnedPartBinding(sectionID: sectionID).wrappedValue.scale
-            },
-            set: { newScale in
-                guard let sectionID = scaleSectionID else { return }
-                let target = pinnedPartBinding(sectionID: sectionID).wrappedValue
-                proposeKeyScale(sectionID: sectionID, key: target.key, scale: newScale)
-            }
-        )
     }
 
     var body: some View {

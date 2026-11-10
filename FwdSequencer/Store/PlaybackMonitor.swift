@@ -34,7 +34,7 @@ nonisolated struct AudioLevel: Equatable {
 
 /// High-frequency audio-level telemetry (~20 Hz VU meters).
 ///
-/// Kept on its own `ObservableObject`, separate from `ProjectStore`, so that a
+/// Kept on its own `ObservableObject`, separate from `SongStore`, so that a
 /// meter tick only invalidates the small meter leaf views that observe it —
 /// not the whole track list, transport, or any view that holds the store.
 ///
@@ -187,12 +187,6 @@ nonisolated final class PlaybackBatcher: @unchecked Sendable {
     func step(_ id: UUID, _ step: Int) {
         lock.lock(); pendingSteps[id] = step; let start = claimFlush(); lock.unlock()
         if start { scheduleFlush() }
-    }
-
-    /// Drop anything not yet delivered — playback stopped and the display was cleared,
-    /// so a late batch must not put notes back.
-    func discard() {
-        lock.lock(); pendingNotes = [:]; pendingSteps = [:]; lock.unlock()
     }
 
     private func claimFlush() -> Bool {

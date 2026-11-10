@@ -53,11 +53,11 @@ enum NoteOperation: String, CaseIterable, Identifiable {
 
 // MARK: - SongStore
 //
-// Playback + persistence coordinator for a Song, mirroring ProjectStore. Shares
-// the singleton AudioEngineManager (one audio session for the app) but owns its
-// own SequencerEngine and telemetry monitors. Only one document (a pattern OR a
-// song) is ever on screen / playing at a time; `activate()` claims the shared
-// engine's level callbacks for whichever store is in front. See SONG_MODE_PLAN.md.
+// Playback + persistence coordinator for a Song. Uses the singleton
+// AudioEngineManager (one audio session for the app) and owns its own
+// SequencerEngine and telemetry monitors. Only one song is ever on screen / playing
+// at a time; `activate()` claims the shared engine's level callbacks for it.
+// See SONG_MODE_PLAN.md.
 
 class SongStore: ObservableObject {
     /// The v1 audio verification matrix is defined up to 12 simultaneous tracks.
@@ -244,6 +244,7 @@ class SongStore: ObservableObject {
         // matches the editor following the playhead everywhere else.
         selectedSection = index
         activate()
+        audioEngine.ensureRunning()
         for track in song.tracks where !audioEngine.hasInstrument(for: track.id) {
             audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan,
                                  builtInSound: track.builtInSound ?? 0)
@@ -321,12 +322,15 @@ class SongStore: ObservableObject {
     init() {
         levelBatcher = LevelBatcher { [weak self] tracks, master in
             guard let self else { return }
+            // Only when a level actually moved. The meter taps report 20 times a second
+            // whether or not anything is sounding, so a stopped or silent song was
+            // republishing identical levels and redrawing every meter all the while.
             if !tracks.isEmpty {
                 var merged = levels.trackLevels
                 for (id, level) in tracks { merged[id] = level }
-                levels.trackLevels = merged
+                if merged != levels.trackLevels { levels.trackLevels = merged }
             }
-            if let master { levels.masterLevel = master }
+            if let master, master != levels.masterLevel { levels.masterLevel = master }
         }
         // Keys held on a MIDI controller light the on-screen keyboards, playing or not.
         HeldKeyLights.shared.setDeliver { [weak self] held in
@@ -593,8 +597,7 @@ class SongStore: ObservableObject {
                 loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
             }
             loadEffects(for: track)
-            }
-
+        }
 
         // The manual Play-dock instrument, if this song has one.
         if let perf = song.performance {
@@ -627,7 +630,6 @@ class SongStore: ObservableObject {
             }
         }
     }
-
 
     private func scheduleSave() {
         saveWorkItem?.cancel()
@@ -681,15 +683,24 @@ class SongStore: ObservableObject {
     /// can't read a half-initialised plugin and clobber good state.
     func captureAllPluginStates() {
         guard !isLoading else { return }
-        for idx in song.tracks.indices {
-            if let state = audioEngine.captureState(for: song.tracks[idx].id) {
-                song.tracks[idx].pluginStateData = state
+        // Gathered into a copy and assigned once: each write to `song` notifies the
+        // whole screen and reschedules a save, and this used to do that per track.
+        var updated = song
+        var changed = false
+        for idx in updated.tracks.indices {
+            if let state = audioEngine.captureState(for: updated.tracks[idx].id),
+               updated.tracks[idx].pluginStateData != state {
+                updated.tracks[idx].pluginStateData = state
+                changed = true
             }
         }
-        if let perfID = song.performance?.id,
-           let state = audioEngine.captureState(for: perfID) {
-            song.performance?.pluginStateData = state
+        if let perfID = updated.performance?.id,
+           let state = audioEngine.captureState(for: perfID),
+           updated.performance?.pluginStateData != state {
+            updated.performance?.pluginStateData = state
+            changed = true
         }
+        if changed { song = updated }
     }
 
     /// Capture live plugin state and persist immediately. For safe-point saves
@@ -707,6 +718,7 @@ class SongStore: ObservableObject {
         queuedSection = nil
         queuedArrangementSlot = nil
         activate()
+        audioEngine.ensureRunning()
         for track in song.tracks where !audioEngine.hasInstrument(for: track.id) {
             audioEngine.addTrack(id: track.id, volume: track.mixer.volume, pan: track.mixer.pan,
                                  builtInSound: track.builtInSound ?? 0)
@@ -714,7 +726,7 @@ class SongStore: ObservableObject {
                 loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
             }
             loadEffects(for: track)
-            }
+        }
 
         isPlaying = true
         isPaused = false
@@ -747,6 +759,7 @@ class SongStore: ObservableObject {
     }
 
     func resume() {
+        audioEngine.ensureRunning()
         updateLiveSong()
         sequencer.resume(tempo: song.tempo)
         isPlaying = true
@@ -893,11 +906,7 @@ class SongStore: ObservableObject {
             audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan,
                                  builtInSound: perf.builtInSound ?? 0)
         }
-        if let info {
-            loadPlugin(info, for: perf.id)
-        } else {
-            loadPlugin(nil, for: perf.id)
-        }
+        loadPlugin(info, for: perf.id)
     }
 
     func setPerformanceVolume(_ v: Float) {
@@ -987,6 +996,9 @@ class SongStore: ObservableObject {
         if let plugin = copy.pluginInfo {
             loadPlugin(plugin, for: copy.id, stateData: copy.pluginStateData)
         }
+        // The copy's effects too: they were listed on the new track but not loaded, so
+        // it played dry until the song was reopened.
+        loadEffects(for: copy)
     }
 
     func setPlugin(_ info: PluginInfo?, for trackID: UUID) {
@@ -994,11 +1006,7 @@ class SongStore: ObservableObject {
         guard song.tracks[idx].pluginInfo != info else { return }
         song.tracks[idx].pluginInfo = info
         song.tracks[idx].pluginStateData = nil
-        if let info {
-            loadPlugin(info, for: trackID)
-        } else {
-            loadPlugin(nil, for: trackID)
-        }
+        loadPlugin(info, for: trackID)
     }
 
     /// Re-instantiate a track's existing instrument. Recovery for a plugin whose
@@ -1713,7 +1721,6 @@ class SongStore: ObservableObject {
         }
     }
 
-
     private func pauseForAudioInterruption(_ message: String) {
         guard isPlaying else {
             notice = message
@@ -1739,7 +1746,7 @@ class SongStore: ObservableObject {
                 loadPlugin(plugin, for: track.id, stateData: track.pluginStateData)
             }
             loadEffects(for: track)
-            }
+        }
 
         if let perf = song.performance {
             audioEngine.addTrack(id: perf.id, volume: perf.mixer.volume, pan: perf.mixer.pan,

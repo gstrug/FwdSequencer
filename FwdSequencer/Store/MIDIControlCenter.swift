@@ -819,7 +819,6 @@ final class MIDILearnState: ObservableObject {
             UserDefaults.standard.set(playTrackIDs.map(\.uuidString).sorted(), forKey: "MIDIKeysPlayTracks.v1")
         }
     }
-    var writingNotes: Bool { writingTrackID != nil }
     /// Some controller's keys go to the tracks: tracks show W or P. See
     /// MIDIControlCenter.keysReachTracks.
     @Published var keysReachTracks = false

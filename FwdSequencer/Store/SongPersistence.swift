@@ -277,12 +277,6 @@ enum SongStorage {
         }
     }
 
-    @discardableResult
-    static func save(_ song: Song) -> Bool {
-        if case .success = saveResult(song) { return true }
-        return false
-    }
-
     static func loadLibrary() -> Result<SongLibrarySnapshot, SongStorageError> {
         do {
             try prepareDirectories()
@@ -325,11 +319,6 @@ enum SongStorage {
         }
     }
 
-    static func all() -> [Song] {
-        guard case .success(let snapshot) = loadLibrary() else { return [] }
-        return snapshot.songs
-    }
-
     static func moveToTrash(_ song: Song) -> Result<Void, SongStorageError> {
         do {
             try prepareDirectories()
@@ -344,11 +333,6 @@ enum SongStorage {
         } catch {
             return .failure(.deleteFailed(error.localizedDescription))
         }
-    }
-
-    /// Compatibility wrapper. New UI uses moveToTrash and reports its result.
-    static func delete(_ song: Song) {
-        _ = moveToTrash(song)
     }
 
     static func trashedSongs() -> [TrashedSong] {
@@ -458,16 +442,6 @@ enum SongStorage {
         } catch {
             return .failure(.deleteFailed(error.localizedDescription))
         }
-    }
-
-    @discardableResult
-    static func duplicate(_ song: Song) -> Song {
-        var copy = song
-        copy.id = UUID()
-        copy.formatVersion = 2
-        copy.name = song.name + " copy"
-        _ = saveResult(copy)
-        return copy
     }
 
     private static func modificationDate(_ url: URL) -> Date {
