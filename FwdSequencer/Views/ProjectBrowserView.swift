@@ -24,6 +24,7 @@ struct ProjectBrowserView: View {
     @State private var trashPurgeTarget: TrashedSong? = nil
     @State private var notice: String? = nil
     @State private var importingSong = false
+    @State private var showingCredits = false
     @State private var exportingSong = false
     @State private var exportDocument: SongDocument? = nil
     @State private var exportFilename = "FWD Song"
@@ -93,6 +94,10 @@ struct ProjectBrowserView: View {
                                 Button { importingSong = true } label: {
                                     Label("Import Song", systemImage: "square.and.arrow.down")
                                 }
+                                Divider()
+                                Button { showingCredits = true } label: {
+                                    Label("About & Credits", systemImage: "info.circle")
+                                }
                             } label: {
                                 Label("More", systemImage: "ellipsis.circle")
                             }
@@ -115,6 +120,7 @@ struct ProjectBrowserView: View {
             songStore.captureAndSave()
         }
         .onOpenURL { url in importSong(at: url) }
+        .sheet(isPresented: $showingCredits) { CreditsView() }
         // MIDI controllers act on the song only while it is open: from the song list, a
         // Play press must not start a song nobody can see. Tied to this flag rather than
         // the song screen appearing, because a plugin editor opened full screen over the

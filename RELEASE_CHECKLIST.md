@@ -60,5 +60,5 @@
 - [ ] App Store privacy answers match the archive privacy report
 - [ ] Microphone permission is absent; the existing Inter-App Audio entitlement required by this target remains present
 - [ ] Support URL, privacy policy, screenshots, subtitle, keywords, and release notes are current
-- [ ] The sound bank's credits (GeneralUser GS by S. Christian Collins; FluidR3_GM by Frank Wen, MIT) can be read somewhere a user can find them: in the app, or on the support page
+- [ ] About & Credits (song list, ⋯ menu) shows the right version and build, and both sound bank licences open and read in full
 - [ ] TestFlight smoke test passes on the oldest and newest supported iPadOS versions

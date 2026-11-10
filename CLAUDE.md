@@ -352,6 +352,12 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   2026-11-10: plugging in carries on, unplugging pauses and Resume plays correctly), so
   `handleConfigurationChange` needs no reload.
 
+- **About & Credits** (2026-11-10, built, to test on device): song list ▸ ⋯ ▸ About &
+  Credits (`Views/CreditsView.swift`). Version and build, and the two sound banks, each
+  opening its licence in full, read from the `.txt` files in `Resources/` (FluidR3's
+  MIT notice has to travel with the bank). App-wide, so it sits on the song list, not
+  in a song's Settings. One sentence added to Graham's help text for the ⋯ menu.
+
 ## Build and test
 
 - Open `FwdSequencer.xcodeproj`, scheme `FwdSequencer`, run on an iPad or simulator.

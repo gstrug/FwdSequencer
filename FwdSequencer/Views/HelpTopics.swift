@@ -247,7 +247,7 @@ enum HelpTopic: String {
         case .newSong:
             return "Start a new song from scratch or open an example template. Give new songs a name. If a name is already in use, a suffix is added. Templates: Blank; Instrument Host, for playing your instruments from a MIDI keyboard; Sequencer, with starting patterns; From a MIDI File, which goes straight to Import MIDI; Pattern Pads, sections to fire live. Examples adds a copy of one of the example songs."
         case .importSong:
-            return "Import Song: bring in a .fwdsong file from Files or another app. It is added as a new song."
+            return "Import Song: bring in a .fwdsong file from Files or another app. It is added as a new song. About & Credits: the version of the app, and who made the built-in sounds."
         case .songRow:
             return "Tap to open the song. Long press to Rename, Duplicate, Export or Delete the song. Swipe left to delete, right to export to midi or .fwdsong. \"Arranged\" means the song has an arrangement (dimmed when Play Arrangement is off)."
         case .recentlyDeleted:
