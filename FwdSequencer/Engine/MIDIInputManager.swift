@@ -136,13 +136,8 @@ nonisolated final class MIDIInputManager: @unchecked Sendable {
                         let data2 = UInt8(word & 0x7F)
                         if let message = MIDIControlMessage(status: status, data1: data1, data2: data2) {
                             handler(source, message)
-                        } else {
-                            // Compared directly: this runs for every message on
-                            // CoreMIDI's thread, and an array here was built each time.
-                            let kind = status & 0xF0
-                            if kind == 0xE0 || kind == 0xA0 || kind == 0xD0 {
-                                performance?(source, status, data1, data2)
-                            }
+                        } else if [0xE0, 0xA0, 0xD0].contains(status & 0xF0) {
+                            performance?(source, status, data1, data2)
                         }
                     }
                     i += Self.wordsInMessage(ofType: type)
