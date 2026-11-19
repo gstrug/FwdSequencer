@@ -2773,7 +2773,7 @@
             {
               "type": "Play",
               "n": 2,
-              "gate": 0.9,
+              "gate": 1.0,
               "chordPositions": [],
               "probability": 1.0,
               "ratchets": 1,
