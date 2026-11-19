@@ -16,6 +16,7 @@ nonisolated enum PluginLoadError: LocalizedError {
     case trackUnavailable
     case cancelled
     case timedOut(String)
+    case effectTimedOut(String)
     case instantiationFailed(String, String)
 
     var errorDescription: String? {
@@ -27,6 +28,9 @@ nonisolated enum PluginLoadError: LocalizedError {
         case .timedOut(let name):
             return "\(name) took too long to load, so this track plays the built-in GM sound for now. "
                 + "The plugin and its settings are kept: close and reopen the song to try again."
+        case .effectTimedOut(let name):
+            return "\(name) took too long to load and was left out for now. "
+                + "It stays in the track's effects: close and reopen the song to try again."
         case .instantiationFailed(let name, let detail):
             return "\(name) could not be loaded. The built-in GM sound is active instead. \(detail)"
         }
@@ -192,6 +196,9 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         withCallbackLock { telemetryQuietLocked }
     }
     private var sessionObservers: [NSObjectProtocol] = []
+    /// Set once an effect load is settled, by the effect arriving or by its time limit.
+    private final class EffectLoadFlag { var isSet = false }
+
     private struct PluginLoadRequest {
         let id: UUID
         let completion: (Result<Void, PluginLoadError>) -> Void
@@ -774,9 +781,23 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             componentFlags: 0, componentFlagsMask: 0
         )
         suspendTrack(trackID)
+        // Whichever comes first, the effect or the time limit, settles this load; the
+        // other is turned away. Without a limit, an effect whose extension never
+        // answered left the track's MIDI gated for good (Graham, 2026-11-19). Both run
+        // on the main thread, so a plain flag is enough.
+        let settled = EffectLoadFlag()
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.pluginLoadTimeout) { [weak self] in
+            guard let self, !settled.isSet else { return }
+            settled.isSet = true
+            self.resumeTrack(trackID)
+            self.deliver(.failure(.effectTimedOut(pluginInfo.name)), to: completion)
+        }
         AVAudioUnit.instantiate(with: desc, options: []) { [weak self] avAudioUnit, error in
             guard let self else { return }
             DispatchQueue.main.async {
+                // Too late: the time limit already gave up on it. Not attached.
+                guard !settled.isSet else { return }
+                settled.isSet = true
                 defer { self.resumeTrack(trackID) }
                 guard let unit = avAudioUnit else {
                     let detail = error?.localizedDescription ?? "The Audio Unit returned no effect."
@@ -950,6 +971,9 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         }
         if let cancelled = result.cancelled { deliver(.failure(.cancelled), to: cancelled) }
         guard let mixer = result.mixer else {
+            // A load that was still running held a suspend of its own; it will never
+            // finish now, so give it back.
+            if result.cancelled != nil { resumeTrack(trackID) }
             deliver(.failure(.trackUnavailable), to: completion)
             return
         }
@@ -958,6 +982,13 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         // Gate MIDI to this track until the new instrument is attached (and its state
         // restored). Prevents the tick from hitting a half-attached node mid-swap.
         suspendTrack(trackID)
+        // A load still running when this one started took a suspend that only its own
+        // finish would give back — and a superseded load never finishes (isCurrentLoad
+        // turns it away). So it is handed back here, after this load's own suspend, so
+        // the gate never opens in between. Without this, choosing another instrument (or
+        // Reload) while one was still loading left the track's MIDI gated for good: no
+        // keys, no sequencer, until the song was closed (Graham, 2026-11-19).
+        if result.cancelled != nil { resumeTrack(trackID) }
 
         if let pluginInfo {
             let desc = AudioComponentDescription(
