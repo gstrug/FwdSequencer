@@ -218,7 +218,54 @@ struct TrackWriteNotesButton: View {
                     .midiLearnable(.trackWriteNotes(index))
                     .helpTag(.trackPlayKeys, instance: track.id.uuidString)
             }
+            // Beside W or P, since it only matters when keys reach the tracks.
+            KeysTransposeMenu(channel: track, help: .trackTranspose)
         }
+    }
+}
+
+/// Transpose for the notes played live into a track or the Play keyboard. The chip
+/// reads T at 0 and the amount otherwise ("−12"), lit so a shifted track stands out.
+struct KeysTransposeMenu: View {
+    let channel: SongTrack
+    let help: HelpTopic
+    @EnvironmentObject private var songStore: SongStore
+
+    private var value: Int { channel.effectiveKeysTranspose }
+
+    static func label(_ semitones: Int) -> String {
+        semitones == 0 ? "0" : (semitones > 0 ? "+\(semitones)" : "−\(-semitones)")
+    }
+
+    var body: some View {
+        Menu {
+            Section("Transpose Keys: \(Self.label(value))") {
+                step("Up an Octave", by: 12, systemImage: "arrow.up.to.line")
+                step("Up a Semitone", by: 1, systemImage: "arrow.up")
+                step("Down a Semitone", by: -1, systemImage: "arrow.down")
+                step("Down an Octave", by: -12, systemImage: "arrow.down.to.line")
+            }
+            if value != 0 {
+                Button { songStore.setKeysTranspose(0, for: channel.id) } label: {
+                    Label("No Transpose", systemImage: "arrow.uturn.backward")
+                }
+            }
+        } label: {
+            StudioChipLabel(title: value == 0 ? "T" : Self.label(value), tint: .cyan,
+                            look: value == 0 ? .off : .status)
+        }
+        .accessibilityLabel("Transpose keys for \(channel.name)")
+        .accessibilityValue(value == 0 ? "None" : "\(Self.label(value)) semitones")
+        .helpTag(help, instance: channel.id.uuidString)
+    }
+
+    @ViewBuilder
+    private func step(_ title: String, by amount: Int, systemImage: String) -> some View {
+        let target = value + amount
+        Button { songStore.setKeysTranspose(target, for: channel.id) } label: {
+            Label(title, systemImage: systemImage)
+        }
+        .disabled(!SongTrack.keysTransposeRange.contains(target))
     }
 }
 

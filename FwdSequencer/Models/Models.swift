@@ -302,6 +302,18 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     /// program 0, the grand piano they always had.
     var builtInSound: Int? = nil
 
+    /// Semitones added to notes PLAYED into this channel live — from a MIDI keyboard's
+    /// keys, and for the Play keyboard its on-screen keys too — so one keyboard can play
+    /// a synth as played and a bass an octave down (Graham, 2026-11-19). Never applied
+    /// to the sequenced notes, so playback and MIDI export are untouched. Optional so
+    /// older songs decode; nil is 0.
+    var keysTranspose: Int? = nil
+
+    static let keysTransposeRange = -24...24
+    var effectiveKeysTranspose: Int {
+        min(max(keysTranspose ?? 0, Self.keysTransposeRange.lowerBound), Self.keysTransposeRange.upperBound)
+    }
+
     /// How many effects the UI offers. Deliberately a constant rather than a shape in
     /// the data: everything under it is built for a list, so raising it is this line —
     /// the graph already wires a chain of any length, and saved songs need no migration.

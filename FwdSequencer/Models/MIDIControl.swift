@@ -276,6 +276,9 @@ nonisolated struct MIDIKeyRouting {
         /// Per instrument: the pitch classes (0 = C … 11 = B) it accepts. No entry:
         /// every note. The Play keyboard's when it follows a key and scale.
         var allowedPitchClasses: [UUID: Set<Int>] = [:]
+        /// Per instrument: semitones added to each key before it is played. No entry: 0.
+        /// The pitch-class check above is on the key pressed, before this.
+        var transpose: [UUID: Int] = [:]
     }
 
     enum Action: Equatable {
@@ -292,7 +295,11 @@ nonisolated struct MIDIKeyRouting {
         var passOn: Bool
     }
 
-    private struct Held: Equatable { var instruments: [UUID]; var note: UInt8 }
+    /// What one key press sounded: each instrument with the note it was sent (they
+    /// differ when instruments are transposed), so the release matches exactly even if
+    /// a transpose changed while the key was down.
+    private struct Held: Equatable { var sounding: [Sounding] }
+    private struct Sounding: Equatable { var instrument: UUID; var note: UInt8 }
 
     private(set) var config = Config()
     /// Instruments that have been sent controllers, so they can be put back to rest
@@ -313,7 +320,7 @@ nonisolated struct MIDIKeyRouting {
         if !message.isPress {
             if let h = held.removeValue(forKey: key) {
                 // Writing notes needs the release too, to tell a chord from single keys.
-                return Decision(actions: h.instruments.map { Action.stop($0, note: h.note) }, passOn: writing)
+                return Decision(actions: h.sounding.map { Action.stop($0.instrument, note: $0.note) }, passOn: writing)
             }
             return Decision(passOn: true)   // a link may want the release (trigger pads)
         }
@@ -326,12 +333,19 @@ nonisolated struct MIDIKeyRouting {
             config.allowedPitchClasses[$0]?.contains(pitchClass) ?? true
         }
         guard !config.paused, !instruments.isEmpty else { return Decision(passOn: true) }
+        // Each instrument's note, transposed; one pushed outside 0–127 is left out.
+        let sounding = instruments.compactMap { id -> Sounding? in
+            let shifted = Int(note) + (config.transpose[id] ?? 0)
+            guard (0...127).contains(shifted) else { return nil }
+            return Sounding(instrument: id, note: UInt8(shifted))
+        }
+        guard !sounding.isEmpty else { return Decision(passOn: true) }
         var actions: [Action] = []
         // A second note-on without a release in between: end the first, or it hangs.
-        if let previous = held[key] { actions += previous.instruments.map { Action.stop($0, note: previous.note) } }
-        held[key] = Held(instruments: instruments, note: note)
+        if let previous = held[key] { actions += previous.sounding.map { Action.stop($0.instrument, note: $0.note) } }
+        held[key] = Held(sounding: sounding)
         let velocity = UInt8(clamping: max(1, message.value))
-        actions += instruments.map { Action.play($0, note: note, velocity: velocity) }
+        actions += sounding.map { Action.play($0.instrument, note: $0.note, velocity: velocity) }
         return Decision(actions: actions, passOn: writing)
     }
 
@@ -369,11 +383,10 @@ nonisolated struct MIDIKeyRouting {
 
     mutating func releaseAll() -> [Action] {
         var actions: [Action] = []
-        for h in held.values.sorted(by: { $0.note < $1.note }) {
-            for id in h.instruments.sorted(by: { $0.uuidString < $1.uuidString }) {
-                actions.append(.stop(id, note: h.note))
-            }
+        let sounding = held.values.flatMap(\.sounding).sorted {
+            ($0.note, $0.instrument.uuidString) < ($1.note, $1.instrument.uuidString)
         }
+        for s in sounding { actions.append(.stop(s.instrument, note: s.note)) }
         held.removeAll()
         // Then put back anything a keyboard moved: pedal up, bend centred, mod wheel
         // and pressure down. A sustain pedal held as the keys move elsewhere would

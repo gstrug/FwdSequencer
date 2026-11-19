@@ -238,11 +238,17 @@ final class MIDIControlCenter: ObservableObject {
             store.$song
                 // Which instruments exist, and whether each can be heard: keys follow
                 // mute and solo, so a muted channel's keys fall silent too.
-                .map { song in
-                    song.tracks.map { "\($0.id)\(song.isAudible($0))" }
-                        + [song.performance.map { "\($0.id)\(song.isPlayKeyboardAudible)" }].compactMap { $0 }
-                        // and the Play keyboard's scale, which decides which keys reach it.
-                        + [song.playKeyboardPitchClasses.map { "\($0.sorted())" } ?? "all"]
+                .map { song -> [String] in
+                    var key: [String] = song.tracks.map { "\($0.id)\(song.isAudible($0))" }
+                    if let performance = song.performance {
+                        key.append("\(performance.id)\(song.isPlayKeyboardAudible)")
+                    }
+                    // and the Play keyboard's scale, which decides which keys reach it.
+                    key.append(song.playKeyboardPitchClasses.map { "\($0.sorted())" } ?? "all")
+                    // and each channel's keys transpose.
+                    for track in song.tracks { key.append("t\(track.effectiveKeysTranspose)") }
+                    key.append("p\(song.performance?.effectiveKeysTranspose ?? 0)")
+                    return key
                 }
                 .removeDuplicates()
                 .receive(on: DispatchQueue.main)
@@ -324,8 +330,17 @@ final class MIDIControlCenter: ObservableObject {
            let classes = store.song.playKeyboardPitchClasses {
             allowed[performance.id] = classes
         }
+        var transpose: [UUID: Int] = [:]
+        if let store {
+            var channels = store.song.tracks
+            if let performance = store.song.performance { channels.append(performance) }
+            for channel in channels where channel.effectiveKeysTranspose != 0 {
+                transpose[channel.id] = channel.effectiveKeysTranspose
+            }
+        }
         keyRouter.reconfigure { c in
             c.allowedPitchClasses = allowed
+            c.transpose = transpose
             c.destinations = destinations
             c.writingDevices = writingDevices
             c.linkedNotes = linked
@@ -440,7 +455,11 @@ final class MIDIControlCenter: ObservableObject {
                    keysSetting(forDevice: source.name).toTracks {
                     let key = "\(source.name)|\(message.channel)|\(message.number)"
                     if message.isPress {
-                        writePress(message.number, key: key, into: armed)
+                        // Written as heard: the armed track's keys transpose applies.
+                        let shift = activeStore?.song.tracks.first(where: { $0.id == armed })?.effectiveKeysTranspose ?? 0
+                        let written = message.number + shift
+                        guard (0...127).contains(written) else { continue }
+                        writePress(written, key: key, into: armed)
                     } else {
                         writeKeysDown.remove(key)
                         if writeKeysDown.isEmpty { chordStart = nil }

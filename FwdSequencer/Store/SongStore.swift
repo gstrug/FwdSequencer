@@ -909,6 +909,21 @@ class SongStore: ObservableObject {
         loadPlugin(info, for: perf.id)
     }
 
+    /// Keys transpose for a track or the Play keyboard, in semitones; 0 is saved as nil.
+    /// Only notes played live are shifted (see SongTrack.keysTranspose).
+    func setKeysTranspose(_ semitones: Int, for channelID: UUID) {
+        let range = SongTrack.keysTransposeRange
+        let clamped = min(max(semitones, range.lowerBound), range.upperBound)
+        let stored: Int? = clamped == 0 ? nil : clamped
+        if let i = song.tracks.firstIndex(where: { $0.id == channelID }) {
+            guard song.tracks[i].keysTranspose != stored else { return }
+            song.tracks[i].keysTranspose = stored
+        } else if song.performance?.id == channelID {
+            guard song.performance?.keysTranspose != stored else { return }
+            song.performance?.keysTranspose = stored
+        }
+    }
+
     func setPerformanceVolume(_ v: Float) {
         song.performance?.mixer.volume = v
         if let id = song.performance?.id { audioEngine.setVolume(v, for: id) }

@@ -275,6 +275,59 @@ final class MIDIControlTests: XCTestCase {
         XCTAssertEqual(r.heldCount, 0)
     }
 
+    func testTransposeShiftsOnlyItsOwnInstrument() {
+        let synth = UUID(), bass = UUID()
+        var r = MIDIKeyRouting()
+        _ = r.reconfigure {
+            $0.destinations = ["Keys": [synth, bass]]
+            $0.transpose = [bass: -12]
+            $0.paused = false
+        }
+        XCTAssertEqual(r.route(device: "Keys", note(60, 90)).actions,
+                       [.play(synth, note: 60, velocity: 90), .play(bass, note: 48, velocity: 90)])
+        XCTAssertEqual(r.route(device: "Keys", note(60, 0)).actions,
+                       [.stop(synth, note: 60), .stop(bass, note: 48)])
+        XCTAssertEqual(r.heldCount, 0)
+    }
+
+    func testReleaseMatchesThePressEvenIfTransposeChangedWhileHeld() {
+        let bass = UUID()
+        var r = MIDIKeyRouting()
+        _ = r.reconfigure { $0.destinations = ["Keys": [bass]]; $0.transpose = [bass: -12]; $0.paused = false }
+        XCTAssertEqual(r.route(device: "Keys", note(60, 90)).actions, [.play(bass, note: 48, velocity: 90)])
+        let changed = r.reconfigure { $0.transpose = [bass: 7] }
+        XCTAssertEqual(changed, [], "changing transpose alone releases nothing")
+        XCTAssertEqual(r.route(device: "Keys", note(60, 0)).actions, [.stop(bass, note: 48)],
+                       "the note that was sent is the one released")
+        XCTAssertEqual(r.route(device: "Keys", note(60, 90)).actions, [.play(bass, note: 67, velocity: 90)])
+        XCTAssertEqual(r.releaseAll().first, .stop(bass, note: 67))
+    }
+
+    func testTransposedOutOfRangeIsLeftOut() {
+        let low = UUID(), plain = UUID()
+        var r = MIDIKeyRouting()
+        _ = r.reconfigure { $0.destinations = ["Keys": [low, plain]]; $0.transpose = [low: -24]; $0.paused = false }
+        XCTAssertEqual(r.route(device: "Keys", note(10, 90)).actions, [.play(plain, note: 10, velocity: 90)])
+        XCTAssertEqual(r.route(device: "Keys", note(10, 0)).actions, [.stop(plain, note: 10)])
+        var only = MIDIKeyRouting()
+        _ = only.reconfigure { $0.destinations = ["Keys": [low]]; $0.transpose = [low: -24]; $0.paused = false }
+        let decision = only.route(device: "Keys", note(10, 90))
+        XCTAssertEqual(decision.actions, [])
+        XCTAssertEqual(only.heldCount, 0)
+    }
+
+    func testOldSongsDecodeWithNoTranspose() throws {
+        let track = SongTrack(name: "Old")
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(track)) as! [String: Any]
+        json.removeValue(forKey: "keysTranspose")
+        let decoded = try JSONDecoder().decode(SongTrack.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertNil(decoded.keysTranspose)
+        XCTAssertEqual(decoded.effectiveKeysTranspose, 0)
+        var loud = track
+        loud.keysTranspose = 99
+        XCTAssertEqual(loud.effectiveKeysTranspose, 24, "a damaged file is clamped")
+    }
+
     func testKeysPlaySeveralInstrumentsAtOnceAndReleaseThemAll() {
         let play = UUID(), trackA = UUID(), trackB = UUID()
         var r = MIDIKeyRouting()

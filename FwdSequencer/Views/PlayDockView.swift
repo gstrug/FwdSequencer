@@ -18,6 +18,9 @@ struct PlayDockView: View {
     @State private var showPluginPicker = false
     @State private var showScalePicker = false
     @State private var activeNotes = Set<UInt8>()
+    /// Key on screen → note sent, so each release stops the note its press played even
+    /// if the transpose changed while the key was down.
+    @State private var sentNotes: [UInt8: UInt8] = [:]
 
     private var perf: SongTrack? { songStore.song.performance }
 
@@ -33,11 +36,19 @@ struct PlayDockView: View {
                         // Mute and solo apply here as they do to a track: muted, or
                         // silenced by a soloed track, and the keys make no sound.
                         guard songStore.song.isPlayKeyboardAudible else { return }
-                        AudioEngineManager.shared.playNote(trackID: p.id, midiNote: note, velocity: 100)
+                        // Keys transpose; the scale check was on the key pressed.
+                        let shifted = Int(note) + (songStore.song.performance?.effectiveKeysTranspose ?? 0)
+                        guard (0...127).contains(shifted) else { return }
+                        if let previous = sentNotes[note] {
+                            AudioEngineManager.shared.stopNote(trackID: p.id, midiNote: previous)
+                        }
+                        sentNotes[note] = UInt8(shifted)
+                        AudioEngineManager.shared.playNote(trackID: p.id, midiNote: UInt8(shifted), velocity: 100)
                     },
                     onNoteOff: { note in
                         activeNotes.remove(note)
-                        AudioEngineManager.shared.stopNote(trackID: p.id, midiNote: note)
+                        let sent = sentNotes.removeValue(forKey: note) ?? note
+                        AudioEngineManager.shared.stopNote(trackID: p.id, midiNote: sent)
                     }
                 )
             }
@@ -92,6 +103,7 @@ struct PlayDockView: View {
             instrumentButton
             editSoundButton
             scaleButton
+            transposeButton
             volumeControls
             closeButton
         }
@@ -107,6 +119,7 @@ struct PlayDockView: View {
             HStack(spacing: 8) {
                 editSoundButton
                 scaleButton
+                transposeButton
                 volumeControls
             }
         }
@@ -201,6 +214,14 @@ struct PlayDockView: View {
         }
     }
 
+    /// Keys transpose for the Play keyboard (screen keys and MIDI keys alike).
+    @ViewBuilder
+    private var transposeButton: some View {
+        if let p = perf {
+            KeysTransposeMenu(channel: p, help: .playTranspose)
+        }
+    }
+
     /// Chromatic is saved as nil: it is the same as every key.
     private func setScale(_ scale: PlayKeyboardScale?) {
         let value = (scale?.limitsKeys ?? false) ? scale : nil
@@ -266,9 +287,12 @@ struct PlayDockView: View {
     }
 
     private func releaseAll() {
-        guard let id = perf?.id else { activeNotes.removeAll(); return }
-        for note in activeNotes { AudioEngineManager.shared.stopNote(trackID: id, midiNote: note) }
+        guard let id = perf?.id else { activeNotes.removeAll(); sentNotes.removeAll(); return }
+        for note in activeNotes {
+            AudioEngineManager.shared.stopNote(trackID: id, midiNote: sentNotes[note] ?? note)
+        }
         activeNotes.removeAll()
+        sentNotes.removeAll()
     }
 }
 

@@ -33,11 +33,11 @@ enum HelpTopic: String {
          trackPlayKeys, trackMove, trackDuplicate, trackDelete, trackEffectsMenu,
          feelChordRoll, feelAccent, feelVariation, feelSwing, feelTiming,
          trackTime, trackKeyScale, trackSteps, trackKeyboard, trackNoteParams,
-         trackStepsButton
+         trackStepsButton, trackTranspose
 
     // Play keyboard
     case playInstrument, playEditInstrument, playVolume, playMute, playSolo, playEffects,
-         playKeys, playClose, playOctave, playScale
+         playKeys, playClose, playOctave, playScale, playTranspose
 
     // Mixer
     case mixerMaster, mixerFader, mixerPan
@@ -147,6 +147,7 @@ enum HelpTopic: String {
         case .trackEffects: return "Effects (FX)"
         case .trackWrite: return "Write Notes (W)"
         case .trackPlayKeys: return "Keys Play (P)"
+        case .trackTranspose: return "Transpose Keys"
         case .trackMove: return "Move Up / Down"
         case .trackDuplicate: return "Duplicate Track"
         case .trackDelete: return "Delete Track"
@@ -173,6 +174,7 @@ enum HelpTopic: String {
         case .playClose: return "Close"
         case .playOctave: return "Octave"
         case .playScale: return "Play Keyboard Key and Scale"
+        case .playTranspose: return "Transpose Keys"
 
         case .mixerMaster: return "Master"
         case .mixerFader: return "Channel Fader"
@@ -399,6 +401,8 @@ enum HelpTopic: String {
             return "Write: Arms a track so notes can quickly be edited using a midi controller. Play a chord to add multiple notes. Single notes can be toggled on/off. Write Notes from Keys must be on in Settings ▸ MIDI."
         case .trackPlayKeys:
             return "Play: Turn Keys ▸ Tracks on in Settings ▸ MIDI ▸ Controllers & Templates to enable. Your MIDI controller can now play any track where P is active (green)."
+        case .trackTranspose:
+            return "Shifts the notes your MIDI keyboard plays on this track up or down, in semitones, for example a bass an octave below a synth played from the same keys. Notes written with W are written as you hear them. The track's sequenced notes are not changed."
         case .trackMove:
             return "Moves the track up or down in the list. MIDI links are attached to the track position, so Track 1 is always the top track."
         case .trackDuplicate:
@@ -451,6 +455,8 @@ enum HelpTopic: String {
             return "Moves the virtual keyboard down or up an octave. The note in the middle shows which C you are on."
         case .playScale:
             return "Choose a key and scale for the virtual keyboard, or match one of the tracks in the selected section. Keys outside the scale are dimmed and play nothing, from the screen or a MIDI keyboard. All Keys plays every key."
+        case .playTranspose:
+            return "Shifts the notes the Play keyboard plays up or down, in semitones, from the screen and from a MIDI keyboard. The key and scale still apply to the keys you press."
 
         // Mixer
         case .mixerMaster:

@@ -434,6 +434,29 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   holds its own copies at 112pt — **rerun `Tools/make_app_mark.py` after changing the
   app icon**, or the two drift apart.
 
+- **Testing feedback, 2026-11-19 (Graham; built, to test on device).** Three changes,
+  one commit each.
+  1. **P on by default.** Added, duplicated and imported tracks start with P on
+    (`MIDIControlCenter.trackAdded`, `duplicateTrack`). A new **Instrument Host** song
+    also turns P on for all its tracks and **Keys → Tracks** on for every controller
+    connected then (`prepareInstrumentHost`, called from `ProjectBrowserView`); that is
+    the controller's own switch, so it stays on in other songs too.
+  2. **Plugin load wait 30 s** (was 15; `AudioEngineManager.pluginLoadTimeout`). The
+    overlay is exactly as blocking, now reads "Loading instruments…" and names what it
+    is still waiting for, from `pluginStatuses` ("Waiting for ZENOLOGY and 2 others").
+    After a timeout the song keeps the plugin and its settings (the GM fallback has no
+    AUv3 unit, so nothing is captured over them); reopening the song tries again.
+  3. **Keys transpose** per track and for the Play keyboard: `SongTrack.keysTranspose`
+    (optional, ±24, nil = 0). Applies only to notes PLAYED live — controller keys via
+    `MIDIKeyRouting.Config.transpose` (held notes remember what was sent, so releases
+    match even if it changes mid-note), the Play keyboard's on-screen keys in
+    `PlayDockView`, and notes written with W are written transposed. **Never** the
+    sequencer or export (Graham's choice), so no parity concern. The Play keyboard's
+    scale filter is on the key pressed, before transposing. UI: `KeysTransposeMenu`, a
+    T chip beside W/P on each track (shown when P/W is) and beside the scale menu on the
+    Play dock; help topics `.trackTranspose`, `.playTranspose` (Claude's wording —
+    Graham may want to rewrite them).
+
 ## Build and test
 
 - Open `FwdSequencer.xcodeproj`, scheme `FwdSequencer`, run on an iPad or simulator.
