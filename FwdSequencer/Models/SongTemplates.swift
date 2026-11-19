@@ -139,7 +139,7 @@ enum ExampleSong: String, CaseIterable, Identifiable {
         case .bluesInA: return "A shuffle backing track to solo over on the Play keyboard"
         case .lighthouse: return "A ballad arranged in Song Parts, quiet to full and back"
         case .sundayStrut: return "Funk with swing, accent and chord roll in its Feel"
-        case .happyBirthday: return "A jazz arrangement transcribed bar by bar, in 3/4"
+        case .happyBirthday: return "A jazz waltz in 3/4: piano transcribed bar by bar, with walking bass and ride-cymbal drums"
         case .malecon: return "Salsa put together from imported MIDI loops, one to a section"
         }
     }

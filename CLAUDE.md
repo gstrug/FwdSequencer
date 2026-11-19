@@ -211,7 +211,10 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   songs and can be deleted for good. **They are JSON in
   `Resources/` written by `Tools/make_examples.py`** (except Happy Birthday, transcribed
   by hand) — edit the music there and rerun (it has a small note/drum-grid notation);
-  `BundledSongTests` checks them. The first examples (Midnight Current etc.) now live
+  `BundledSongTests` checks them. **Happy Birthday's Bass and Drums** (2026-11-19,
+  Graham's request) are written by `Tools/make_birthday_band.py`, which rewrites only
+  those two tracks in the JSON and leaves the hand-transcribed piano alone: a walking
+  jazz-waltz bass (GM 32) and ride/pedal hi-hat/side stick on the triplet grid. The first examples (Midnight Current etc.) now live
   only in `Tests/.../TestSongs.swift`. Songs save `opensInTriggerMode` and
   `showsPlayKeyboard` and open that way.
 - **Built-in sound** (2026-10-27): `SongTrack.builtInSound` (nil = program 0, 0–127, or

@@ -183,7 +183,7 @@ final class MIDIImportTests: XCTestCase {
         XCTAssertEqual(file.usableTempo, original.tempo)
 
         let parts = file.parts.filter { !$0.notes.isEmpty }
-        XCTAssertEqual(parts.count, 2)
+        XCTAssertEqual(parts.count, 4, "Right Hand, Left Hand, Bass and Drums")
         // The pickup ("Hap-py") is on triplet steps 7 and 9 of the first bar, each
         // held to 95% of its length.
         let rightHand = parts[0].notes.sorted { ($0.start, $0.pitch) < ($1.start, $1.pitch) }
