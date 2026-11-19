@@ -687,7 +687,9 @@ class SongStore: ObservableObject {
         // whole screen and reschedules a save, and this used to do that per track.
         var updated = song
         var changed = false
-        for idx in updated.tracks.indices {
+        // Only instruments whose sound may have changed: one restored from the song and
+        // never opened keeps its saved state (see AudioEngineManager.mayHaveNewState).
+        for idx in updated.tracks.indices where audioEngine.mayHaveNewState(updated.tracks[idx].id) {
             if let state = audioEngine.captureState(for: updated.tracks[idx].id),
                updated.tracks[idx].pluginStateData != state {
                 updated.tracks[idx].pluginStateData = state
@@ -695,6 +697,7 @@ class SongStore: ObservableObject {
             }
         }
         if let perfID = updated.performance?.id,
+           audioEngine.mayHaveNewState(perfID),
            let state = audioEngine.captureState(for: perfID),
            updated.performance?.pluginStateData != state {
             updated.performance?.pluginStateData = state

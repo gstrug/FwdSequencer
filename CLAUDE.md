@@ -464,11 +464,18 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   (`removeTrack` clears counts). `loadPlugin` now hands the old load's suspend back
   after taking its own. Cause 2: `loadEffect` had no timeout; an effect whose extension
   never answered gated the track for good. Now 30 s (`EffectLoadFlag`, error
-  `.effectTimedOut`), late arrivals not attached. **Still open:** Graham also lost
-  saved instrument patches around these restarts; cause not yet known (see the chat of
-  2026-11-19 — candidates: a swap clears `pluginStateData` by design; capture on
-  resign-active is skipped while playing; a restore the plugin ignored, then captured
-  over the saved state).
+  `.effectTimedOut`), late arrivals not attached.
+  **Lost patches (same day):** Graham lost saved patches on tracks he had NOT touched,
+  after killing the app. Likely: a plugin ignored the restore (cold start, every
+  extension launching at once) and played its default, and the next automatic capture
+  (pause/stop/leave/background) saved that default over the patch. Not proven on
+  device. Fix: `captureAllPluginStates` now only captures instruments in
+  `AudioEngineManager.instrumentsWithNewState` — loaded fresh (no saved state) or
+  editor opened since loading (`noteEditorOpened`, from `PluginEditorView.onAppear`).
+  A restored, never-opened instrument keeps its saved state, so reopening the song
+  restores it again. Trade-off: sound changes made only by controller CCs, with the
+  editor never opened, are no longer saved automatically. The single Backups copy
+  rotates on every save, so already-lost patches are not recoverable from it.
 
 ## Build and test
 

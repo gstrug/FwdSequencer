@@ -436,6 +436,8 @@ struct PluginEditorView: View {
         // unconditionally on disappear so a track can never be left silent.
         .onAppear {
             releasedSuspension = false
+            // The sound may change from here on, so later automatic captures keep it.
+            engine.noteEditorOpened(for: trackID)
             engine.suspendTrack(trackID)
             // Quieten our own main-thread/CoreAnimation work while the plugin builds
             // its (out-of-process) UI — a heavy plugin can otherwise fail to establish

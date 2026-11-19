@@ -257,6 +257,27 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// opening its editor, with the sequencer stopped. Skipping the flush is always safe
     /// for an unsettled unit: MIDI was gated the whole time, so it has no ringing notes.
     private var settledInstruments: Set<UUID> = []
+    /// Instruments whose sound may differ from what the song has saved: a plugin chosen
+    /// fresh (no saved state), or one whose editor has been opened since it loaded.
+    /// An instrument restored from the song and never opened is NOT here, and the
+    /// automatic captures (pause, stop, leaving, backgrounding) leave its saved state
+    /// alone. Graham, 2026-11-19: after killing the app, saved patches on tracks he had
+    /// not touched came back as defaults. A plugin that ignores the restore (not ready
+    /// yet, typically on a cold start with every extension launching at once) plays its
+    /// default, and the next automatic capture used to save that default over the
+    /// user's patch. Now the patch survives, and reopening the song restores it again.
+    private var instrumentsWithNewState: Set<UUID> = []
+
+    /// The editor is opening, so the user may change the sound: from now on the
+    /// automatic captures record this instrument too.
+    func noteEditorOpened(for id: UUID) {
+        withLock { _ = instrumentsWithNewState.insert(id) }
+    }
+
+    /// Whether an automatic capture may replace this instrument's saved state.
+    func mayHaveNewState(_ id: UUID) -> Bool {
+        withLock { instrumentsWithNewState.contains(id) }
+    }
     /// Notes currently sounding per track, so a quiesce can send note-offs ONLY for
     /// what is actually ringing. Previously every suspend blasted 128 note-offs + CC123
     /// at the plugin; opening GeoShred's editor did exactly that and killed it
@@ -939,6 +960,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
         withLock {
             suspendCounts.removeValue(forKey: id)
             settledInstruments.remove(id)
+            instrumentsWithNewState.remove(id)
             cancelled = loadRequests.removeValue(forKey: id)?.completion
             if let mixer = trackMixers.removeValue(forKey: id) {
                 mixer.removeTap(onBus: 0)
@@ -965,6 +987,10 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
             let oldCompletion = loadRequests.removeValue(forKey: trackID)?.completion
             // The incoming instrument is unsettled until its settle window completes.
             settledInstruments.remove(trackID)
+            // Restored from the song: its saved state stands until the editor is opened.
+            // Chosen fresh: nothing saved to protect, captured as before.
+            if stateData == nil { instrumentsWithNewState.insert(trackID) }
+            else { instrumentsWithNewState.remove(trackID) }
             guard let mixer = trackMixers[trackID] else { return (nil, oldCompletion) }
             loadRequests[trackID] = PluginLoadRequest(id: requestID, completion: completion)
             return (mixer, oldCompletion)
