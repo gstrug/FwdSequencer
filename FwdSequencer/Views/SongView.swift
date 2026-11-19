@@ -12,6 +12,21 @@ struct SongView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showPlayDock = false
 
+    /// Which instruments the loading screen is still waiting for, by name, so a slow
+    /// plugin can be seen (Graham, 2026-11-19). Nil once none is named.
+    private var loadingInstrumentsText: String? {
+        let names = songStore.pluginStatuses.values.compactMap { status -> String? in
+            if case .loading(let name) = status { return name }
+            return nil
+        }.sorted()
+        guard let first = names.first else { return nil }
+        switch names.count {
+        case 1: return "Waiting for \(first)"
+        case 2: return "Waiting for \(first) and \(names[1])"
+        default: return "Waiting for \(first) and \(names.count - 1) others"
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             SongTransportBar(onBack: {
@@ -112,10 +127,16 @@ struct SongView: View {
                     Color.black.opacity(0.55).ignoresSafeArea()
                     VStack(spacing: 14) {
                         ProgressView().controlSize(.large).tint(.white)
-                        Text("Restoring instruments…")
+                        Text("Loading instruments…")
                             .font(.title3.bold()).foregroundStyle(.white)
-                        Text("Please wait — don't tap yet")
-                            .font(.callout).foregroundStyle(.white.opacity(0.85))
+                        if let waiting = loadingInstrumentsText {
+                            Text(waiting)
+                                .font(.callout).foregroundStyle(.white)
+                                .multilineTextAlignment(.center)
+                        }
+                        Text("Some plugins take a while. The screen unlocks when they're ready.")
+                            .font(.footnote).foregroundStyle(.white.opacity(0.8))
+                            .multilineTextAlignment(.center)
                     }
                     .padding(36)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18))

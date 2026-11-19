@@ -25,7 +25,8 @@ nonisolated enum PluginLoadError: LocalizedError {
         case .cancelled:
             return "Instrument loading was cancelled."
         case .timedOut(let name):
-            return "\(name) took too long to load. The GM instrument is active instead."
+            return "\(name) took too long to load, so this track plays the built-in GM sound for now. "
+                + "The plugin and its settings are kept: close and reopen the song to try again."
         case .instantiationFailed(let name, let detail):
             return "\(name) could not be loaded. The built-in GM sound is active instead. \(detail)"
         }
@@ -216,6 +217,11 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
     /// MIDI event it received, whenever that arrived. The actual causes were our own
     /// all-notes-off flush and an unbalanced MIDI-gate release, both since fixed — so
     /// there is nothing to buy by inflating this, only slower instrument loads.
+    /// How long a plugin may take to load before its track falls back to the built-in
+    /// sound. Was 15 s; raised to 30 s on 2026-11-19 after a slow plugin missed it on
+    /// Graham's iPad. Longer only costs waiting when a plugin really is broken.
+    static let pluginLoadTimeout: Double = 30
+
     static let instrumentSettleDelay: TimeInterval = 1.0
 
     private let auLock = NSRecursiveLock()
@@ -996,7 +1002,7 @@ nonisolated final class AudioEngineManager: SequencerAudioOutput, @unchecked Sen
                 }
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.pluginLoadTimeout) { [weak self] in
                 guard let self, isCurrentLoad(requestID, for: trackID) else { return }
                 attachSampler(for: trackID, mixer: mixer)
                 finishPluginLoad(requestID, for: trackID,

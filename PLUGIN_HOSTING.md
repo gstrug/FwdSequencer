@@ -60,7 +60,7 @@ All of this lives in `Engine/AudioEngineManager.swift`.
 4. If saved state exists, restore it **after a 1.0 s delay** — many plugins need a
    run-loop cycle before they accept `fullState`.
 
-If instantiation fails or exceeds 15 seconds, the instrument falls back to the GM
+If instantiation fails or exceeds 30 seconds, the instrument falls back to the GM
 sampler so it still makes sound. Completion reports the actual result; `SongStore`
 keeps a per-track ready/failed status and presents the failure rather than pretending
 the requested plugin loaded.
@@ -73,11 +73,11 @@ plugin can corrupt it, and with a fragile AUv3 (GeoShred) it crashes the extensi
 Three layers protect the window, and **all three are load-bearing**:
 
 1. `SongStore` tracks generation-tokened requests, so a stale completion can never
-   clear a newer load's state. Each load has a 15-second timeout and an explicit GM
+   clear a newer load's state. Each load has a 30-second timeout and an explicit GM
    fallback — no guessed two-second window.
 2. The engine **suspends MIDI per loading track**, so the sequencer tick can't hit a
    half-attached node. Note-offs still pass, so nothing hangs.
-3. `SongView` shows a **blocking** *Restoring instruments…* overlay that **captures
+3. `SongView` shows a **blocking** *Loading instruments…* overlay that **captures
    touches** until every load finishes.
 
 Layer 3 is not cosmetic and must not be downgraded to a passive banner. Suspension

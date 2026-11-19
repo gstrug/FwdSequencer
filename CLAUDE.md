@@ -244,8 +244,8 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
 ## Hard-won lessons (do not re-learn these)
 
 1. **Plugin loading is fragile.** Three layers protect it and all are load-bearing:
-   generation-tokened loads with 15 s timeout and GM fallback, per-track MIDI
-   suspension, and a *blocking* "Restoring instruments…" overlay. Never downgrade the
+   generation-tokened loads with 30 s timeout and GM fallback, per-track MIDI
+   suspension, and a *blocking* "Loading instruments…" overlay. Never downgrade the
    overlay to a passive banner.
 2. **Don't transform plugin views** (pinch-zoom) — out-of-process UIs go blank. Resize
    via Auto Layout instead.
