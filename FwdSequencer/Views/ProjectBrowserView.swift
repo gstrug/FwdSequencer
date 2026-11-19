@@ -523,6 +523,9 @@ struct ProjectBrowserView: View {
         s.name = SongNaming.uniqueName(name, among: songs.map(\.name))
         songStore.open(s)
         songStore.saveNow()
+        if template == .instrumentHost {
+            MIDIControlCenter.shared.prepareInstrumentHost(trackIDs: s.tracks.map(\.id))
+        }
         // From a MIDI File…: the song opens on the import, file timing on.
         songStore.startsWithMIDIImport = template.startsWithMIDIImport
         showingSong = true

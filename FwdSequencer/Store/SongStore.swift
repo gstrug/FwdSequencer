@@ -977,6 +977,8 @@ class SongStore: ObservableObject {
         copy.id = UUID()
         copy.name = copy.name + " Copy"
         song.tracks.insert(copy, at: i + 1)
+        // A new track, so its P starts on, as for Add Track.
+        MIDIControlCenter.shared.learn.playTrackIDs.insert(copy.id)
 
         // Clone this track's note data in every section onto the new track id.
         for s in song.sections.indices {

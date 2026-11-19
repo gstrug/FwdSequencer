@@ -192,12 +192,32 @@ final class MIDIControlCenter: ObservableObject {
         }
     }
 
-    /// A track was just added. With Write Notes switched on it is armed at once, so a
-    /// new track can be played straight in.
+    /// A track was just added. Its P starts on, so keys going to the tracks play it
+    /// straight away (Graham, 2026-11-19: on by default, turned off if not wanted).
+    /// With Write Notes switched on it is also armed at once, so it can be played in.
     func trackAdded(_ trackID: UUID) {
+        learn.playTrackIDs.insert(trackID)
         guard learn.writeNotesEnabled else { return }
         learn.writingTrackID = trackID
         learn.lastWritingTrackID = trackID
+    }
+
+    /// A new song from the Instrument Host template, which is for playing from a MIDI
+    /// keyboard: every track's P on, and Keys → Tracks on for each controller connected
+    /// now (Graham, 2026-11-19). Keys → Play Keyboard is left as it was. Keys → Tracks is
+    /// the controller's own switch, so it stays on in other songs too, as when set by hand.
+    func prepareInstrumentHost(trackIDs: [UUID]) {
+        learn.playTrackIDs.formUnion(trackIDs)
+        var settings = keySettings
+        for source in sources where isEnabled(source.name) {
+            var setting = settings[source.name] ?? MIDIKeysSetting()
+            setting.toTracks = true
+            settings[source.name] = setting
+        }
+        if settings != keySettings {
+            keySettings = settings
+            saveSettings()
+        }
     }
 
     /// Punch in and out from a controller button: disarm, or re-arm the track armed
