@@ -457,6 +457,19 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
     Play dock; help topics `.trackTranspose`, `.playTranspose` (Claude's wording —
     Graham may want to rewrite them).
 
+- **Track MIDI going dead after an instrument/effect change — fixed 2026-11-19, to test
+  on device.** Cause 1: a plugin load superseded by a newer one (another instrument, or
+  Reload, chosen while the first was loading) never ran `finishPluginLoad`, so its
+  `suspendTrack` was never balanced and the track stayed gated until the song closed
+  (`removeTrack` clears counts). `loadPlugin` now hands the old load's suspend back
+  after taking its own. Cause 2: `loadEffect` had no timeout; an effect whose extension
+  never answered gated the track for good. Now 30 s (`EffectLoadFlag`, error
+  `.effectTimedOut`), late arrivals not attached. **Still open:** Graham also lost
+  saved instrument patches around these restarts; cause not yet known (see the chat of
+  2026-11-19 — candidates: a swap clears `pluginStateData` by design; capture on
+  resign-active is skipped while playing; a restore the plugin ignored, then captured
+  over the saved state).
+
 ## Build and test
 
 - Open `FwdSequencer.xcodeproj`, scheme `FwdSequencer`, run on an iPad or simulator.
