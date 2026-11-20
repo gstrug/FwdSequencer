@@ -323,6 +323,9 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
 - Decide whether a hosted-plugin build (FWD as an AUv3 MIDI generator) is wanted; it
   affects where the scheduler seam goes (see `TIMING.md` section 6).
 - Groove templates (per-position offset tables) not built; swing covers the common case.
+- **Yamaha style files: NOT for FWD (Graham, 2026-11-20).** Researched 2026-11-19
+  (project doc `claude/yamaha-styles-report.md`); parked as a possible separate,
+  later app started from scratch on FWD's lessons. Don't propose it for FWD.
 - **Parked (Graham hears no problem on device):** the Timing feel caps at 40 ms
   (`SongTrack.effectiveTimingJitter`), but `scheduleLead` is 20 ms, so early pushes
   beyond 20 ms are clamped and the feel skews late above ~20 ms. The comment there
