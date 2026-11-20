@@ -474,12 +474,18 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
     bottom of chords played on every track from one controller). Per track,
     `SongTrack.keysNotePriority` (String, "lowest"/"highest", nil = all; text so an
     unknown value can't stop a song loading) → `MIDIKeyRouting.Config.notePriority`.
-    Per device and instrument the router keeps the one key sounding (`singles`); a key
-    further out replaces it (stop old, play new), others are ignored; releasing the
-    sounding key silences the track — **no fall back to keys still held** (Graham's
-    choice: avoids stray notes as a chord is released). Compared on the key pressed,
-    sent transposed. Live keys only; sequence untouched. UI: track ⋯ menu ▸ Keys Play
-    picker, and a "Low"/"High" chip beside P/W when set; help topic `.trackKeysPlay`.
+    **Rule (Graham's, reworked the same day after testing showed uneven chords and
+    legato changes missing the bottom):** per device and instrument (`singles`), the
+    first key opens a **30 ms window** (`chordWindow`, fixed); when it closes the lowest
+    (highest) key pressed in it sounds and is **locked** — later keys are ignored —
+    until that key is lifted. Then the lowest (highest) of keys pressed AFTER it and
+    still held takes over (legato chord change); keys of its own chord never do, so a
+    released chord sounds no stray notes; otherwise silence. Timing: `route(…, at:)`
+    takes a time, `flush(at:)` closes windows, `nextDeadline`; `MIDIKeyRouter` uses
+    `ProcessInfo.systemUptime` and a `chordTimer` queue to flush on time, and `route`
+    settles overdue windows first. Cost: the bass sounds up to 30 ms after the first
+    key. Compared on the key pressed, sent transposed. Live keys only. UI: track ⋯
+    menu ▸ Keys Play picker, a "Low"/"High" chip beside P/W; help `.trackKeysPlay`.
   5. **Track Inputs: Keys From & Key Range** (2026-11-20, Graham agreed it is needed
     in a commercial app; defaults exactly as before). Per track `keysSource` (controller
     name, nil any), `keysChannel` (1–16, nil any), `keysLowNote`/`keysHighNote` (nil

@@ -409,7 +409,7 @@ enum HelpTopic: String {
         case .trackKeyRange:
             return "The keys that reach this track. Tap Set…, then press the lowest and the highest key on your controller. Whole Keyboard lets every key through. Use ranges side by side to split one keyboard between tracks."
         case .trackKeysPlay:
-            return "Which of the keys you hold on your MIDI controller this track plays. All Notes plays them all. Lowest Note plays only the lowest, for example a bass under chords you play on every track; Highest Note only the highest, for a lead on top. A new key further out takes over; let go of it and the track is silent until you press another. The sequence is not affected."
+            return "Which of the keys you hold on your MIDI controller this track plays. All Notes plays them all. Lowest Note plays only the lowest, for example a bass under chords you play on every track; Highest Note only the highest, for a lead on top. The keys of a chord played within a moment of each other count together, so a slightly uneven chord still gives the bottom (or top) note. That note stays until you let go of its key, while you play above it. Change chords without lifting and the new chord takes over as you let go of the old key. The sequence is not affected."
         case .trackTranspose:
             return "Moves the whole track up or down, in semitones, in every section: its sequence and the notes your MIDI keyboard plays into it. For example, a bass an octave below a synth played from the same keys. The notes stay written as they are; the track just sounds higher or lower. To rewrite one section's notes instead, use Shape ▸ Transpose."
         case .trackMove:

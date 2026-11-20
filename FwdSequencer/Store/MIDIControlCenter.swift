@@ -832,20 +832,42 @@ nonisolated final class MIDIMessageQueue: @unchecked Sendable {
 nonisolated final class MIDIKeyRouter: @unchecked Sendable {
     private let lock = OSAllocatedUnfairLock()
     private var routing = MIDIKeyRouting()
+    /// Closes Lowest/Highest Note chord windows on time when no further key arrives.
+    private let chordTimer = DispatchQueue(label: "com.fwd.keys.chord-window", qos: .userInteractive)
+
+    private static var now: Double { ProcessInfo.processInfo.systemUptime }
 
     /// On the MIDI thread. True when the message still needs the main thread.
     func receive(device: String, _ message: MIDIControlMessage) -> Bool {
         lock.lock()
-        var decision = routing.route(device: device, message)
+        var decision = routing.route(device: device, message, at: Self.now)
         // A controller nothing is linked to — sustain, mod wheel — is played through too.
         if message.kind == .controlChange {
             decision.actions += routing.routeControl(
                 device: device, status: 0xB0 | UInt8((message.channel - 1) & 0x0F),
                 data1: UInt8(message.number), data2: UInt8(message.value))
         }
+        let deadline = routing.nextDeadline
         lock.unlock()
         perform(decision.actions)
+        scheduleFlush(deadline)
         return decision.passOn
+    }
+
+    /// A chord window is open: settle it when it closes. Extra wake-ups do nothing.
+    private func scheduleFlush(_ deadline: Double?) {
+        guard let deadline else { return }
+        let delay = max(0, deadline - Self.now)
+        chordTimer.asyncAfter(deadline: .now() + delay) { [weak self] in self?.flushDue() }
+    }
+
+    private func flushDue() {
+        lock.lock()
+        let actions = routing.flush(at: Self.now)
+        let next = routing.nextDeadline
+        lock.unlock()
+        perform(actions)
+        scheduleFlush(next)
     }
 
     /// On the MIDI thread: pitch bend or per-note pressure, played through.

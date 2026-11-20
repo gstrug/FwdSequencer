@@ -321,60 +321,104 @@ final class MIDIControlTests: XCTestCase {
         XCTAssertTrue(press.passOn, "the app needs the key to set the range")
     }
 
-    func testLowestNoteTakesOnlyTheBottomOfAChord() {
-        let synth = UUID(), bass = UUID()
+    private func lowestRouting(_ bass: UUID, _ others: [UUID] = [], priority: KeysNotePriority = .lowest,
+                               transpose: Int = 0) -> MIDIKeyRouting {
         var r = MIDIKeyRouting()
         _ = r.reconfigure {
-            $0.destinations = ["Keys": [synth, bass]]
-            $0.notePriority = [bass: .lowest]
+            $0.destinations = ["Keys": others + [bass]]
+            $0.notePriority = [bass: priority]
+            if transpose != 0 { $0.transpose = [bass: transpose] }
             $0.paused = false
         }
-        // E first, then C below it, then G above: the bass moves down to C and ignores G.
-        XCTAssertEqual(r.route(device: "Keys", note(64, 90)).actions,
-                       [.play(synth, note: 64, velocity: 90), .play(bass, note: 64, velocity: 90)])
-        XCTAssertEqual(r.route(device: "Keys", note(60, 90)).actions,
-                       [.stop(bass, note: 64), .play(synth, note: 60, velocity: 90), .play(bass, note: 60, velocity: 90)])
-        XCTAssertEqual(r.route(device: "Keys", note(67, 90)).actions, [.play(synth, note: 67, velocity: 90)])
-        // Letting go of E and G stops only the synth's notes: the bass is on C.
-        XCTAssertEqual(r.route(device: "Keys", note(64, 0)).actions, [.stop(synth, note: 64)])
-        // Letting go of C silences the bass; it does not fall back to G, still held.
-        XCTAssertEqual(r.route(device: "Keys", note(60, 0)).actions,
+        return r
+    }
+
+    func testARolledChordGivesTheBassItsBottomKeyAfterTheWindow() {
+        let synth = UUID(), bass = UUID()
+        var r = lowestRouting(bass, [synth])
+        // E, then C, then G, 10 ms apart: the synth plays each at once, the bass waits.
+        XCTAssertEqual(r.route(device: "Keys", note(64, 90), at: 0.000).actions, [.play(synth, note: 64, velocity: 90)])
+        XCTAssertEqual(r.route(device: "Keys", note(60, 80), at: 0.010).actions, [.play(synth, note: 60, velocity: 80)])
+        XCTAssertEqual(r.route(device: "Keys", note(67, 90), at: 0.020).actions, [.play(synth, note: 67, velocity: 90)])
+        XCTAssertEqual(r.nextDeadline ?? 0, 0.030, accuracy: 0.0001)
+        XCTAssertEqual(r.flush(at: 0.029), [], "not yet")
+        XCTAssertEqual(r.flush(at: 0.031), [.play(bass, note: 60, velocity: 80)], "the bottom key, at its own velocity")
+        XCTAssertNil(r.nextDeadline)
+        // Letting the chord go, in any order, sounds no stray bass notes.
+        XCTAssertEqual(r.route(device: "Keys", note(64, 0), at: 0.5).actions, [.stop(synth, note: 64)])
+        XCTAssertEqual(r.route(device: "Keys", note(60, 0), at: 0.51).actions,
                        [.stop(synth, note: 60), .stop(bass, note: 60)])
-        // The next key pressed, even a higher one, sounds on the bass again.
-        XCTAssertEqual(r.route(device: "Keys", note(72, 90)).actions,
-                       [.play(synth, note: 72, velocity: 90), .play(bass, note: 72, velocity: 90)])
-        XCTAssertEqual(r.route(device: "Keys", note(67, 0)).actions, [.stop(synth, note: 67)])
-        XCTAssertEqual(r.route(device: "Keys", note(72, 0)).actions,
-                       [.stop(synth, note: 72), .stop(bass, note: 72)])
+        XCTAssertEqual(r.route(device: "Keys", note(67, 0), at: 0.52).actions, [.stop(synth, note: 67)])
         XCTAssertEqual(r.heldCount, 0)
     }
 
-    func testHighestNoteTakesOnlyTheTop() {
-        let lead = UUID()
-        var r = MIDIKeyRouting()
-        _ = r.reconfigure { $0.destinations = ["Keys": [lead]]; $0.notePriority = [lead: .highest]; $0.paused = false }
-        XCTAssertEqual(r.route(device: "Keys", note(60, 90)).actions, [.play(lead, note: 60, velocity: 90)])
-        XCTAssertEqual(r.route(device: "Keys", note(67, 90)).actions,
-                       [.stop(lead, note: 60), .play(lead, note: 67, velocity: 90)])
-        XCTAssertEqual(r.route(device: "Keys", note(64, 90)).actions, [], "below the top: not played")
-        XCTAssertEqual(r.route(device: "Keys", note(60, 0)).actions, [], "already replaced")
+    func testTheBassStaysOnItsKeyWhilePlayingAbove() {
+        let bass = UUID()
+        var r = lowestRouting(bass)
+        _ = r.route(device: "Keys", note(48, 90), at: 0)
+        XCTAssertEqual(r.flush(at: 0.04), [.play(bass, note: 48, velocity: 90)])
+        // Keys played later do not move it while its key is held: above it, or even
+        // below it.
+        XCTAssertEqual(r.route(device: "Keys", note(72, 90), at: 0.5).actions, [])
+        XCTAssertEqual(r.route(device: "Keys", note(72, 0), at: 0.6).actions, [])
+        XCTAssertEqual(r.route(device: "Keys", note(43, 90), at: 0.7).actions, [], "locked until C3 is lifted")
+        XCTAssertEqual(r.route(device: "Keys", note(43, 0), at: 0.8).actions, [])
+        XCTAssertEqual(r.route(device: "Keys", note(48, 0), at: 1.0).actions, [.stop(bass, note: 48)])
     }
 
-    func testLowestNoteComparesKeysAndSendsThemTransposed() {
+    func testALegatoChordChangeMovesTheBassWhenTheOldKeyIsLifted() {
         let bass = UUID()
-        var r = MIDIKeyRouting()
-        _ = r.reconfigure {
-            $0.destinations = ["Keys": [bass]]
-            $0.notePriority = [bass: .lowest]
-            $0.transpose = [bass: -12]
-            $0.paused = false
+        var r = lowestRouting(bass)
+        for (n, t) in [(60, 0.0), (64, 0.005), (67, 0.01)] { _ = r.route(device: "Keys", note(n, 90), at: t) }
+        XCTAssertEqual(r.flush(at: 0.04), [.play(bass, note: 60, velocity: 90)])
+        // D minor pressed before C major is let go.
+        for (n, t) in [(62, 1.0), (65, 1.005), (69, 1.01)] {
+            XCTAssertEqual(r.route(device: "Keys", note(n, 90), at: t).actions, [])
         }
-        XCTAssertEqual(r.route(device: "Keys", note(64, 90)).actions, [.play(bass, note: 52, velocity: 90)])
-        XCTAssertEqual(r.route(device: "Keys", note(60, 90)).actions,
-                       [.stop(bass, note: 52), .play(bass, note: 48, velocity: 90)])
-        XCTAssertEqual(r.releaseAll().first, .stop(bass, note: 48))
-        XCTAssertEqual(r.route(device: "Keys", note(67, 90)).actions, [.play(bass, note: 55, velocity: 90)],
-                       "after a release-all nothing is left sounding, so the next key plays")
+        XCTAssertNil(r.nextDeadline, "locked on C: no new window")
+        _ = r.route(device: "Keys", note(64, 0), at: 1.1)
+        _ = r.route(device: "Keys", note(67, 0), at: 1.11)
+        XCTAssertEqual(r.route(device: "Keys", note(60, 0), at: 1.12).actions,
+                       [.stop(bass, note: 60), .play(bass, note: 62, velocity: 90)],
+                       "the lowest key pressed after it takes over")
+        // Releasing D minor: no stray notes from F and A.
+        XCTAssertEqual(r.route(device: "Keys", note(65, 0), at: 2.0).actions, [])
+        XCTAssertEqual(r.route(device: "Keys", note(62, 0), at: 2.01).actions, [.stop(bass, note: 62)])
+        XCTAssertEqual(r.route(device: "Keys", note(69, 0), at: 2.02).actions, [])
+    }
+
+    func testHighestNoteTakesTheTopOfTheChord() {
+        let lead = UUID()
+        var r = lowestRouting(lead, priority: .highest)
+        for (n, t) in [(67, 0.0), (60, 0.01), (72, 0.02), (64, 0.025)] { _ = r.route(device: "Keys", note(n, 90), at: t) }
+        XCTAssertEqual(r.flush(at: 0.031), [.play(lead, note: 72, velocity: 90)])
+    }
+
+    func testTheBassIsSentTransposedAndReleasedByReleaseAll() {
+        let bass = UUID()
+        var r = lowestRouting(bass, transpose: -12)
+        _ = r.route(device: "Keys", note(64, 90), at: 0)
+        _ = r.route(device: "Keys", note(60, 90), at: 0.01)
+        XCTAssertEqual(r.flush(at: 0.04), [.play(bass, note: 48, velocity: 90)])
+        XCTAssertEqual(r.releaseAll(), [.stop(bass, note: 48)])
+        XCTAssertEqual(r.route(device: "Keys", note(60, 0), at: 0.5).actions, [], "nothing left to stop")
+    }
+
+    func testAWindowDueBeforeTheNextKeyIsSettledFirst() {
+        let bass = UUID()
+        var r = lowestRouting(bass)
+        _ = r.route(device: "Keys", note(48, 90), at: 0)
+        // No flush came (a late timer): the next key settles the window before it counts.
+        XCTAssertEqual(r.route(device: "Keys", note(43, 90), at: 0.5).actions, [.play(bass, note: 48, velocity: 90)])
+    }
+
+    func testAKeyTappedInsideTheWindowIsForgotten() {
+        let bass = UUID()
+        var r = lowestRouting(bass)
+        _ = r.route(device: "Keys", note(40, 90), at: 0)
+        _ = r.route(device: "Keys", note(40, 0), at: 0.01)
+        XCTAssertEqual(r.flush(at: 0.04), [])
+        XCTAssertNil(r.nextDeadline)
     }
 
     func testEachControllerHasItsOwnLowestNote() {
@@ -385,8 +429,9 @@ final class MIDIControlTests: XCTestCase {
             $0.notePriority = [bass: .lowest]
             $0.paused = false
         }
-        XCTAssertEqual(r.route(device: "Left", note(40, 90)).actions, [.play(bass, note: 40, velocity: 90)])
-        XCTAssertEqual(r.route(device: "Right", note(60, 90)).actions, [.play(bass, note: 60, velocity: 90)])
+        _ = r.route(device: "Left", note(40, 90), at: 0)
+        _ = r.route(device: "Right", note(60, 90), at: 0.001)
+        XCTAssertEqual(r.flush(at: 0.04), [.play(bass, note: 40, velocity: 90), .play(bass, note: 60, velocity: 90)])
     }
 
     func testTransposeShiftsOnlyItsOwnInstrument() {
