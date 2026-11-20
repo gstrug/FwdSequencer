@@ -235,6 +235,24 @@ nonisolated enum KeysNotePriority: String, CaseIterable {
     case lowest, highest
 }
 
+/// Which keys reach one track (Track Inputs): from one controller or any, on one MIDI
+/// channel (1–16) or any, within a key range or the whole keyboard. nil is "any".
+nonisolated struct KeysInputFilter: Equatable {
+    var device: String? = nil
+    var channel: Int? = nil
+    var range: ClosedRange<Int>? = nil
+
+    /// For a controller, pedal or wheel: the controller and channel must match.
+    func accepts(device: String, channel: Int) -> Bool {
+        (self.device == nil || self.device == device) && (self.channel == nil || self.channel == channel)
+    }
+
+    /// For a key: the controller and channel must match, and the key be in range.
+    func accepts(device: String, channel: Int, note: Int) -> Bool {
+        accepts(device: device, channel: channel) && (range?.contains(note) ?? true)
+    }
+}
+
 /// Where one controller's keys go when they are not linked to a control. Two switches,
 /// set per controller, so one keyboard can play the Play keyboard while another plays
 /// the tracks.
@@ -291,6 +309,12 @@ nonisolated struct MIDIKeyRouting {
         /// Per instrument: play only the lowest (or highest) key held. No entry: every
         /// key. See `KeysNotePriority`.
         var notePriority: [UUID: KeysNotePriority] = [:]
+        /// Per instrument: which controller, channel and keys reach it (Track Inputs).
+        /// No entry: every key its device sends.
+        var inputFilters: [UUID: KeysInputFilter] = [:]
+        /// A key range is being set by pressing keys: notes go to the main thread
+        /// and sound nowhere, as during Learn.
+        var capturingKeys = false
     }
 
     enum Action: Equatable {
@@ -353,13 +377,17 @@ nonisolated struct MIDIKeyRouting {
             }
             return Decision(passOn: true)   // a link may want the release (trigger pads)
         }
-        if config.learning || config.disabledDevices.contains(device) { return Decision(passOn: true) }
+        if config.learning || config.capturingKeys || config.disabledDevices.contains(device) {
+            return Decision(passOn: true)
+        }
         if config.linkedNotes[device]?.contains(MIDIControlSource(message)) == true {
             return Decision(passOn: true)
         }
         let pitchClass = Int(note) % 12
         let instruments = (config.destinations[device] ?? []).filter {
-            config.allowedPitchClasses[$0]?.contains(pitchClass) ?? true
+            (config.allowedPitchClasses[$0]?.contains(pitchClass) ?? true)
+                && (config.inputFilters[$0]?.accepts(device: device, channel: message.channel,
+                                                     note: Int(note)) ?? true)
         }
         guard !config.paused, !instruments.isEmpty else { return Decision(passOn: true) }
         var actions: [Action] = []
@@ -408,7 +436,12 @@ nonisolated struct MIDIKeyRouting {
                                            number: Int(data1))
             if config.linkedControls[device]?.contains(source) == true { return [] }
         }
-        let instruments = config.destinations[device] ?? []
+        // The pedal and wheels go where this controller's keys go: a track taking keys
+        // only from another controller, or another channel, does not get them.
+        let channel = Int(status & 0x0F) + 1
+        let instruments = (config.destinations[device] ?? []).filter {
+            config.inputFilters[$0]?.accepts(device: device, channel: channel) ?? true
+        }
         touched.formUnion(instruments)
         return instruments.map { Action.control($0, status: type, data1: data1, data2: data2) }
     }
@@ -424,6 +457,8 @@ nonisolated struct MIDIKeyRouting {
             || config.disabledDevices != before.disabledDevices
             || config.writingDevices != before.writingDevices
             || config.notePriority != before.notePriority
+            || config.inputFilters != before.inputFilters
+            || (config.capturingKeys && !before.capturingKeys)
         return shouldRelease ? releaseAll() : []
     }
 

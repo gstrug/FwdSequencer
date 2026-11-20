@@ -940,6 +940,31 @@ class SongStore: ObservableObject {
         song.tracks[i].keysNotePriority = priority?.rawValue
     }
 
+    /// Track Inputs: the controller (by name, nil = any) a track takes keys from.
+    func setKeysSource(_ name: String?, for trackID: UUID) {
+        guard let i = song.tracks.firstIndex(where: { $0.id == trackID }),
+              song.tracks[i].keysSource != name else { return }
+        song.tracks[i].keysSource = name
+    }
+
+    /// Track Inputs: the MIDI channel 1–16 a track takes keys on (nil = any).
+    func setKeysChannel(_ channel: Int?, for trackID: UUID) {
+        let value = channel.flatMap { (1...16).contains($0) ? $0 : nil }
+        guard let i = song.tracks.firstIndex(where: { $0.id == trackID }),
+              song.tracks[i].keysChannel != value else { return }
+        song.tracks[i].keysChannel = value
+    }
+
+    /// Track Inputs: the keys that reach a track (nil = the whole keyboard).
+    func setKeysRange(_ range: ClosedRange<Int>?, for trackID: UUID) {
+        guard let i = song.tracks.firstIndex(where: { $0.id == trackID }) else { return }
+        let low = range.map { max(0, min(127, $0.lowerBound)) }
+        let high = range.map { max(0, min(127, $0.upperBound)) }
+        guard song.tracks[i].keysLowNote != low || song.tracks[i].keysHighNote != high else { return }
+        song.tracks[i].keysLowNote = low
+        song.tracks[i].keysHighNote = high
+    }
+
     func setPerformanceVolume(_ v: Float) {
         song.performance?.mixer.volume = v
         if let id = song.performance?.id { audioEngine.setVolume(v, for: id) }

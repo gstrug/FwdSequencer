@@ -327,6 +327,29 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
         keysNotePriority.flatMap(KeysNotePriority.init(rawValue:))
     }
 
+    /// Track Inputs (Graham, 2026-11-20): which controller keys reach this track, on top
+    /// of its P. Keys From: a controller by name (nil = any controller with Keys →
+    /// Tracks on) and a MIDI channel 1–16 (nil = any). Key Range: the lowest and highest
+    /// key that reach it (nil = the whole keyboard), for splits. Live keys only, and
+    /// only with Write Notes off (the armed W track takes any key). All optional, so
+    /// older songs decode as before: any controller, any channel, every key.
+    var keysSource: String? = nil
+    var keysChannel: Int? = nil
+    var keysLowNote: Int? = nil
+    var keysHighNote: Int? = nil
+
+    var effectiveKeysChannel: Int? {
+        keysChannel.flatMap { (1...16).contains($0) ? $0 : nil }
+    }
+    /// The key range, lowest first, or nil for the whole keyboard (or a damaged one).
+    var keysRange: ClosedRange<Int>? {
+        guard let low = keysLowNote, let high = keysHighNote,
+              (0...127).contains(low), (0...127).contains(high) else { return nil }
+        return min(low, high)...max(low, high)
+    }
+    /// Whether any Track Inputs setting narrows the keys this track takes.
+    var hasKeysInput: Bool { keysSource != nil || effectiveKeysChannel != nil || keysRange != nil }
+
     /// A note pool as this track sounds it: every note moved by its Transpose, kept
     /// within MIDI's 0–127 (a note pushed past the end stays at the end, rather than
     /// being dropped, so step positions still point at the same entries).

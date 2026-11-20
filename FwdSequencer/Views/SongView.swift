@@ -202,6 +202,7 @@ private struct SongTransportBar: View {
     @State private var finishedRecordingURL: URL?
     @State private var recordingFormat: RecordingFormat = .wav
     @State private var showingMIDISettings = false
+    @State private var showingTrackInputs = false
     /// The two-wheel time signature picker, from Other….
     @State private var showingTimeSignature = false
     /// For the MIDI Learn switch in Settings ▸ MIDI.
@@ -367,6 +368,10 @@ private struct SongTransportBar: View {
         }
         .sheet(isPresented: $showingMIDISettings) {
             MIDISettingsView()
+                .environmentObject(songStore)
+        }
+        .sheet(isPresented: $showingTrackInputs) {
+            TrackInputsView()
                 .environmentObject(songStore)
         }
         .sheet(isPresented: $showMixer) {
@@ -581,6 +586,9 @@ private struct SongTransportBar: View {
                 }
                 Button { help.perform(.midiControllersPage) { showingMIDISettings = true } } label: {
                     Label("Controllers & Templates…", systemImage: "slider.horizontal.3")
+                }
+                Button { help.perform(.trackInputs) { showingTrackInputs = true } } label: {
+                    Label("Track Inputs…", systemImage: "pianokeys.inverse")
                 }
                 Divider()
                 Toggle(isOn: help.guarded(.midiClock, $songStore.midiClockEnabled)) {
@@ -1466,6 +1474,7 @@ private struct SongTrackRowView: View {
     @ObservedObject private var help = HelpCenter.shared
 
     @State private var showEffects = false
+    @State private var showInputs = false
     @State private var showPluginPicker = false
     @State private var showPluginEditor = false
     @State private var showBuiltInSounds = false
@@ -1638,6 +1647,10 @@ private struct SongTrackRowView: View {
         .sheet(isPresented: $showEffects) {
             TrackEffectsView(trackID: track.id)
         }
+        .sheet(isPresented: $showInputs) {
+            TrackInputsView(focusTrackID: track.id)
+                .environmentObject(songStore)
+        }
         .sheet(isPresented: $showNoteParams, onDismiss: {
             noteParametersSectionID = nil
         }) {
@@ -1715,25 +1728,6 @@ private struct SongTrackRowView: View {
               let p = songStore.song.sections[playing].parts.first(where: { $0.trackID == track.id })
         else { return part.steps }
         return p.steps
-    }
-
-    /// The track menu's Transpose choices, plus the current value if the T chip set
-    /// one that is not among them.
-    static func transposeChoices(including current: Int) -> [Int] {
-        var values = [24, 12, 7, 5, 2, 1, 0, -1, -2, -5, -7, -12, -24]
-        if !values.contains(current) { values.append(current); values.sort(by: >) }
-        return values
-    }
-
-    static func transposeName(_ value: Int) -> String {
-        switch value {
-        case 0: return "Off"
-        case 12: return "+12 (up an octave)"
-        case 24: return "+24 (up two octaves)"
-        case -12: return "−12 (down an octave)"
-        case -24: return "−24 (down two octaves)"
-        default: return KeysTransposeMenu.label(value)
-        }
     }
 
     /// Move, duplicate and delete. Shared by the expanded row's menu and by a long press
@@ -1970,8 +1964,8 @@ private struct SongTrackRowView: View {
                             get: { track.effectiveKeysTranspose },
                             set: { songStore.setKeysTranspose($0, for: track.id) }
                         ))) {
-                            ForEach(Self.transposeChoices(including: track.effectiveKeysTranspose), id: \.self) { value in
-                                Text(Self.transposeName(value)).tag(value)
+                            ForEach(KeysTransposeMenu.choices(including: track.effectiveKeysTranspose), id: \.self) { value in
+                                Text(KeysTransposeMenu.name(value)).tag(value)
                             }
                         }
                     } label: {
@@ -1993,6 +1987,11 @@ private struct SongTrackRowView: View {
                         }
                     } label: {
                         Label(KeysPlayMenu.menuTitle(track.effectiveKeysNotePriority), systemImage: "pianokeys")
+                    }
+                    // Keys From and Key Range open Track Inputs at this track: a split
+                    // is set by pressing keys, and reads best beside the other tracks.
+                    Button { help.perform(.trackInputs) { showInputs = true } } label: {
+                        Label(TrackInputsChip.menuTitle(track), systemImage: "cable.connector")
                     }
                     Divider()
 

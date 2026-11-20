@@ -95,6 +95,12 @@ final class MIDIControlCenter: ObservableObject {
                 self?.refreshKeyRouting()
             }
             .store(in: &learnObservers)
+        // Track Inputs apply with Write Notes off, and a range being set stops keys
+        // sounding: both change where keys go.
+        learn.$writeNotesEnabled.removeDuplicates().combineLatest(learn.$keyRangeCapture.map { $0 != nil }.removeDuplicates())
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshKeyRouting() }
+            .store(in: &learnObservers)
     }
 
     /// Start listening. Called once the app is up.
@@ -220,6 +226,26 @@ final class MIDIControlCenter: ObservableObject {
         }
     }
 
+    /// Start setting a track's key range from the controller (Track Inputs).
+    func startKeyRangeCapture(for trackID: UUID) {
+        learn.keyRangeCapture = KeyRangeCapture(trackID: trackID)
+    }
+
+    func cancelKeyRangeCapture() { learn.keyRangeCapture = nil }
+
+    /// One key pressed while a range is being set: the first is remembered, the second
+    /// completes the range (in either order; the same key twice is a range of one).
+    private func captureRangeKey(_ key: Int) {
+        guard var capture = learn.keyRangeCapture else { return }
+        guard let first = capture.first else {
+            capture.first = key
+            learn.keyRangeCapture = capture
+            return
+        }
+        learn.keyRangeCapture = nil
+        songStore?.setKeysRange(min(first, key)...max(first, key), for: capture.trackID)
+    }
+
     /// Punch in and out from a controller button: disarm, or re-arm the track armed
     /// last (the first track if none has been).
     private func punchWriting(_ store: SongStore) {
@@ -247,7 +273,13 @@ final class MIDIControlCenter: ObservableObject {
                     key.append(song.playKeyboardPitchClasses.map { "\($0.sorted())" } ?? "all")
                     // and each channel's keys transpose.
                     for track in song.tracks {
-                        key.append("t\(track.effectiveKeysTranspose)\(track.keysNotePriority ?? "")")
+                        // and its Keys Play and Track Inputs.
+                        let priority = track.keysNotePriority ?? ""
+                        let source = track.keysSource ?? ""
+                        let channel = track.effectiveKeysChannel ?? 0
+                        let low = track.keysRange?.lowerBound ?? -1
+                        let high = track.keysRange?.upperBound ?? -1
+                        key.append("t\(track.effectiveKeysTranspose)|\(priority)|\(source)|\(channel)|\(low)|\(high)")
                     }
                     key.append("p\(song.performance?.effectiveKeysTranspose ?? 0)")
                     return key
@@ -265,6 +297,7 @@ final class MIDIControlCenter: ObservableObject {
             // Song closed: Learn and Write Notes end with it.
             learn.isOn = false
             learn.writingTrackID = nil
+            learn.keyRangeCapture = nil
         }
         refreshKeyRouting()
     }
@@ -341,15 +374,25 @@ final class MIDIControlCenter: ObservableObject {
             }
         }
         var priority: [UUID: KeysNotePriority] = [:]
+        var filters: [UUID: KeysInputFilter] = [:]
         if let store {
             for track in store.song.tracks {
                 if let p = track.effectiveKeysNotePriority { priority[track.id] = p }
+                // Track Inputs narrow the P tracks only: the armed W track takes any key.
+                if !learn.writeNotesEnabled, track.hasKeysInput {
+                    filters[track.id] = KeysInputFilter(device: track.keysSource,
+                                                        channel: track.effectiveKeysChannel,
+                                                        range: track.keysRange)
+                }
             }
         }
+        let capturing = learn.keyRangeCapture != nil
         keyRouter.reconfigure { c in
             c.allowedPitchClasses = allowed
             c.transpose = transpose
             c.notePriority = priority
+            c.inputFilters = filters
+            c.capturingKeys = capturing
             c.destinations = destinations
             c.writingDevices = writingDevices
             c.linkedNotes = linked
@@ -451,6 +494,11 @@ final class MIDIControlCenter: ObservableObject {
 
         for (i, (source, message)) in batch.enumerated() {
             guard isEnabled(source.name) else { continue }
+            // Setting a key range: the next two keys pressed, from any controller.
+            if learn.keyRangeCapture != nil, message.kind == .note {
+                if message.isPress { captureRangeKey(message.number) }
+                continue
+            }
             if learn.isOn, let target = learn.target {
                 makeLink(target, from: source, message)
                 continue
@@ -832,9 +880,18 @@ nonisolated final class MIDIKeyRouter: @unchecked Sendable {
     }
 }
 
+/// Setting a track's key range by pressing keys: the first press, then the second.
+struct KeyRangeCapture: Equatable {
+    let trackID: UUID
+    var first: Int? = nil
+}
+
 /// MIDI Learn's on-screen state. See MIDIControlCenter.learn.
 @MainActor
 final class MIDILearnState: ObservableObject {
+    /// A track's key range being set from the controller (Track Inputs): the next two
+    /// keys pressed are its ends. Keys sound nowhere meanwhile. Not saved.
+    @Published var keyRangeCapture: KeyRangeCapture?
     /// Learnable controls are outlined and a tap selects one instead of using it.
     @Published var isOn = false {
         didSet {

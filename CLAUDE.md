@@ -480,6 +480,20 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
     choice: avoids stray notes as a chord is released). Compared on the key pressed,
     sent transposed. Live keys only; sequence untouched. UI: track ⋯ menu ▸ Keys Play
     picker, and a "Low"/"High" chip beside P/W when set; help topic `.trackKeysPlay`.
+  5. **Track Inputs: Keys From & Key Range** (2026-11-20, Graham agreed it is needed
+    in a commercial app; defaults exactly as before). Per track `keysSource` (controller
+    name, nil any), `keysChannel` (1–16, nil any), `keysLowNote`/`keysHighNote` (nil
+    whole keyboard) → `KeysInputFilter` in `MIDIKeyRouting.Config.inputFilters`, applied
+    to keys AND to pedal/wheels/CCs (they follow the keys). Only with Write Notes off —
+    the armed W track takes any key. P still gates a track; these only narrow it. A
+    track set to a controller that is not connected plays nothing from keys (no fall
+    back). **Range is set by pressing two keys**: `learn.keyRangeCapture`
+    (`KeyRangeCapture`), router `capturingKeys` (notes sound nowhere and pass to main,
+    like Learn), `MIDIControlCenter.captureRangeKey`. UI: **Settings ▸ MIDI ▸ Track
+    Inputs…** (`Views/TrackInputsView.swift`, every track: P, Keys From, Channel, Key
+    Range, Keys Play, Transpose; "saved with this song"), the track ⋯ menu item "Keys
+    From & Range…" opening it at that track, and a chip beside P (the range, or "From").
+    Key names C4 = MIDI 60 (`KeyNames`). Help topics `.trackInputs`, `.trackKeyRange`.
 
 - **Track MIDI going dead after an instrument/effect change — fixed 2026-11-19, to test
   on device.** Cause 1: a plugin load superseded by a newer one (another instrument, or

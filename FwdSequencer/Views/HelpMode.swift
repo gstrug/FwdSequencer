@@ -117,6 +117,7 @@ struct HelpMenuPage: Identifiable {
         ItemGroup(heading: nil, items: [
             Item(icon: "arrow.up.arrow.down", label: "Transpose", topic: .trackTranspose),
             Item(icon: "pianokeys", label: "Keys Play", topic: .trackKeysPlay),
+            Item(icon: "cable.connector", label: "Keys From & Range…", topic: .trackInputs),
         ]),
         ItemGroup(heading: "Feel", items: [
             Item(icon: "hand.draw", label: "Chord Roll", topic: .feelChordRoll),
@@ -136,6 +137,7 @@ struct HelpMenuPage: Identifiable {
             Item(icon: "dot.radiowaves.left.and.right", label: "MIDI Learn", topic: .midiLearn),
             Item(icon: "music.note.list", label: "Write Notes from Keys", topic: .midiWriteNotes),
             Item(icon: "slider.horizontal.3", label: "Controllers & Templates…", topic: .midiControllersPage),
+            Item(icon: "pianokeys.inverse", label: "Track Inputs…", topic: .trackInputs),
             Item(icon: "metronome", label: "MIDI Clock Output", topic: .midiClock),
         ]),
     ])

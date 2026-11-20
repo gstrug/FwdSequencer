@@ -275,6 +275,52 @@ final class MIDIControlTests: XCTestCase {
         XCTAssertEqual(r.heldCount, 0)
     }
 
+    func testAKeyRangeSplitsOneKeyboard() {
+        let bass = UUID(), piano = UUID()
+        var r = MIDIKeyRouting()
+        _ = r.reconfigure {
+            $0.destinations = ["Keys": [bass, piano]]
+            $0.inputFilters = [bass: KeysInputFilter(range: 24...47), piano: KeysInputFilter(range: 48...96)]
+            $0.paused = false
+        }
+        XCTAssertEqual(r.route(device: "Keys", note(36, 90)).actions, [.play(bass, note: 36, velocity: 90)])
+        XCTAssertEqual(r.route(device: "Keys", note(60, 90)).actions, [.play(piano, note: 60, velocity: 90)])
+        XCTAssertEqual(r.route(device: "Keys", note(47, 90)).actions, [.play(bass, note: 47, velocity: 90)],
+                       "the top of the range is in it")
+        XCTAssertEqual(r.route(device: "Keys", note(100, 90)).actions, [], "outside every range")
+        XCTAssertEqual(r.route(device: "Keys", note(36, 0)).actions, [.stop(bass, note: 36)])
+    }
+
+    func testKeysFromOneControllerAndChannel() {
+        let bass = UUID(), piano = UUID()
+        var r = MIDIKeyRouting()
+        _ = r.reconfigure {
+            $0.destinations = ["Left": [bass, piano], "Right": [bass, piano]]
+            $0.inputFilters = [bass: KeysInputFilter(device: "Left"), piano: KeysInputFilter(device: "Right", channel: 2)]
+            $0.paused = false
+        }
+        XCTAssertEqual(r.route(device: "Left", note(40, 90)).actions, [.play(bass, note: 40, velocity: 90)])
+        XCTAssertEqual(r.route(device: "Right", note(60, 90)).actions, [], "the piano listens on channel 2 only")
+        XCTAssertEqual(r.route(device: "Right", note(60, 90, channel: 2)).actions,
+                       [.play(piano, note: 60, velocity: 90)])
+        // The sustain pedal follows the keys: Left's pedal to the bass only.
+        XCTAssertEqual(r.routeControl(device: "Left", status: 0xB0, data1: 64, data2: 127),
+                       [.control(bass, status: 0xB0, data1: 64, data2: 127)])
+        XCTAssertEqual(r.routeControl(device: "Right", status: 0xB1, data1: 64, data2: 127),
+                       [.control(piano, status: 0xB0, data1: 64, data2: 127)])
+    }
+
+    func testSettingARangeSilencesKeysAndPassesThemOn() {
+        let synth = UUID()
+        var r = routing("Keys", plays: synth)
+        _ = r.route(device: "Keys", note(60, 90))
+        let released = r.reconfigure { $0.capturingKeys = true }
+        XCTAssertEqual(released, [.stop(synth, note: 60)], "keys down are let go when it starts")
+        let press = r.route(device: "Keys", note(62, 90))
+        XCTAssertEqual(press.actions, [])
+        XCTAssertTrue(press.passOn, "the app needs the key to set the range")
+    }
+
     func testLowestNoteTakesOnlyTheBottomOfAChord() {
         let synth = UUID(), bass = UUID()
         var r = MIDIKeyRouting()

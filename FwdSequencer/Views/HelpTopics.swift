@@ -33,7 +33,7 @@ enum HelpTopic: String {
          trackPlayKeys, trackMove, trackDuplicate, trackDelete, trackEffectsMenu,
          feelChordRoll, feelAccent, feelVariation, feelSwing, feelTiming,
          trackTime, trackKeyScale, trackSteps, trackKeyboard, trackNoteParams,
-         trackStepsButton, trackTranspose, trackKeysPlay
+         trackStepsButton, trackTranspose, trackKeysPlay, trackInputs, trackKeyRange
 
     // Play keyboard
     case playInstrument, playEditInstrument, playVolume, playMute, playSolo, playEffects,
@@ -149,6 +149,8 @@ enum HelpTopic: String {
         case .trackPlayKeys: return "Keys Play (P)"
         case .trackTranspose: return "Transpose"
         case .trackKeysPlay: return "Keys Play"
+        case .trackInputs: return "Track Inputs"
+        case .trackKeyRange: return "Key Range"
         case .trackMove: return "Move Up / Down"
         case .trackDuplicate: return "Duplicate Track"
         case .trackDelete: return "Delete Track"
@@ -402,6 +404,10 @@ enum HelpTopic: String {
             return "Write: Arms a track so notes can quickly be edited using a midi controller. Play a chord to add multiple notes. Single notes can be toggled on/off. Write Notes from Keys must be on in Settings ▸ MIDI."
         case .trackPlayKeys:
             return "Play: Turn Keys ▸ Tracks on in Settings ▸ MIDI ▸ Controllers & Templates to enable. Your MIDI controller can now play any track where P is active (green)."
+        case .trackInputs:
+            return "Choose which keys reach each track, saved with the song: from one controller or any, on one MIDI channel or any, and within a key range — for example the left hand plays the bass and the right hand the piano. Keys still need the track's P on. Set to Any Controller, Any Channel and Whole Keyboard, every key gets through."
+        case .trackKeyRange:
+            return "The keys that reach this track. Tap Set…, then press the lowest and the highest key on your controller. Whole Keyboard lets every key through. Use ranges side by side to split one keyboard between tracks."
         case .trackKeysPlay:
             return "Which of the keys you hold on your MIDI controller this track plays. All Notes plays them all. Lowest Note plays only the lowest, for example a bass under chords you play on every track; Highest Note only the highest, for a lead on top. A new key further out takes over; let go of it and the track is silent until you press another. The sequence is not affected."
         case .trackTranspose:

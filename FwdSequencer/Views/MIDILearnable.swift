@@ -223,6 +223,10 @@ struct TrackWriteNotesButton: View {
             if track.effectiveKeysNotePriority != nil {
                 KeysPlayMenu(track: track)
             }
+            // Keys From / Key Range narrow the P tracks (not the armed W track).
+            if track.hasKeysInput && !learn.writeNotesEnabled {
+                TrackInputsChip(track: track)
+            }
         } else if track.effectiveKeysTranspose != 0 {
             // No keys to the tracks, but a shifted track still shows it: Transpose also
             // moves the sequence, and a track that plays higher or lower than written
@@ -244,6 +248,25 @@ struct KeysTransposeMenu: View {
 
     static func label(_ semitones: Int) -> String {
         semitones == 0 ? "0" : (semitones > 0 ? "+\(semitones)" : "−\(-semitones)")
+    }
+
+    /// The Transpose choices offered in menus, plus the current value if the chip set
+    /// one that is not among them.
+    static func choices(including current: Int) -> [Int] {
+        var values = [24, 12, 7, 5, 2, 1, 0, -1, -2, -5, -7, -12, -24]
+        if !values.contains(current) { values.append(current); values.sort(by: >) }
+        return values
+    }
+
+    static func name(_ value: Int) -> String {
+        switch value {
+        case 0: return "Off"
+        case 12: return "+12 (up an octave)"
+        case 24: return "+24 (up two octaves)"
+        case -12: return "−12 (down an octave)"
+        case -24: return "−24 (down two octaves)"
+        default: return label(value)
+        }
     }
 
     var body: some View {
@@ -328,5 +351,38 @@ struct KeysPlayMenu: View {
         .accessibilityLabel("Keys play for \(track.name)")
         .accessibilityValue(priority == .highest ? "Highest note" : priority == .lowest ? "Lowest note" : "All notes")
         .helpTag(.trackKeysPlay, instance: track.id.uuidString)
+    }
+}
+
+/// A track with Track Inputs set (a controller, channel or key range) shows it beside
+/// its P: the range if there is one ("C1–B2"), otherwise "From". A tap opens Track
+/// Inputs at this track.
+struct TrackInputsChip: View {
+    let track: SongTrack
+    @EnvironmentObject private var songStore: SongStore
+    @State private var showInputs = false
+
+    /// The track menu's item, saying what is set.
+    static func menuTitle(_ track: SongTrack) -> String {
+        guard track.hasKeysInput else { return "Keys From & Range…" }
+        var parts: [String] = []
+        if let source = track.keysSource { parts.append(source) }
+        if let channel = track.effectiveKeysChannel { parts.append("Ch \(channel)") }
+        if let range = track.keysRange { parts.append(KeyNames.range(range)) }
+        return "Keys From: \(parts.joined(separator: " · "))…"
+    }
+
+    var body: some View {
+        Button { showInputs = true } label: {
+            StudioChipLabel(title: track.keysRange.map(KeyNames.range) ?? "From", tint: .green, look: .status)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Track inputs for \(track.name)")
+        .accessibilityValue(Self.menuTitle(track))
+        .helpTag(.trackInputs, instance: track.id.uuidString)
+        .sheet(isPresented: $showInputs) {
+            TrackInputsView(focusTrackID: track.id)
+                .environmentObject(songStore)
+        }
     }
 }
