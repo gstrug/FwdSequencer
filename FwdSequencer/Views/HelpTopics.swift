@@ -147,7 +147,7 @@ enum HelpTopic: String {
         case .trackEffects: return "Effects (FX)"
         case .trackWrite: return "Write Notes (W)"
         case .trackPlayKeys: return "Keys Play (P)"
-        case .trackTranspose: return "Transpose Keys"
+        case .trackTranspose: return "Transpose"
         case .trackMove: return "Move Up / Down"
         case .trackDuplicate: return "Duplicate Track"
         case .trackDelete: return "Delete Track"
@@ -402,7 +402,7 @@ enum HelpTopic: String {
         case .trackPlayKeys:
             return "Play: Turn Keys ▸ Tracks on in Settings ▸ MIDI ▸ Controllers & Templates to enable. Your MIDI controller can now play any track where P is active (green)."
         case .trackTranspose:
-            return "Shifts the notes your MIDI keyboard plays on this track up or down, in semitones, for example a bass an octave below a synth played from the same keys. Notes written with W are written as you hear them. The track's sequenced notes are not changed."
+            return "Moves the whole track up or down, in semitones, in every section: its sequence and the notes your MIDI keyboard plays into it. For example, a bass an octave below a synth played from the same keys. The notes stay written as they are; the track just sounds higher or lower. To rewrite one section's notes instead, use Shape ▸ Transpose."
         case .trackMove:
             return "Moves the track up or down in the list. MIDI links are attached to the track position, so Track 1 is always the top track."
         case .trackDuplicate:
@@ -524,7 +524,7 @@ enum HelpTopic: String {
         case .shapeReverse:
             return "Reverse flips the order of the note pool, so the lowest note takes the highest note's place. The steps stay as they are."
         case .shapeTranspose:
-            return "Transpose moves every note in the pool up or down by the interval you choose. The steps stay as they are."
+            return "Transpose moves every note in the pool up or down by the interval you choose. The steps stay as they are. This rewrites the notes in this section only; to move a whole track in every section, use Transpose in the track menu or its T button."
         case .shapeApply:
             return "Applies the changes to the selected (ticked) tracks."
         case .shapeLength:

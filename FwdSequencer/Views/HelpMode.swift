@@ -114,6 +114,9 @@ struct HelpMenuPage: Identifiable {
             Item(icon: "chevron.up.chevron.down", label: "Move Up / Move Down", topic: .trackMove),
             Item(icon: "plus.square.on.square", label: "Duplicate Track", topic: .trackDuplicate),
         ]),
+        ItemGroup(heading: nil, items: [
+            Item(icon: "arrow.up.arrow.down", label: "Transpose", topic: .trackTranspose),
+        ]),
         ItemGroup(heading: "Feel", items: [
             Item(icon: "hand.draw", label: "Chord Roll", topic: .feelChordRoll),
             Item(icon: "waveform.path.ecg", label: "Accent", topic: .feelAccent),

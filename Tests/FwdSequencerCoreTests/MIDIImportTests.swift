@@ -262,6 +262,42 @@ final class MIDIImportTests: XCTestCase {
         XCTAssertEqual(result.notePool.first?.gateLength, 1.0)
     }
 
+    /// A track's Transpose moves what it sounds, so the export moves with it — the
+    /// same shift SongStore applies when it hands the song to the sequencer.
+    func testTheExportPlaysEachTracksTranspose() throws {
+        var bass = SongTrack(name: "Bass")
+        bass.keysTranspose = -12
+        let plain = SongTrack(name: "Plain")
+        var song = Song()
+        song.tracks = [bass, plain]
+        let pool = [NoteEntry(midiNote: 60, velocity: 100, gateLength: 1.0),
+                    NoteEntry(midiNote: 64, velocity: 100, gateLength: 1.0)]
+        song.sections = [SongSection(name: "A", numberOfBars: 1, parts: [
+            Part(trackID: bass.id, notePool: pool, steps: [Step(type: .play, n: 1), Step(type: .play, n: 2)],
+                 tempoDivision: .quarter),
+            Part(trackID: plain.id, notePool: pool, steps: [Step(type: .play, n: 1), Step(type: .play, n: 2)],
+                 tempoDivision: .quarter),
+        ])]
+        let file = try MIDIFileReader.read(try SongMIDIExporter.data(for: song))
+        let parts = file.parts.filter { !$0.notes.isEmpty }
+        XCTAssertEqual(parts.count, 2)
+        XCTAssertEqual(Set(parts[0].notes.map(\.pitch)), [48, 52], "the bass sounds an octave down")
+        XCTAssertEqual(Set(parts[1].notes.map(\.pitch)), [60, 64], "the other track as written")
+        XCTAssertEqual(song.sections[0].parts[0].notePool.map(\.midiNote), [60, 64],
+                       "the song itself keeps the written notes")
+    }
+
+    func testASoundingPoolStaysInsideMIDIsRange() {
+        var track = SongTrack(name: "High")
+        track.keysTranspose = 24
+        let pool = [NoteEntry(midiNote: 60), NoteEntry(midiNote: 120)]
+        XCTAssertEqual(track.soundingPool(pool).map(\.midiNote), [84, 127],
+                       "pushed past the top it stays at the top, so steps still find it")
+        XCTAssertEqual(track.soundingPool(pool).map(\.id), pool.map(\.id))
+        track.keysTranspose = nil
+        XCTAssertEqual(track.soundingPool(pool), pool)
+    }
+
     func testTheExportWritesEachTracksBuiltInSound() throws {
         var bass = SongTrack(name: "Bass")
         bass.builtInSound = 35

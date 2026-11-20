@@ -455,11 +455,10 @@ final class MIDIControlCenter: ObservableObject {
                    keysSetting(forDevice: source.name).toTracks {
                     let key = "\(source.name)|\(message.channel)|\(message.number)"
                     if message.isPress {
-                        // Written as heard: the armed track's keys transpose applies.
-                        let shift = activeStore?.song.tracks.first(where: { $0.id == armed })?.effectiveKeysTranspose ?? 0
-                        let written = message.number + shift
-                        guard (0...127).contains(written) else { continue }
-                        writePress(written, key: key, into: armed)
+                        // The key pressed is what is written. The track's Transpose
+                        // is applied when it sounds — live now, and on playback — so
+                        // the sequence plays back what was heard.
+                        writePress(message.number, key: key, into: armed)
                     } else {
                         writeKeysDown.remove(key)
                         if writeKeysDown.isEmpty { chordStart = nil }

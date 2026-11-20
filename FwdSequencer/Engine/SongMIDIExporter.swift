@@ -69,7 +69,9 @@ nonisolated enum SongMIDIExporter {
     /// accent, variation, swing, push and pull or chord roll. Tidiest for a DAW or a
     /// notation app, and it imports back onto the same step size.
     static func data(for input: Song, includingFeel: Bool = true) throws -> Data {
-        var song = try SongValidator.validateAndNormalize(input)
+        // As it sounds: each track's Transpose applied, exactly as SongStore does when it
+        // hands the song to the sequencer, so the file matches playback.
+        var song = try SongValidator.validateAndNormalize(input).withTransposeApplied()
         if !includingFeel {
             for index in song.tracks.indices {
                 song.tracks[index].accent = nil

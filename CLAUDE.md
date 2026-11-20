@@ -452,16 +452,24 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
     is still waiting for, from `pluginStatuses` ("Waiting for ZENOLOGY and 2 others").
     After a timeout the song keeps the plugin and its settings (the GM fallback has no
     AUv3 unit, so nothing is captured over them); reopening the song tries again.
-  3. **Keys transpose** per track and for the Play keyboard: `SongTrack.keysTranspose`
-    (optional, ±24, nil = 0). Applies only to notes PLAYED live — controller keys via
-    `MIDIKeyRouting.Config.transpose` (held notes remember what was sent, so releases
-    match even if it changes mid-note), the Play keyboard's on-screen keys in
-    `PlayDockView`, and notes written with W are written transposed. **Never** the
-    sequencer or export (Graham's choice), so no parity concern. The Play keyboard's
-    scale filter is on the key pressed, before transposing. UI: `KeysTransposeMenu`, a
-    T chip beside W/P on each track (shown when P/W is) and beside the scale menu on the
-    Play dock; help topics `.trackTranspose`, `.playTranspose` (Claude's wording —
-    Graham may want to rewrite them).
+  3. **Transpose (T)** per track and for the Play keyboard: `SongTrack.keysTranspose`
+    (optional, ±24, nil = 0; name kept from build 93). Live keys: per instrument in
+    `MIDIKeyRouting.Config.transpose` (held notes remember what was sent); the Play
+    keyboard's screen keys in `PlayDockView`. **Since 2026-11-19 (later that day,
+    Graham) a track's T also shifts its SEQUENCE:** the pool keeps the written notes,
+    and the shift is applied where the song is handed over — `SongStore` builds each
+    `PlayTrack` with `SongTrack.soundingPool` (clamped 0–127, never dropped, so step
+    positions hold), and `SongMIDIExporter.data` starts from
+    `Song.withTransposeApplied()`. The sequencer engine itself is untouched (note-offs
+    use the pitch the note-on used). Write Notes (W) writes the KEY PRESSED (playback
+    adds T); the playing-note lights are shifted back to written pitch in the
+    PlaybackBatcher handler; the track keyboard's audition adds T. T lives in the
+    track ⋯ menu (Transpose picker, help page entry) and as the chip beside P/W, and
+    the chip shows on any shifted track even with no keys to the tracks.
+    **Shape ▸ Transpose stays** (Graham): it rewrites one section's notes; T moves the
+    whole track. Not handled: Import MIDI into a track with T set plays the imported
+    notes shifted. Help topics `.trackTranspose`, `.playTranspose` are Claude's
+    wording; one sentence added to Graham's `.shapeTranspose` text pointing to T.
 
 - **Track MIDI going dead after an instrument/effect change — fixed 2026-11-19, to test
   on device.** Cause 1: a plugin load superseded by a newer one (another instrument, or

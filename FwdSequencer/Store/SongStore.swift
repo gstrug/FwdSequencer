@@ -344,7 +344,11 @@ class SongStore: ObservableObject {
             if !notes.isEmpty {
                 var merged = playback.playingNotes
                 for (id, played) in notes {
-                    if played.isEmpty { merged.removeValue(forKey: id) } else { merged[id] = played }
+                    if played.isEmpty { merged.removeValue(forKey: id); continue }
+                    // The sequencer reports notes as they sound; the track's keyboard
+                    // shows them as written, so a Transpose is taken back off here.
+                    let shift = song.tracks.first(where: { $0.id == id })?.effectiveKeysTranspose ?? 0
+                    merged[id] = shift == 0 ? played : played.map { $0 - shift }
                 }
                 if merged != playback.playingNotes { playback.playingNotes = merged }
             }
@@ -521,7 +525,9 @@ class SongStore: ObservableObject {
                 return PlayTrack(
                     id: st.id,
                     tempoDivision: part?.tempoDivision ?? .quarter,
-                    notePool: part?.notePool ?? [],
+                    // As it sounds: the track's Transpose applied (the pool keeps the
+                    // written notes). SongMIDIExporter applies the same shift.
+                    notePool: st.soundingPool(part?.notePool ?? []),
                     steps: part?.steps ?? [],
                     // Soloing the Play keyboard silences tracks that aren't soloed
                     // (Song.isAudible); the sequencer itself only knows the tracks.

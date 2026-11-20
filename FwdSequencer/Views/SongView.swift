@@ -1717,6 +1717,25 @@ private struct SongTrackRowView: View {
         return p.steps
     }
 
+    /// The track menu's Transpose choices, plus the current value if the T chip set
+    /// one that is not among them.
+    static func transposeChoices(including current: Int) -> [Int] {
+        var values = [24, 12, 7, 5, 2, 1, 0, -1, -2, -5, -7, -12, -24]
+        if !values.contains(current) { values.append(current); values.sort(by: >) }
+        return values
+    }
+
+    static func transposeName(_ value: Int) -> String {
+        switch value {
+        case 0: return "Off"
+        case 12: return "+12 (up an octave)"
+        case 24: return "+24 (up two octaves)"
+        case -12: return "−12 (down an octave)"
+        case -24: return "−24 (down two octaves)"
+        default: return KeysTransposeMenu.label(value)
+        }
+    }
+
     /// Move, duplicate and delete. Shared by the expanded row's menu and by a long press
     /// on a collapsed row, so the two cannot drift apart.
     @ViewBuilder
@@ -1942,6 +1961,24 @@ private struct SongTrackRowView: View {
 
                 Menu {
                     arrangeActions
+                    Divider()
+
+                    // Transpose: the whole track, every section, as it sounds — the
+                    // same setting as the T chip beside P/W (Graham, 2026-11-19).
+                    Menu {
+                        Picker("Transpose", selection: help.guarded(.trackTranspose, Binding(
+                            get: { track.effectiveKeysTranspose },
+                            set: { songStore.setKeysTranspose($0, for: track.id) }
+                        ))) {
+                            ForEach(Self.transposeChoices(including: track.effectiveKeysTranspose), id: \.self) { value in
+                                Text(Self.transposeName(value)).tag(value)
+                            }
+                        }
+                    } label: {
+                        Label(track.effectiveKeysTranspose == 0 ? "Transpose"
+                              : "Transpose \(KeysTransposeMenu.label(track.effectiveKeysTranspose)) ✓",
+                              systemImage: "arrow.up.arrow.down")
+                    }
                     Divider()
 
                     // Feel lives in the track menu rather than on the row: it is set
@@ -2191,7 +2228,8 @@ private struct SongTrackRowView: View {
                 scale: part.scale,
                 key: part.key,
                 onPreview: { midi in
-                    let n = UInt8(midi)
+                    // Heard as the sequence will play it: with the track's Transpose.
+                    let n = UInt8(min(max(midi + track.effectiveKeysTranspose, 0), 127))
                     AudioEngineManager.shared.playNote(trackID: track.id, midiNote: n, velocity: 100)
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                         AudioEngineManager.shared.stopNote(trackID: track.id, midiNote: n)

@@ -302,16 +302,33 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
     /// program 0, the grand piano they always had.
     var builtInSound: Int? = nil
 
-    /// Semitones added to notes PLAYED into this channel live — from a MIDI keyboard's
-    /// keys, and for the Play keyboard its on-screen keys too — so one keyboard can play
-    /// a synth as played and a bass an octave down (Graham, 2026-11-19). Never applied
-    /// to the sequenced notes, so playback and MIDI export are untouched. Optional so
-    /// older songs decode; nil is 0.
+    /// The track's Transpose (T), in semitones, for every section. Applies to what it
+    /// SOUNDS, never to what is written: notes played live from a MIDI keyboard (and,
+    /// for the Play keyboard, its on-screen keys), and since 2026-11-19 its sequenced
+    /// notes too (Graham: a T that did nothing while the sequence ran was
+    /// counter-intuitive). The note pool keeps the written notes; playback and MIDI
+    /// export shift them through `soundingPool` / `Song.withTransposeApplied`, so the
+    /// two agree. Shape ▸ Transpose is different and stays: it rewrites one section's
+    /// notes. The stored name predates the sequence shift and is kept so songs saved
+    /// by build 93 keep their setting. Optional so older songs decode; nil is 0.
     var keysTranspose: Int? = nil
 
     static let keysTransposeRange = -24...24
     var effectiveKeysTranspose: Int {
         min(max(keysTranspose ?? 0, Self.keysTransposeRange.lowerBound), Self.keysTransposeRange.upperBound)
+    }
+
+    /// A note pool as this track sounds it: every note moved by its Transpose, kept
+    /// within MIDI's 0–127 (a note pushed past the end stays at the end, rather than
+    /// being dropped, so step positions still point at the same entries).
+    func soundingPool(_ pool: [NoteEntry]) -> [NoteEntry] {
+        let shift = effectiveKeysTranspose
+        guard shift != 0 else { return pool }
+        return pool.map { entry in
+            var moved = entry
+            moved.midiNote = min(max(entry.midiNote + shift, 0), 127)
+            return moved
+        }
     }
 
     /// How many effects the UI offers. Deliberately a constant rather than a shape in
@@ -1187,5 +1204,30 @@ nonisolated extension Song {
     var isPlayKeyboardAudible: Bool {
         guard let performance else { return true }
         return isAudible(performance)
+    }
+}
+
+extension Song {
+    /// The song as it sounds: each track's sections with its Transpose applied to the
+    /// note pools. Used by MIDI export so a file matches playback, which applies the
+    /// same shift when the song is handed to the sequencer (SongStore). The Play
+    /// keyboard has no sequence, so nothing changes for it here.
+    func withTransposeApplied() -> Song {
+        let byID = Dictionary(tracks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        guard byID.values.contains(where: { $0.effectiveKeysTranspose != 0 }) else { return self }
+        func shift(_ parts: [Part]) -> [Part] {
+            parts.map { part in
+                guard let track = byID[part.trackID], track.effectiveKeysTranspose != 0 else { return part }
+                var moved = part
+                moved.notePool = track.soundingPool(part.notePool)
+                return moved
+            }
+        }
+        var song = self
+        for s in song.sections.indices {
+            // Snapshots (variations) are not played, so they are left as written.
+            song.sections[s].parts = shift(song.sections[s].parts)
+        }
+        return song
     }
 }
