@@ -245,7 +245,10 @@ nonisolated extension Song {
                 || a.effectiveAccent != b.effectiveAccent
                 || a.effectiveVariation != b.effectiveVariation
                 || a.effectiveSwing != b.effectiveSwing
-                || a.effectiveTimingJitter != b.effectiveTimingJitter {
+                || a.effectiveTimingJitter != b.effectiveTimingJitter
+                // Transpose moves the sequence (SongTrack.soundingPool), so a change
+                // must reach a running sequencer at once, like Shape ▸ Transpose does.
+                || a.effectiveKeysTranspose != b.effectiveKeysTranspose {
                 return true
             }
         }

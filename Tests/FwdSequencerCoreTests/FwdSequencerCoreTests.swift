@@ -1813,6 +1813,7 @@ final class FwdSequencerCoreTests: XCTestCase {
             { (s: inout Song) in s.tracks[0].mixer.isSoloed = true },
             { (s: inout Song) in s.tracks[0].swing = 50 },
             { (s: inout Song) in s.tracks[0].accent = 20 },
+            { (s: inout Song) in s.tracks[0].keysTranspose = -12 },
             { (s: inout Song) in s.sections[0].parts[0].steps.append(Step(type: .back)) },
             { (s: inout Song) in s.sections[0].numberOfBars = 8 },
             { (s: inout Song) in s.tracks.append(SongTrack(name: "B")) },
