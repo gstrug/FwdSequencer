@@ -336,23 +336,25 @@ nonisolated struct MIDIKeyRouting {
     /// a transpose changed while the key was down.
     private struct Held: Equatable { var sounding: [Sounding] }
     private struct Sounding: Equatable { var instrument: UUID; var note: UInt8 }
-    /// Lowest/Highest Note, per device and instrument (Graham, 2026-11-20). The first
-    /// key of a chord opens a short window; when it closes, the lowest (highest) key
-    /// pressed in it sounds, and stays — other keys are ignored — until that key is
-    /// lifted. Then, if keys pressed after it are still held (a legato chord change),
-    /// the lowest (highest) of those takes over; otherwise the track is silent until the
-    /// next key. Keys of the same chord never take over, so releasing a chord sounds
-    /// no stray notes.
+    /// Lowest/Highest Note, per device and instrument (Graham, 2026-11-20, reworked
+    /// after playing it). It follows CHORDS: when the bottom three keys held (top three
+    /// for Highest Note) become a new set, a chord has been played, and its lowest
+    /// (highest) key sounds — at once, no waiting. Fewer than three keys never change
+    /// it, so a right hand playing broken chords or a melody above a held left-hand
+    /// chord leaves the bass alone. Lifting the sounding key silences the track until
+    /// the next chord; nothing takes over (a legato hand-over was tried and dropped).
     private struct ChordKey: Equatable { var key: String; var pressed: UInt8; var sent: UInt8; var velocity: UInt8 }
     private struct SingleSlot: Hashable { var device: String; var instrument: UUID }
-    private enum Single: Equatable {
-        /// The window is open until `until`: the keys pressed in it, still held.
-        case gathering(until: Double, keys: [ChordKey])
-        /// Settled on `note`; `later` are keys pressed since, still held.
-        case sounding(note: ChordKey, later: [ChordKey])
+    private struct Single: Equatable {
+        /// Keys held that reach this instrument, in the order pressed.
+        var held: [ChordKey] = []
+        /// The bottom (top) three keys of the chord last recognised.
+        var chord: Set<String> = []
+        /// What is sounding, if anything.
+        var sounding: ChordKey? = nil
     }
-    /// How long the window stays open: about the spread of a chord played by hand.
-    static let chordWindow = 0.030
+    /// How many keys make a chord.
+    static let chordSize = 3
     private(set) var config = Config()
     /// Instruments that have been sent controllers, so they can be put back to rest
     /// (pedal up, wheels centred) when the keys stop going to them.
@@ -364,76 +366,52 @@ nonisolated struct MIDIKeyRouting {
 
     var heldCount: Int { held.count }
 
-    /// When the earliest open chord window closes, for the caller to call `flush` then.
-    var nextDeadline: Double? {
-        singles.values.compactMap { single -> Double? in
-            if case .gathering(let until, _) = single { return until }
-            return nil
-        }.min()
-    }
-
     private var orderedSlots: [SingleSlot] {
         singles.keys.sorted { ($0.device, $0.instrument.uuidString) < ($1.device, $1.instrument.uuidString) }
     }
 
-    private func pick(_ keys: [ChordKey], for instrument: UUID) -> ChordKey? {
-        guard let priority = config.notePriority[instrument] else { return nil }
-        return priority == .lowest ? keys.min { $0.pressed < $1.pressed } : keys.max { $0.pressed < $1.pressed }
-    }
-
-    /// Chord windows closed by `time`: each sounds the lowest (highest) key it gathered.
-    mutating func flush(at time: Double) -> [Action] {
+    /// A key reached a Lowest/Highest Note instrument: a new chord at the bottom (top)
+    /// moves it to that chord's lowest (highest) key.
+    private mutating func pressSingle(_ slot: SingleSlot, _ key: ChordKey) -> [Action] {
+        guard let priority = config.notePriority[slot.instrument] else { return [] }
+        var single = singles[slot] ?? Single()
+        single.held.append(key)
         var actions: [Action] = []
-        for slot in orderedSlots {
-            guard case .gathering(let until, let keys)? = singles[slot], until <= time + 0.0005 else { continue }
-            guard let chosen = pick(keys, for: slot.instrument) else {
-                singles.removeValue(forKey: slot)
-                continue
+        if single.held.count >= Self.chordSize {
+            let ordered = single.held.sorted {
+                priority == .lowest ? $0.pressed < $1.pressed : $0.pressed > $1.pressed
             }
-            singles[slot] = .sounding(note: chosen, later: [])
-            actions.append(.play(slot.instrument, note: chosen.sent, velocity: chosen.velocity))
+            let edge = Array(ordered.prefix(Self.chordSize))
+            let chord = Set(edge.map(\.key))
+            if chord != single.chord {
+                single.chord = chord
+                let chosen = edge[0]
+                // The same key still held keeps ringing; another key (or the same one
+                // pressed again) is struck.
+                if single.sounding?.key != chosen.key {
+                    if let old = single.sounding { actions.append(.stop(slot.instrument, note: old.sent)) }
+                    single.sounding = chosen
+                    actions.append(.play(slot.instrument, note: chosen.sent, velocity: chosen.velocity))
+                }
+            }
         }
+        singles[slot] = single
         return actions
     }
 
-    private mutating func pressSingle(_ slot: SingleSlot, _ key: ChordKey, at time: Double) {
-        switch singles[slot] {
-        case nil:
-            singles[slot] = .gathering(until: time + Self.chordWindow, keys: [key])
-        case .gathering(let until, var keys)?:
-            keys.append(key)
-            singles[slot] = .gathering(until: until, keys: keys)
-        case .sounding(let note, var later)?:
-            later.append(key)
-            singles[slot] = .sounding(note: note, later: later)
-        }
-    }
-
     private mutating func releaseSingle(_ slot: SingleSlot, key: String) -> [Action] {
-        switch singles[slot] {
-        case nil:
-            return []
-        case .gathering(let until, var keys)?:
-            keys.removeAll { $0.key == key }
-            if keys.isEmpty { singles.removeValue(forKey: slot) }
-            else { singles[slot] = .gathering(until: until, keys: keys) }
-            return []
-        case .sounding(let note, var later)?:
-            guard note.key == key else {
-                later.removeAll { $0.key == key }
-                singles[slot] = .sounding(note: note, later: later)
-                return []
-            }
-            var actions: [Action] = [.stop(slot.instrument, note: note.sent)]
-            // Legato: keys pressed after this note and still held are the next chord.
-            if let next = pick(later, for: slot.instrument) {
-                singles[slot] = .sounding(note: next, later: [])
-                actions.append(.play(slot.instrument, note: next.sent, velocity: next.velocity))
-            } else {
-                singles.removeValue(forKey: slot)
-            }
-            return actions
+        guard var single = singles[slot] else { return [] }
+        single.held.removeAll { $0.key == key }
+        // A key of the chord let go: pressing it again is a chord played again.
+        if single.chord.contains(key) { single.chord = [] }
+        var actions: [Action] = []
+        if single.sounding?.key == key, let old = single.sounding {
+            actions.append(.stop(slot.instrument, note: old.sent))
+            single.sounding = nil
         }
+        if single.held.isEmpty && single.sounding == nil { singles.removeValue(forKey: slot) }
+        else { singles[slot] = single }
+        return actions
     }
 
     /// A key let go: every Lowest/Highest Note instrument of this device hears of it.
@@ -445,15 +423,12 @@ nonisolated struct MIDIKeyRouting {
         return actions
     }
 
-    /// `time`: seconds on any steady clock; only differences matter (chord windows).
-    mutating func route(device: String, _ message: MIDIControlMessage, at time: Double = 0) -> Decision {
+    mutating func route(device: String, _ message: MIDIControlMessage) -> Decision {
         guard message.kind == .note else { return Decision(passOn: true) }
         let key = "\(device)|\(message.channel)|\(message.number)"
         let note = UInt8(clamping: message.number)
         let writing = config.writingDevices.contains(device)
-        // A window that should have closed already is settled first, so this key is
-        // judged against what is really sounding.
-        var actions = flush(at: time)
+        var actions: [Action] = []
 
         if !message.isPress {
             let h = held.removeValue(forKey: key)
@@ -485,23 +460,26 @@ nonisolated struct MIDIKeyRouting {
         // Each instrument's note, transposed; one pushed outside 0–127 is left out.
         var sounding: [Sounding] = []
         var gathered = false
+        var singleActions: [Action] = []
         for id in instruments {
             let shifted = Int(note) + (config.transpose[id] ?? 0)
             guard (0...127).contains(shifted) else { continue }
             if config.notePriority[id] != nil {
-                // Lowest/Highest Note: into the chord window, or noted while locked.
-                pressSingle(SingleSlot(device: device, instrument: id),
-                            ChordKey(key: key, pressed: note, sent: UInt8(shifted), velocity: velocity),
-                            at: time)
+                // Lowest/Highest Note: follows the chord at the bottom (top).
+                singleActions += pressSingle(SingleSlot(device: device, instrument: id),
+                                             ChordKey(key: key, pressed: note, sent: UInt8(shifted), velocity: velocity))
                 gathered = true
                 continue
             }
             sounding.append(Sounding(instrument: id, note: UInt8(shifted)))
         }
-        guard !sounding.isEmpty else { return Decision(actions: actions, passOn: gathered ? writing : true) }
+        guard !sounding.isEmpty else {
+            return Decision(actions: actions + singleActions, passOn: gathered ? writing : true)
+        }
         held[key] = Held(sounding: sounding)
         actions += sounding.map { Action.play($0.instrument, note: $0.note, velocity: velocity) }
-        return Decision(actions: actions, passOn: writing)
+        // Lowest/Highest Note changes after the other instruments' notes.
+        return Decision(actions: actions + singleActions, passOn: writing)
     }
 
     /// A controller (CC), pitch bend or aftertouch from a device: played through
@@ -552,7 +530,7 @@ nonisolated struct MIDIKeyRouting {
         for s in sounding { actions.append(.stop(s.instrument, note: s.note)) }
         held.removeAll()
         for slot in orderedSlots {
-            if case .sounding(let note, _)? = singles[slot] { actions.append(.stop(slot.instrument, note: note.sent)) }
+            if let note = singles[slot]?.sounding { actions.append(.stop(slot.instrument, note: note.sent)) }
         }
         singles.removeAll()
         // Then put back anything a keyboard moved: pedal up, bend centred, mod wheel

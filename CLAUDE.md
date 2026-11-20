@@ -474,17 +474,19 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
     bottom of chords played on every track from one controller). Per track,
     `SongTrack.keysNotePriority` (String, "lowest"/"highest", nil = all; text so an
     unknown value can't stop a song loading) → `MIDIKeyRouting.Config.notePriority`.
-    **Rule (Graham's, reworked the same day after testing showed uneven chords and
-    legato changes missing the bottom):** per device and instrument (`singles`), the
-    first key opens a **30 ms window** (`chordWindow`, fixed); when it closes the lowest
-    (highest) key pressed in it sounds and is **locked** — later keys are ignored —
-    until that key is lifted. Then the lowest (highest) of keys pressed AFTER it and
-    still held takes over (legato chord change); keys of its own chord never do, so a
-    released chord sounds no stray notes; otherwise silence. Timing: `route(…, at:)`
-    takes a time, `flush(at:)` closes windows, `nextDeadline`; `MIDIKeyRouter` uses
-    `ProcessInfo.systemUptime` and a `chordTimer` queue to flush on time, and `route`
-    settles overdue windows first. Cost: the bass sounds up to 30 ms after the first
-    key. Compared on the key pressed, sent transposed. Live keys only. UI: track ⋯
+    **Rule, third version (Graham, after playing the first two):** it follows CHORDS.
+    Per device and instrument (`singles`: keys held, last chord, sounding), when the
+    bottom three keys held (top three for Highest) become a new set — `chordSize` 3 —
+    the lowest (highest) of them sounds at once; the same physical key still held keeps
+    ringing (no retrigger on C major → C minor). Fewer than three keys never change it,
+    so the right hand (broken chords, melody) above a held left-hand chord leaves the
+    bass alone. Lifting the sounding key silences it until the next chord. Dropped:
+    v1 "a further-out key takes over" (missed uneven chords) and v2 "30 ms window,
+    locked, legato hand-over" (legato made it worse; the timer and `route(…, at:)` are
+    gone). Known: a lower 4th key landing last moves the bass down (a short blip); a
+    lone bass note never sounds. Graham plays left-hand chords + right-hand broken
+    chords — keep that in mind before changing this again. Compared on the
+    key pressed, sent transposed. Live keys only. UI: track ⋯
     menu ▸ Keys Play picker, a "Low"/"High" chip beside P/W; help `.trackKeysPlay`.
   5. **Track Inputs: Keys From & Key Range** (2026-11-20, Graham agreed it is needed
     in a commercial app; defaults exactly as before). Per track `keysSource` (controller
