@@ -933,6 +933,13 @@ class SongStore: ObservableObject {
         }
     }
 
+    /// Keys Play for a track: every key (nil), or only the lowest or highest held.
+    func setKeysNotePriority(_ priority: KeysNotePriority?, for trackID: UUID) {
+        guard let i = song.tracks.firstIndex(where: { $0.id == trackID }),
+              song.tracks[i].keysNotePriority != priority?.rawValue else { return }
+        song.tracks[i].keysNotePriority = priority?.rawValue
+    }
+
     func setPerformanceVolume(_ v: Float) {
         song.performance?.mixer.volume = v
         if let id = song.performance?.id { audioEngine.setVolume(v, for: id) }

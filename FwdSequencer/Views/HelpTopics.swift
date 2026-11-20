@@ -33,7 +33,7 @@ enum HelpTopic: String {
          trackPlayKeys, trackMove, trackDuplicate, trackDelete, trackEffectsMenu,
          feelChordRoll, feelAccent, feelVariation, feelSwing, feelTiming,
          trackTime, trackKeyScale, trackSteps, trackKeyboard, trackNoteParams,
-         trackStepsButton, trackTranspose
+         trackStepsButton, trackTranspose, trackKeysPlay
 
     // Play keyboard
     case playInstrument, playEditInstrument, playVolume, playMute, playSolo, playEffects,
@@ -148,6 +148,7 @@ enum HelpTopic: String {
         case .trackWrite: return "Write Notes (W)"
         case .trackPlayKeys: return "Keys Play (P)"
         case .trackTranspose: return "Transpose"
+        case .trackKeysPlay: return "Keys Play"
         case .trackMove: return "Move Up / Down"
         case .trackDuplicate: return "Duplicate Track"
         case .trackDelete: return "Delete Track"
@@ -401,6 +402,8 @@ enum HelpTopic: String {
             return "Write: Arms a track so notes can quickly be edited using a midi controller. Play a chord to add multiple notes. Single notes can be toggled on/off. Write Notes from Keys must be on in Settings ▸ MIDI."
         case .trackPlayKeys:
             return "Play: Turn Keys ▸ Tracks on in Settings ▸ MIDI ▸ Controllers & Templates to enable. Your MIDI controller can now play any track where P is active (green)."
+        case .trackKeysPlay:
+            return "Which of the keys you hold on your MIDI controller this track plays. All Notes plays them all. Lowest Note plays only the lowest, for example a bass under chords you play on every track; Highest Note only the highest, for a lead on top. A new key further out takes over; let go of it and the track is silent until you press another. The sequence is not affected."
         case .trackTranspose:
             return "Moves the whole track up or down, in semitones, in every section: its sequence and the notes your MIDI keyboard plays into it. For example, a bass an octave below a synth played from the same keys. The notes stay written as they are; the track just sounds higher or lower. To rewrite one section's notes instead, use Shape ▸ Transpose."
         case .trackMove:

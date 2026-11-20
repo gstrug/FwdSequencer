@@ -1979,6 +1979,21 @@ private struct SongTrackRowView: View {
                               : "Transpose \(KeysTransposeMenu.label(track.effectiveKeysTranspose)) ✓",
                               systemImage: "arrow.up.arrow.down")
                     }
+                    // Which keys held on a controller this track plays (Graham,
+                    // 2026-11-20): a bass taking only the lowest note of the chords
+                    // played on every track.
+                    Menu {
+                        Picker("Keys Play", selection: help.guarded(.trackKeysPlay, Binding(
+                            get: { track.effectiveKeysNotePriority?.rawValue ?? "" },
+                            set: { songStore.setKeysNotePriority(KeysNotePriority(rawValue: $0), for: track.id) }
+                        ))) {
+                            Text("All Notes").tag("")
+                            Text("Lowest Note").tag(KeysNotePriority.lowest.rawValue)
+                            Text("Highest Note").tag(KeysNotePriority.highest.rawValue)
+                        }
+                    } label: {
+                        Label(KeysPlayMenu.menuTitle(track.effectiveKeysNotePriority), systemImage: "pianokeys")
+                    }
                     Divider()
 
                     // Feel lives in the track menu rather than on the row: it is set

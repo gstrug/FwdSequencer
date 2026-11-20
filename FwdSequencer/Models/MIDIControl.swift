@@ -226,6 +226,15 @@ nonisolated struct MIDIControllerTemplate: Codable, Identifiable, Hashable {
 
 // MARK: - Keys
 
+/// A track that plays only one of the keys held: the lowest (a bass under chords played
+/// on every track from one controller — Graham, 2026-11-20) or the highest (a lead on
+/// top). A new key further out replaces the one sounding; letting go of the sounding
+/// key silences the track until another is pressed — it does not fall back to a key
+/// still held, which would sound stray notes as a chord is released.
+nonisolated enum KeysNotePriority: String, CaseIterable {
+    case lowest, highest
+}
+
 /// Where one controller's keys go when they are not linked to a control. Two switches,
 /// set per controller, so one keyboard can play the Play keyboard while another plays
 /// the tracks.
@@ -279,6 +288,9 @@ nonisolated struct MIDIKeyRouting {
         /// Per instrument: semitones added to each key before it is played. No entry: 0.
         /// The pitch-class check above is on the key pressed, before this.
         var transpose: [UUID: Int] = [:]
+        /// Per instrument: play only the lowest (or highest) key held. No entry: every
+        /// key. See `KeysNotePriority`.
+        var notePriority: [UUID: KeysNotePriority] = [:]
     }
 
     enum Action: Equatable {
@@ -300,6 +312,10 @@ nonisolated struct MIDIKeyRouting {
     /// a transpose changed while the key was down.
     private struct Held: Equatable { var sounding: [Sounding] }
     private struct Sounding: Equatable { var instrument: UUID; var note: UInt8 }
+    /// For an instrument playing only the lowest or highest key: the one key from a
+    /// device it is sounding now, and the note it was sent for it.
+    private struct Single: Equatable { var heldKey: String; var pressed: UInt8; var sent: UInt8 }
+    private struct SingleSlot: Hashable { var device: String; var instrument: UUID }
 
     private(set) var config = Config()
     /// Instruments that have been sent controllers, so they can be put back to rest
@@ -308,8 +324,18 @@ nonisolated struct MIDIKeyRouting {
     /// Notes sounding, so each release reaches the instruments its press did — even if
     /// the routing changed while the key was down.
     private var held: [String: Held] = [:]
+    /// Lowest/Highest Note instruments: what each is sounding, per device.
+    private var singles: [SingleSlot: Single] = [:]
 
     var heldCount: Int { held.count }
+
+    /// A key is no longer sounding on these instruments: forget it as their single note.
+    private mutating func releaseSingles(device: String, key: String, _ sounding: [Sounding]) {
+        for s in sounding {
+            let slot = SingleSlot(device: device, instrument: s.instrument)
+            if singles[slot]?.heldKey == key { singles.removeValue(forKey: slot) }
+        }
+    }
 
     mutating func route(device: String, _ message: MIDIControlMessage) -> Decision {
         guard message.kind == .note else { return Decision(passOn: true) }
@@ -319,6 +345,9 @@ nonisolated struct MIDIKeyRouting {
 
         if !message.isPress {
             if let h = held.removeValue(forKey: key) {
+                // A Lowest/Highest Note instrument whose note this was falls silent; it
+                // does not move to another key still held (Graham, 2026-11-20).
+                releaseSingles(device: device, key: key, h.sounding)
                 // Writing notes needs the release too, to tell a chord from single keys.
                 return Decision(actions: h.sounding.map { Action.stop($0.instrument, note: $0.note) }, passOn: writing)
             }
@@ -333,16 +362,32 @@ nonisolated struct MIDIKeyRouting {
             config.allowedPitchClasses[$0]?.contains(pitchClass) ?? true
         }
         guard !config.paused, !instruments.isEmpty else { return Decision(passOn: true) }
-        // Each instrument's note, transposed; one pushed outside 0–127 is left out.
-        let sounding = instruments.compactMap { id -> Sounding? in
-            let shifted = Int(note) + (config.transpose[id] ?? 0)
-            guard (0...127).contains(shifted) else { return nil }
-            return Sounding(instrument: id, note: UInt8(shifted))
-        }
-        guard !sounding.isEmpty else { return Decision(passOn: true) }
         var actions: [Action] = []
         // A second note-on without a release in between: end the first, or it hangs.
-        if let previous = held[key] { actions += previous.sounding.map { Action.stop($0.instrument, note: $0.note) } }
+        if let previous = held.removeValue(forKey: key) {
+            actions += previous.sounding.map { Action.stop($0.instrument, note: $0.note) }
+            releaseSingles(device: device, key: key, previous.sounding)
+        }
+        // Each instrument's note, transposed; one pushed outside 0–127 is left out.
+        var sounding: [Sounding] = []
+        for id in instruments {
+            let shifted = Int(note) + (config.transpose[id] ?? 0)
+            guard (0...127).contains(shifted) else { continue }
+            if let priority = config.notePriority[id] {
+                // Lowest/Highest Note: this key sounds only if it is lower (higher) than
+                // the one sounding now, which it then replaces.
+                let slot = SingleSlot(device: device, instrument: id)
+                if let current = singles[slot] {
+                    let wins = priority == .lowest ? note < current.pressed : note > current.pressed
+                    guard wins else { continue }
+                    actions.append(.stop(id, note: current.sent))
+                    held[current.heldKey]?.sounding.removeAll { $0.instrument == id }
+                }
+                singles[slot] = Single(heldKey: key, pressed: note, sent: UInt8(shifted))
+            }
+            sounding.append(Sounding(instrument: id, note: UInt8(shifted)))
+        }
+        guard !sounding.isEmpty else { return Decision(actions: actions, passOn: true) }
         held[key] = Held(sounding: sounding)
         let velocity = UInt8(clamping: max(1, message.value))
         actions += sounding.map { Action.play($0.instrument, note: $0.note, velocity: velocity) }
@@ -378,6 +423,7 @@ nonisolated struct MIDIKeyRouting {
             || (config.learning && !before.learning)
             || config.disabledDevices != before.disabledDevices
             || config.writingDevices != before.writingDevices
+            || config.notePriority != before.notePriority
         return shouldRelease ? releaseAll() : []
     }
 
@@ -388,6 +434,7 @@ nonisolated struct MIDIKeyRouting {
         }
         for s in sounding { actions.append(.stop(s.instrument, note: s.note)) }
         held.removeAll()
+        singles.removeAll()
         // Then put back anything a keyboard moved: pedal up, bend centred, mod wheel
         // and pressure down. A sustain pedal held as the keys move elsewhere would
         // otherwise leave the old instrument ringing for good.

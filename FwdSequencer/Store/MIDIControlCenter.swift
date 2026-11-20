@@ -246,7 +246,9 @@ final class MIDIControlCenter: ObservableObject {
                     // and the Play keyboard's scale, which decides which keys reach it.
                     key.append(song.playKeyboardPitchClasses.map { "\($0.sorted())" } ?? "all")
                     // and each channel's keys transpose.
-                    for track in song.tracks { key.append("t\(track.effectiveKeysTranspose)") }
+                    for track in song.tracks {
+                        key.append("t\(track.effectiveKeysTranspose)\(track.keysNotePriority ?? "")")
+                    }
                     key.append("p\(song.performance?.effectiveKeysTranspose ?? 0)")
                     return key
                 }
@@ -338,9 +340,16 @@ final class MIDIControlCenter: ObservableObject {
                 transpose[channel.id] = channel.effectiveKeysTranspose
             }
         }
+        var priority: [UUID: KeysNotePriority] = [:]
+        if let store {
+            for track in store.song.tracks {
+                if let p = track.effectiveKeysNotePriority { priority[track.id] = p }
+            }
+        }
         keyRouter.reconfigure { c in
             c.allowedPitchClasses = allowed
             c.transpose = transpose
+            c.notePriority = priority
             c.destinations = destinations
             c.writingDevices = writingDevices
             c.linkedNotes = linked

@@ -318,6 +318,15 @@ nonisolated struct SongTrack: Codable, Identifiable, Equatable {
         min(max(keysTranspose ?? 0, Self.keysTransposeRange.lowerBound), Self.keysTransposeRange.upperBound)
     }
 
+    /// Keys Play: which of the keys held on a controller this track plays — nil every
+    /// key, "lowest" or "highest" just that one (`KeysNotePriority`). Live keys only;
+    /// the sequence is not affected. Kept as text so a value a later version adds
+    /// cannot stop a song loading here.
+    var keysNotePriority: String? = nil
+    var effectiveKeysNotePriority: KeysNotePriority? {
+        keysNotePriority.flatMap(KeysNotePriority.init(rawValue:))
+    }
+
     /// A note pool as this track sounds it: every note moved by its Transpose, kept
     /// within MIDI's 0–127 (a note pushed past the end stays at the end, rather than
     /// being dropped, so step positions still point at the same entries).

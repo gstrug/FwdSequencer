@@ -116,6 +116,7 @@ struct HelpMenuPage: Identifiable {
         ]),
         ItemGroup(heading: nil, items: [
             Item(icon: "arrow.up.arrow.down", label: "Transpose", topic: .trackTranspose),
+            Item(icon: "pianokeys", label: "Keys Play", topic: .trackKeysPlay),
         ]),
         ItemGroup(heading: "Feel", items: [
             Item(icon: "hand.draw", label: "Chord Roll", topic: .feelChordRoll),

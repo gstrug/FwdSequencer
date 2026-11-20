@@ -220,6 +220,9 @@ struct TrackWriteNotesButton: View {
             }
             // Beside W or P, where the keys reach the tracks.
             KeysTransposeMenu(channel: track, help: .trackTranspose)
+            if track.effectiveKeysNotePriority != nil {
+                KeysPlayMenu(track: track)
+            }
         } else if track.effectiveKeysTranspose != 0 {
             // No keys to the tracks, but a shifted track still shows it: Transpose also
             // moves the sequence, and a track that plays higher or lower than written
@@ -292,4 +295,38 @@ struct MIDIChannelTargets {
     static let play = MIDIChannelTargets(volume: .playVolume, pan: .playPan,
                                          mute: .playMute, solo: .playSolo,
                                          effects: .playEffects)
+}
+
+/// A track playing only the lowest or highest key held shows it beside its P/W chip
+/// ("Low" / "High"); a tap changes it. Not shown for All Notes, the usual case.
+struct KeysPlayMenu: View {
+    let track: SongTrack
+    @EnvironmentObject private var songStore: SongStore
+
+    static func menuTitle(_ priority: KeysNotePriority?) -> String {
+        switch priority {
+        case nil: return "Keys Play"
+        case .lowest?: return "Keys Play: Lowest Note ✓"
+        case .highest?: return "Keys Play: Highest Note ✓"
+        }
+    }
+
+    var body: some View {
+        let priority = track.effectiveKeysNotePriority
+        Menu {
+            Picker("Keys Play", selection: Binding(
+                get: { priority?.rawValue ?? "" },
+                set: { songStore.setKeysNotePriority(KeysNotePriority(rawValue: $0), for: track.id) }
+            )) {
+                Text("All Notes").tag("")
+                Text("Lowest Note").tag(KeysNotePriority.lowest.rawValue)
+                Text("Highest Note").tag(KeysNotePriority.highest.rawValue)
+            }
+        } label: {
+            StudioChipLabel(title: priority == .highest ? "High" : "Low", tint: .green, look: .status)
+        }
+        .accessibilityLabel("Keys play for \(track.name)")
+        .accessibilityValue(priority == .highest ? "Highest note" : priority == .lowest ? "Lowest note" : "All notes")
+        .helpTag(.trackKeysPlay, instance: track.id.uuidString)
+    }
 }

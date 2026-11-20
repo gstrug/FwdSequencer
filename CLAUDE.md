@@ -470,6 +470,16 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
     whole track. Not handled: Import MIDI into a track with T set plays the imported
     notes shifted. Help topics `.trackTranspose`, `.playTranspose` are Claude's
     wording; one sentence added to Graham's `.shapeTranspose` text pointing to T.
+  4. **Keys Play: Lowest / Highest Note** (2026-11-20, Graham: a bass taking only the
+    bottom of chords played on every track from one controller). Per track,
+    `SongTrack.keysNotePriority` (String, "lowest"/"highest", nil = all; text so an
+    unknown value can't stop a song loading) → `MIDIKeyRouting.Config.notePriority`.
+    Per device and instrument the router keeps the one key sounding (`singles`); a key
+    further out replaces it (stop old, play new), others are ignored; releasing the
+    sounding key silences the track — **no fall back to keys still held** (Graham's
+    choice: avoids stray notes as a chord is released). Compared on the key pressed,
+    sent transposed. Live keys only; sequence untouched. UI: track ⋯ menu ▸ Keys Play
+    picker, and a "Low"/"High" chip beside P/W when set; help topic `.trackKeysPlay`.
 
 - **Track MIDI going dead after an instrument/effect change — fixed 2026-11-19, to test
   on device.** Cause 1: a plugin load superseded by a newer one (another instrument, or
