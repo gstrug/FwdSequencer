@@ -2151,20 +2151,10 @@ private struct SongTrackRowView: View {
                 .helpTag(.trackEditInstrument, instance: track.id.uuidString)
             }
 
-            // Volume gets its own line; the meter sits beside pan, matching its size,
-            // so the level is readable rather than a 6pt sliver.
+            // Pan and volume share a line (Graham, 2026-11-22), the meter beneath
+            // them, then the buttons on a line of their own: with P/W, T, Low/High
+            // and From beside M, S and FX there was no room left for pan as well.
             HStack(spacing: 6) {
-                Image(systemName: "speaker.wave.2")
-                    .font(.caption2).foregroundStyle(.secondary)
-                    .frame(width: 28, alignment: .leading)
-                StudioSlider.volume($track.mixer.volume, label: "\(track.name) volume")
-                    .midiLearnable(.trackVolume(index))
-                    .helpTag(.trackVolume, instance: track.id.uuidString)
-            }
-
-            HStack(spacing: 6) {
-                Text("Pan").font(.caption2).foregroundStyle(.secondary)
-                    .frame(width: 28, alignment: .leading)
                 // A knob, as on the mixer: a small square instead of a slider's width.
                 StudioKnob(value: Binding(get: { Double(track.mixer.pan) },
                                           set: { track.mixer.pan = Float($0) }),
@@ -2175,26 +2165,46 @@ private struct SongTrackRowView: View {
                     .accessibilityLabel("\(track.name) pan")
                     .midiLearnable(.trackPan(index))
                     .helpTag(.trackPan, instance: track.id.uuidString)
-                Spacer(minLength: 0)
-                StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
-                                 accessibilityLabel: "Mute \(track.name)")
-                    .midiLearnable(.trackMute(index))
-                    .helpTag(.trackMute, instance: track.id.uuidString)
-                StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
-                                 accessibilityLabel: "Solo \(track.name)")
-                    .midiLearnable(.trackSolo(index))
-                    .helpTag(.trackSolo, instance: track.id.uuidString)
-                TrackEffectsButton(track: track)
-                    .midiLearnable(.trackEffects(index))
-                    .helpTag(.trackEffects, instance: track.id.uuidString)
-                // W or P: only there when a controller's keys go to the tracks.
-                TrackWriteNotesButton(track: track, index: index)
+                Image(systemName: "speaker.wave.2")
+                    .font(.caption2).foregroundStyle(.secondary)
+                StudioSlider.volume($track.mixer.volume, label: "\(track.name) volume")
+                    .midiLearnable(.trackVolume(index))
+                    .helpTag(.trackVolume, instance: track.id.uuidString)
             }
 
-            // Level meter spans the row beneath the controls, where it has room to read.
             SongTrackMeter(trackID: track.id)
                 .helpTag(.trackMeter, instance: track.id.uuidString)
+
+            // All the buttons on one line when they fit; when a track shows every
+            // keyboard chip (P, T, Low/High and a key range) they go on a second line.
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 6) {
+                    mixerChips
+                    // W or P: only there when a controller's keys go to the tracks.
+                    TrackWriteNotesButton(track: track, index: index)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) { mixerChips }
+                    HStack(spacing: 6) { TrackWriteNotesButton(track: track, index: index) }
+                }
+            }
         }
+    }
+
+    /// Mute, solo and effects, for the open track's line of buttons.
+    @ViewBuilder
+    private var mixerChips: some View {
+        StudioToggleChip(title: "M", isOn: $track.mixer.isMuted, tint: .orange,
+                         accessibilityLabel: "Mute \(track.name)")
+            .midiLearnable(.trackMute(index))
+            .helpTag(.trackMute, instance: track.id.uuidString)
+        StudioToggleChip(title: "S", isOn: $track.mixer.isSoloed, tint: .yellow,
+                         accessibilityLabel: "Solo \(track.name)")
+            .midiLearnable(.trackSolo(index))
+            .helpTag(.trackSolo, instance: track.id.uuidString)
+        TrackEffectsButton(track: track)
+            .midiLearnable(.trackEffects(index))
+            .helpTag(.trackEffects, instance: track.id.uuidString)
     }
 
     // Right — section-level: this track's note data for the selected section.
