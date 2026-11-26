@@ -19,6 +19,8 @@ struct ProjectBrowserView: View {
     @State private var importingSong = false
     @State private var showingCredits = false
     @State private var showingExamples = false
+    /// The example chosen in the Examples sheet, opened once the sheet has gone.
+    @State private var pendingExample: ExampleSong? = nil
     @State private var exportingSong = false
     @State private var exportDocument: SongDocument? = nil
     @State private var exportFilename = "FWD Song"
@@ -104,8 +106,18 @@ struct ProjectBrowserView: View {
         }
         .onOpenURL { url in importSong(at: url) }
         .sheet(isPresented: $showingCredits) { CreditsView() }
-        .sheet(isPresented: $showingExamples) {
-            ExamplesSheet { example in addExample(example) }
+        // The example opens only after the sheet has finished closing. Opening the song
+        // while the sheet was still going away (fine on iPadOS 18+) made iPadOS 16 and
+        // 17 present the song inside the closing sheet: a square in the middle of the
+        // screen, whose closing never told the list to reload, so the new song was
+        // missing until the app was restarted (Graham, 2026-11-26).
+        .sheet(isPresented: $showingExamples, onDismiss: {
+            if let example = pendingExample {
+                pendingExample = nil
+                addExample(example)
+            }
+        }) {
+            ExamplesSheet { example in pendingExample = example }
         }
         // MIDI controllers act on the song only while it is open: from the song list, a
         // Play press must not start a song nobody can see. Tied to this flag rather than

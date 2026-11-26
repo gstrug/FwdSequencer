@@ -9,7 +9,7 @@ import SwiftUI
 /// there is just a list of songs"). A sheet has room to say what each one demonstrates,
 /// which is the only reason these songs are in the app.
 struct ExamplesSheet: View {
-    /// Adds a copy of the example and opens it.
+    /// Chooses the example. The song list adds a copy and opens it after this sheet closes.
     let add: (ExampleSong) -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -17,8 +17,10 @@ struct ExamplesSheet: View {
         NavigationStack {
             List(ExampleSong.allCases) { example in
                 Button {
-                    dismiss()
+                    // Chosen first, then closed: the song list opens it once this
+                    // sheet has gone (see ProjectBrowserView).
                     add(example)
+                    dismiss()
                 } label: {
                     HStack(alignment: .top, spacing: 14) {
                         Image(systemName: example.systemImage)
