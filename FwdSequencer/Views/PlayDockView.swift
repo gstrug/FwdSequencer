@@ -91,37 +91,19 @@ struct PlayDockView: View {
     }
 
     // Instrument picker + Edit Sound + volume + close.
+    //
+    // All on one line when it fits. Otherwise two rows: the instrument with the close
+    // button at the far end, then Edit Sound, scale, transpose and the volume controls
+    // (the slider takes what width is left), centred. RowOrTwoRows rather than
+    // ViewThatFits, which crashes on iPadOS 16 (see AdaptiveLayouts.swift).
     private var header: some View {
-        ViewThatFits(in: .horizontal) {
-            wideHeader.fixedSize(horizontal: true, vertical: false)
-            compactHeader
-        }
-    }
-
-    private var wideHeader: some View {
-        HStack(spacing: 12) {
-            instrumentButton
+        RowOrTwoRows(wideSpacing: 12, compactSpacing: 8, rowGap: 8, centersSecondRow: true) {
+            instrumentButton.compactRow(.first)
             editSoundButton
             scaleButton
             transposeButton
             volumeControls
-            closeButton
-        }
-    }
-
-    private var compactHeader: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                instrumentButton
-                Spacer(minLength: 4)
-                closeButton
-            }
-            HStack(spacing: 8) {
-                editSoundButton
-                scaleButton
-                transposeButton
-                volumeControls
-            }
+            closeButton.compactRow(.firstTrailing)
         }
     }
 
@@ -239,8 +221,10 @@ struct PlayDockView: View {
                 .midiLearnable(.playVolume)
                 .helpTag(.playVolume)
                 .frame(minWidth: 80, maxWidth: 160)
+                .compactRow(.secondFlexible)
             if let p = perf {
                 SongTrackMeter(trackID: p.id)
+                    .compactRow(.secondFlexible)
                 // The same channel buttons as a track's, so the Play keyboard can be
                 // muted, soloed and have its effects switched here as on the mixer.
                 StudioToggleChip(title: "M", isOn: mixerFlag(\.isMuted), tint: .orange,
