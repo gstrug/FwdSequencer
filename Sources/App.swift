@@ -1,9 +1,10 @@
 import SwiftUI
 
-enum Variant: String, CaseIterable { case original, noOffset, noClip, noAnimation, blacksInOverlay, blacksGrouped, noGeometryReader }
+enum Variant: String, CaseIterable { case original, guideKeyOffset, guideKeyPadding, negPadKeyPadding, drawingGroup, guideBlacksPadded }
 
 let pageNumber = ProcessInfo.processInfo.arguments.contains("page2") ? 1 : 0
-let page: [Variant] = Array(Variant.allCases.dropFirst(pageNumber * 4).prefix(4))
+let perPage = 3
+let page: [Variant] = Array(Variant.allCases.dropFirst(pageNumber * perPage).prefix(perPage))
 
 @main
 struct HarnessApp: App {
@@ -63,15 +64,15 @@ struct PlayableKeyboard: View {
                             PlayKey(midi: m, isBlack: false, width: whiteW, height: keyH, pressed: false)
                         }
                     }
-                    if variant == .blacksGrouped {
+                    if variant == .guideBlacksPadded {
                         ZStack(alignment: .topLeading) { blacks }
                             .frame(width: totalW, height: keyH, alignment: .topLeading)
-                    } else if variant != .blacksInOverlay {
+                    } else if true {
                         blacks
                     }
                 }
                 .overlay(alignment: .topLeading) {
-                    if variant == .blacksInOverlay {
+                    if false {
                         ZStack(alignment: .topLeading) { blacks }
                     }
                 }
@@ -85,19 +86,25 @@ struct PlayableKeyboard: View {
                             .accessibilityHidden(true)
                     }
                 }
-                .offset(x: variant == .noOffset ? 0 : -scrollOffset(visible: visible))
-                .animation(variant == .noAnimation || reduceMotion ? nil : .easeInOut(duration: 0.25), value: centerC)
-                .frame(width: visible, height: keyH, alignment: .topLeading)
-                .modifier(MaybeClip(on: variant != .noClip))
+                .modifier(Shift(variant: variant, by: scrollOffset(visible: visible)))
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: centerC)
+.frame(width: visible, height: keyH, alignment: .leading)
+                .clipped()
             }
             .frame(height: keyH)
         }
     }
 
-    private var blacks: some View {
+    private var keyPadding: Bool { [.guideKeyPadding, .negPadKeyPadding, .guideBlacksPadded].contains(variant) }
+    @ViewBuilder private var blacks: some View {
         ForEach(Self.blackKeys, id: \.self) { m in
-            PlayKey(midi: m, isBlack: true, width: blackW, height: blackH, pressed: false)
-                .offset(x: blackX(m))
+            if keyPadding {
+                PlayKey(midi: m, isBlack: true, width: blackW, height: blackH, pressed: false)
+                    .padding(.leading, blackX(m))
+            } else {
+                PlayKey(midi: m, isBlack: true, width: blackW, height: blackH, pressed: false)
+                    .offset(x: blackX(m))
+            }
         }
     }
 
@@ -159,6 +166,19 @@ struct TrackKeyboard: View {
     private func x(_ m: Int, _ w: CGFloat, _ bw: CGFloat) -> CGFloat {
         var l = m - 1; while !Self.isWhite(l) { l -= 1 }
         return CGFloat(whiteKeys.firstIndex(of: l)! + 1) * w - bw / 2
+    }
+}
+
+struct Shift: ViewModifier {
+    let variant: Variant
+    let by: CGFloat
+    @ViewBuilder func body(content: Content) -> some View {
+        switch variant {
+        case .original: content.offset(x: -by)
+        case .drawingGroup: content.drawingGroup().offset(x: -by)
+        case .negPadKeyPadding: content.padding(.leading, -by)
+        default: content.alignmentGuide(.leading) { _ in by }
+        }
     }
 }
 
