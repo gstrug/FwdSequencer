@@ -5,7 +5,7 @@ jobs:
   shots:
     strategy:
       fail-fast: false
-      matrix: { runner: [macos-latest], ios: ['17.5', '16.4'] }
+      matrix: { runner: [macos-latest], ios: ['17.5'] }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
@@ -34,7 +34,8 @@ jobs:
           while read rt ver dt; do
             udid=$(xcrun simctl create "h-$ver" "$dt" "$rt") || continue
             xcrun simctl boot "$udid"; xcrun simctl bootstatus "$udid" -b || continue
-            xcrun simctl install "$udid" Harness.app && xcrun simctl launch "$udid" com.example.kbharness && sleep 10 && xcrun simctl io "$udid" screenshot "shots/ios-$ver.png"
+            xcrun simctl install "$udid" Harness.app && xcrun simctl launch "$udid" com.example.kbharness && sleep 10 && xcrun simctl io "$udid" screenshot "shots/ios-$ver-p1.png"
+            xcrun simctl terminate "$udid" com.example.kbharness; xcrun simctl launch "$udid" com.example.kbharness page2 && sleep 10 && xcrun simctl io "$udid" screenshot "shots/ios-$ver-p2.png"
             echo "::notice::shot ios $ver $dt"
           done < pairs.txt
           ls shots

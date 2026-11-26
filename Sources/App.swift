@@ -1,14 +1,17 @@
 import SwiftUI
 
-enum Variant: String, CaseIterable { case original, noTouchSurface, zIndex, padding }
+enum Variant: String, CaseIterable { case original, noOffset, noClip, noAnimation, blacksInOverlay, blacksGrouped, noGeometryReader }
+
+let pageNumber = ProcessInfo.processInfo.arguments.contains("page2") ? 1 : 0
+let page: [Variant] = Array(Variant.allCases.dropFirst(pageNumber * 4).prefix(4))
 
 @main
 struct HarnessApp: App {
     var body: some Scene {
         WindowGroup {
             VStack(alignment: .leading, spacing: 6) {
-                Text("iOS \(UIDevice.current.systemVersion)").font(.title2).foregroundStyle(.white)
-                ForEach(Variant.allCases, id: \.self) { v in
+                Text("iOS \(UIDevice.current.systemVersion) page \(pageNumber + 1)").font(.title2).foregroundStyle(.white)
+                ForEach(page, id: \.self) { v in
                     Text(v.rawValue).foregroundStyle(.white)
                     // As in PlayDockView: padding, material, clipped.
                     PlayableKeyboard(variant: v)
@@ -17,8 +20,6 @@ struct HarnessApp: App {
                         .background(.regularMaterial)
                         .clipped()
                 }
-                Text("trackKeyboard").foregroundStyle(.white)
-                TrackKeyboard()
                 Spacer()
             }
             .padding()
@@ -62,36 +63,41 @@ struct PlayableKeyboard: View {
                             PlayKey(midi: m, isBlack: false, width: whiteW, height: keyH, pressed: false)
                         }
                     }
-                    ForEach(Self.blackKeys, id: \.self) { m in
-                        switch variant {
-                        case .zIndex:
-                            PlayKey(midi: m, isBlack: true, width: blackW, height: blackH, pressed: false)
-                                .offset(x: blackX(m)).zIndex(1)
-                        case .padding:
-                            PlayKey(midi: m, isBlack: true, width: blackW, height: blackH, pressed: false)
-                                .padding(.leading, blackX(m))
-                        default:
-                            PlayKey(midi: m, isBlack: true, width: blackW, height: blackH, pressed: false)
-                                .offset(x: blackX(m))
-                        }
+                    if variant == .blacksGrouped {
+                        ZStack(alignment: .topLeading) { blacks }
+                            .frame(width: totalW, height: keyH, alignment: .topLeading)
+                    } else if variant != .blacksInOverlay {
+                        blacks
+                    }
+                }
+                .overlay(alignment: .topLeading) {
+                    if variant == .blacksInOverlay {
+                        ZStack(alignment: .topLeading) { blacks }
                     }
                 }
                 .frame(width: totalW, height: keyH, alignment: .topLeading)
                 .keyboardCase()
                 .overlay {
-                    if variant != .noTouchSurface {
+                    if true {
                         KeyboardTouchSurface(keyAt: { layout.key(at: $0) },
                                              onPress: { held.insert($0) },
                                              onRelease: { held.remove($0) })
                             .accessibilityHidden(true)
                     }
                 }
-                .offset(x: -scrollOffset(visible: visible))
-                .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: centerC)
+                .offset(x: variant == .noOffset ? 0 : -scrollOffset(visible: visible))
+                .animation(variant == .noAnimation || reduceMotion ? nil : .easeInOut(duration: 0.25), value: centerC)
                 .frame(width: visible, height: keyH, alignment: .topLeading)
-                .clipped()
+                .modifier(MaybeClip(on: variant != .noClip))
             }
             .frame(height: keyH)
+        }
+    }
+
+    private var blacks: some View {
+        ForEach(Self.blackKeys, id: \.self) { m in
+            PlayKey(midi: m, isBlack: true, width: blackW, height: blackH, pressed: false)
+                .offset(x: blackX(m))
         }
     }
 
@@ -154,4 +160,9 @@ struct TrackKeyboard: View {
         var l = m - 1; while !Self.isWhite(l) { l -= 1 }
         return CGFloat(whiteKeys.firstIndex(of: l)! + 1) * w - bw / 2
     }
+}
+
+struct MaybeClip: ViewModifier {
+    let on: Bool
+    @ViewBuilder func body(content: Content) -> some View { if on { content.clipped() } else { content } }
 }
