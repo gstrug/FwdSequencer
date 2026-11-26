@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum Variant: String, CaseIterable { case original, guideKeyOffset, guideKeyPadding, negPadKeyPadding, drawingGroup, guideBlacksPadded }
+enum Variant: String, CaseIterable { case original, blackRow, blackRowMoved, scrollView }
 
 let pageNumber = ProcessInfo.processInfo.arguments.contains("page2") ? 1 : 0
 let perPage = 3
@@ -64,10 +64,9 @@ struct PlayableKeyboard: View {
                             PlayKey(midi: m, isBlack: false, width: whiteW, height: keyH, pressed: false)
                         }
                     }
-                    if variant == .guideBlacksPadded {
-                        ZStack(alignment: .topLeading) { blacks }
-                            .frame(width: totalW, height: keyH, alignment: .topLeading)
-                    } else if true {
+                    if variant == .blackRow || variant == .blackRowMoved {
+                        blackRow
+                    } else {
                         blacks
                     }
                 }
@@ -95,7 +94,25 @@ struct PlayableKeyboard: View {
         }
     }
 
-    private var keyPadding: Bool { [.guideKeyPadding, .negPadKeyPadding, .guideBlacksPadded].contains(variant) }
+    private static let blackAfter: Set<Int> = Set(whiteKeys.filter { !isWhite($0 + 1) && $0 + 1 <= highMidi })
+    /// The black keys as one row, like the white keys: each white key's slot carries the
+    /// black key that sits on its right-hand edge.
+    private var blackRow: some View {
+        HStack(spacing: 0) {
+            ForEach(Self.whiteKeys, id: \.self) { m in
+                Color.clear
+                    .frame(width: whiteW, height: blackH)
+                    .overlay(alignment: .topTrailing) {
+                        if Self.blackAfter.contains(m) {
+                            PlayKey(midi: m + 1, isBlack: true, width: blackW, height: blackH, pressed: false)
+                                .offset(x: blackW / 2)
+                        }
+                    }
+            }
+        }
+    }
+
+    private var keyPadding: Bool { false }
     @ViewBuilder private var blacks: some View {
         ForEach(Self.blackKeys, id: \.self) { m in
             if keyPadding {
@@ -174,10 +191,18 @@ struct Shift: ViewModifier {
     let by: CGFloat
     @ViewBuilder func body(content: Content) -> some View {
         switch variant {
-        case .original: content.offset(x: -by)
-        case .drawingGroup: content.drawingGroup().offset(x: -by)
-        case .negPadKeyPadding: content.padding(.leading, -by)
-        default: content.alignmentGuide(.leading) { _ in by }
+        case .blackRowMoved: content.offset(x: -by - 140)
+        case .scrollView:
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    content.overlay(alignment: .topLeading) {
+                        Color.clear.frame(width: 1, height: 1).offset(x: by).id("anchor")
+                    }
+                }
+                .scrollDisabled(true)
+                .onAppear { proxy.scrollTo("anchor", anchor: .leading) }
+            }
+        default: content.offset(x: -by)
         }
     }
 }
