@@ -13,7 +13,8 @@ jobs:
         run: |
           set -x
           xcodebuild -version
-          xcodebuild -downloadPlatform iOS -buildVersion ${{ matrix.ios }} || echo '::warning::download failed'
+          xcrun simctl list devices >/dev/null; sleep 20
+          for t in 1 2 3; do xcodebuild -downloadPlatform iOS -buildVersion ${{ matrix.ios }} 2>&1 | grep -v "Downloading iOS" && xcrun simctl list runtimes | grep -q "iOS ${{ matrix.ios }}" && break; echo "::warning::download attempt $t failed"; sleep 30; done
           xcrun simctl list runtimes | tee runtimes.txt
           SDK=$(xcrun --sdk iphonesimulator --show-sdk-path)
           mkdir -p Harness.app shots
