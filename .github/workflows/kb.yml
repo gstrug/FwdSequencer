@@ -5,7 +5,7 @@ jobs:
   shots:
     strategy:
       fail-fast: false
-      matrix: { runner: [macos-latest], ios: ['17.5'] }
+      matrix: { runner: [macos-latest], ios: ['16.4'] }
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4

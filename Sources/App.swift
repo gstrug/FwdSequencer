@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum Variant: String, CaseIterable { case original, blackRow, blackRowMoved, scrollView }
+enum Variant: String, CaseIterable { case original, blackRow, blackRowMoved }
 
 let pageNumber = ProcessInfo.processInfo.arguments.contains("page2") ? 1 : 0
 let perPage = 3
