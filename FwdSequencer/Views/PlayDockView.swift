@@ -91,37 +91,19 @@ struct PlayDockView: View {
     }
 
     // Instrument picker + Edit Sound + volume + close.
+    //
+    // All on one line when it fits. Otherwise two rows: the instrument with the close
+    // button at the far end, then Edit Sound, scale, transpose and the volume controls
+    // (the slider takes what width is left), centred. RowOrTwoRows rather than
+    // ViewThatFits, which crashes on iPadOS 16 (see AdaptiveLayouts.swift).
     private var header: some View {
-        ViewThatFits(in: .horizontal) {
-            wideHeader.fixedSize(horizontal: true, vertical: false)
-            compactHeader
-        }
-    }
-
-    private var wideHeader: some View {
-        HStack(spacing: 12) {
-            instrumentButton
+        RowOrTwoRows(wideSpacing: 12, compactSpacing: 8, rowGap: 8, centersSecondRow: true) {
+            instrumentButton.compactRow(.first)
             editSoundButton
             scaleButton
             transposeButton
             volumeControls
-            closeButton
-        }
-    }
-
-    private var compactHeader: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                instrumentButton
-                Spacer(minLength: 4)
-                closeButton
-            }
-            HStack(spacing: 8) {
-                editSoundButton
-                scaleButton
-                transposeButton
-                volumeControls
-            }
+            closeButton.compactRow(.firstTrailing)
         }
     }
 
@@ -231,30 +213,36 @@ struct PlayDockView: View {
         songStore.song.playKeyboardScale = value
     }
 
+    // One row, so in the two-row header it takes the spare width as a whole and the
+    // slider and meter share it as before. (Placed one by one in RowOrTwoRows, the
+    // meter got its frame but did not draw on iOS 16.)
     @ViewBuilder
     private var volumeControls: some View {
         if perf != nil {
-            Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
-            StudioSlider.volume(volumeBinding, label: "Manual keyboard volume")
-                .midiLearnable(.playVolume)
-                .helpTag(.playVolume)
-                .frame(minWidth: 80, maxWidth: 160)
-            if let p = perf {
-                SongTrackMeter(trackID: p.id)
-                // The same channel buttons as a track's, so the Play keyboard can be
-                // muted, soloed and have its effects switched here as on the mixer.
-                StudioToggleChip(title: "M", isOn: mixerFlag(\.isMuted), tint: .orange,
-                                 accessibilityLabel: "Mute Play keyboard")
-                    .midiLearnable(.playMute)
-                    .helpTag(.playMute)
-                StudioToggleChip(title: "S", isOn: mixerFlag(\.isSoloed), tint: .yellow,
-                                 accessibilityLabel: "Solo Play keyboard")
-                    .midiLearnable(.playSolo)
-                    .helpTag(.playSolo)
-                EffectsToggleButton(track: p)
-                    .midiLearnable(.playEffects)
-                    .helpTag(.playEffects)
+            HStack(spacing: 8) {
+                Image(systemName: "speaker.wave.2").font(.caption2).foregroundStyle(.secondary)
+                StudioSlider.volume(volumeBinding, label: "Manual keyboard volume")
+                    .midiLearnable(.playVolume)
+                    .helpTag(.playVolume)
+                    .frame(minWidth: 80, maxWidth: 160)
+                if let p = perf {
+                    SongTrackMeter(trackID: p.id)
+                    // The same channel buttons as a track's, so the Play keyboard can be
+                    // muted, soloed and have its effects switched here as on the mixer.
+                    StudioToggleChip(title: "M", isOn: mixerFlag(\.isMuted), tint: .orange,
+                                     accessibilityLabel: "Mute Play keyboard")
+                        .midiLearnable(.playMute)
+                        .helpTag(.playMute)
+                    StudioToggleChip(title: "S", isOn: mixerFlag(\.isSoloed), tint: .yellow,
+                                     accessibilityLabel: "Solo Play keyboard")
+                        .midiLearnable(.playSolo)
+                        .helpTag(.playSolo)
+                    EffectsToggleButton(track: p)
+                        .midiLearnable(.playEffects)
+                        .helpTag(.playEffects)
+                }
             }
+            .compactRow(.secondFlexible)
         }
     }
 

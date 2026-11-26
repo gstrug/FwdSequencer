@@ -14,6 +14,12 @@ import SwiftUI
 struct FlowLayout: Layout {
     var horizontalSpacing: CGFloat = 8
     var verticalSpacing: CGFloat = 8
+    /// When everything fits on one row, the last subview sits at the right-hand end
+    /// (as a Spacer before it would put it), and the layout takes the whole width
+    /// offered. `trailingGap` is the extra room that last subview needs before it for
+    /// the row to count as fitting — the Spacer's minimum length.
+    var pinsLastToTrailing = false
+    var trailingGap: CGFloat = 0
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
         let available = proposal.width ?? .infinity
@@ -23,6 +29,9 @@ struct FlowLayout: Layout {
         // Report the widest row rather than the width offered, so the layout does not
         // claim space it is not using when it sits beside something else.
         let widest = rows.map(\.width).max() ?? 0
+        if pinsLastToTrailing, rows.count == 1, available.isFinite {
+            return CGSize(width: max(available, widest), height: height)
+        }
         return CGSize(width: available.isFinite ? min(available, widest) : widest,
                       height: height)
     }
@@ -30,9 +39,14 @@ struct FlowLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize,
                        subviews: Subviews, cache: inout Void) {
         var y = bounds.minY
-        for row in rows(subviews, availableWidth: bounds.width) {
+        let allRows = rows(subviews, availableWidth: bounds.width)
+        let pinLast = pinsLastToTrailing && allRows.count == 1
+        for row in allRows {
             var x = bounds.minX
-            for item in row.items {
+            for (n, item) in row.items.enumerated() {
+                if pinLast, n == row.items.count - 1 {
+                    x = max(x, bounds.maxX - item.size.width)
+                }
                 // Centred within the row: chips of unequal height (a wrapped name, say)
                 // sit on a common midline rather than hanging from the top.
                 subviews[item.index].place(
@@ -59,7 +73,8 @@ struct FlowLayout: Layout {
 
         for index in subviews.indices {
             let size = subviews[index].sizeThatFits(.unspecified)
-            let extended = row.width + horizontalSpacing + size.width
+            let gap = (pinsLastToTrailing && index == subviews.indices.last) ? trailingGap : 0
+            let extended = row.width + horizontalSpacing + gap + size.width
             // A subview wider than the row starts one of its own and overflows it —
             // better than an empty row above it.
             if !row.items.isEmpty, extended > availableWidth {

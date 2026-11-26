@@ -229,24 +229,14 @@ struct StepRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 12) {
-                    positionLabel
-                    typeButton
-                    valueEditor
-                    deleteButton
-                }
-                .fixedSize(horizontal: true, vertical: false)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        positionLabel
-                        typeButton
-                        Spacer(minLength: 4)
-                        deleteButton
-                    }
-                    valueEditor
-                }
+            // One line when it fits; otherwise number, type and delete on the first
+            // line and the value below. RowOrTwoRows rather than ViewThatFits, which
+            // crashes on iPadOS 16 (see AdaptiveLayouts.swift).
+            RowOrTwoRows(wideSpacing: 12, compactSpacing: 8, rowGap: 8) {
+                positionLabel.compactRow(.first)
+                typeButton.compactRow(.first)
+                valueEditor.compactRow(.secondFlexible)
+                deleteButton.compactRow(.firstTrailing)
             }
 
             Text(currentDescription)

@@ -340,24 +340,19 @@ private struct SongTransportBar: View {
             //
             // When it all fits on one line the panels sit at the right-hand end; when
             // it does not, the same clusters wrap instead.
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 20) {
-                    positionIndicator
-                    timeSignatureMenu
-                    masterOutputControl
-                    CPUReadout().helpTag(.cpu)
-                    Spacer(minLength: 20)
-                    panelButtons
-                }
-                FlowLayout(horizontalSpacing: 20, verticalSpacing: 8) {
-                    positionIndicator
-                    timeSignatureMenu
-                    masterOutputControl
-                    CPUReadout().helpTag(.cpu)
-                    panelButtons
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+            //
+            // One FlowLayout does both (no ViewThatFits: it crashes on iPadOS 16, see
+            // AdaptiveLayouts.swift). On one line the panels are pinned to the right
+            // with at least 20 + 20 points before them, as the Spacer used to give.
+            FlowLayout(horizontalSpacing: 20, verticalSpacing: 8,
+                       pinsLastToTrailing: true, trailingGap: 40) {
+                positionIndicator
+                timeSignatureMenu
+                masterOutputControl
+                CPUReadout().helpTag(.cpu)
+                panelButtons
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -1491,6 +1486,7 @@ private struct SongTrackRowView: View {
     @State private var conflictCount = 0
     @State private var showKeyConflict = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.displayScale) private var displayScale
 
     private let noteNames = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"]
 
@@ -1607,17 +1603,15 @@ private struct SongTrackRowView: View {
             if isCollapsed {
                 collapsedBar
             } else {
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 10) {
-                        trackHeader.frame(width: 250)
-                        Divider()
-                        noteZone.frame(minWidth: 400)
-                    }
-                    VStack(alignment: .leading, spacing: 10) {
-                        trackHeader.frame(maxWidth: .infinity)
-                        Divider()
-                        noteZone
-                    }
+                // Header beside the notes when there is room, above them when not.
+                // A Layout rather than ViewThatFits, which crashes on iPadOS 16 (see
+                // AdaptiveLayouts.swift); the line between them is drawn here because
+                // a Divider only knows which way to run inside a stack.
+                TrackBodyLayout(headerWidth: 250, notesMinWidth: 400, spacing: 10,
+                                thickness: 1 / displayScale) {
+                    trackHeader.frame(maxWidth: .infinity)
+                    Rectangle().fill(Color(uiColor: .separator))
+                    noteZone
                 }
                 .padding(10)
             }
@@ -1781,20 +1775,24 @@ private struct SongTrackRowView: View {
     }
 
     // Compact one-line row shown when the track is collapsed.
-    /// Below this the wide one-line layout is too cramped and ViewThatFits falls back
-    /// to the stacked compact bar. It replaces a `.fixedSize` on the wide variant: that
-    /// pinned the row to its intrinsic width, which left no slack for the step strip to
-    /// grow into. A minimum width still gives ViewThatFits a real threshold to test,
-    /// while letting the row stretch — and hand the surplus to the strip — above it.
+    /// Below this width the wide one-line layout is too cramped and the stacked compact
+    /// bar is used instead. Above it the wide row stretches and hands the surplus to the
+    /// step strip.
+    ///
+    /// Chosen by the width offered (`WidthReader`), not ViewThatFits, which crashes on
+    /// iPadOS 16 (see AdaptiveLayouts.swift). It was ViewThatFits's threshold already:
+    /// the wide bar's minimum width.
     private static let wideCollapsedMinWidth: CGFloat = 620
 
     private var collapsedBar: some View {
-        ViewThatFits(in: .horizontal) {
-            collapsedWideBar
-                .frame(minWidth: Self.wideCollapsedMinWidth, maxWidth: .infinity, alignment: .leading)
-            collapsedCompactBar
+        WidthReader { width in
+            if (width ?? .infinity) >= Self.wideCollapsedMinWidth {
+                collapsedWideBar
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                collapsedCompactBar
+            }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .contextMenu { collapsedRowActions }
     }
 
@@ -2177,16 +2175,12 @@ private struct SongTrackRowView: View {
 
             // All the buttons on one line when they fit; when a track shows every
             // keyboard chip (P, T, Low/High and a key range) they go on a second line.
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 6) {
-                    mixerChips
-                    // W or P: only there when a controller's keys go to the tracks.
-                    TrackWriteNotesButton(track: track, index: index)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) { mixerChips }
-                    HStack(spacing: 6) { TrackWriteNotesButton(track: track, index: index) }
-                }
+            // RowOrTwoRows, not ViewThatFits, which crashes on iPadOS 16 (see
+            // AdaptiveLayouts.swift).
+            RowOrTwoRows(wideSpacing: 6, compactSpacing: 6, rowGap: 6) {
+                Group { mixerChips }.compactRow(.first)
+                // W or P: only there when a controller's keys go to the tracks.
+                TrackWriteNotesButton(track: track, index: index)
             }
         }
     }
