@@ -1,0 +1,80 @@
+name: iOS 16 crash probe
+on:
+  push:
+    branches: [claude/ios16-crash-probe]
+permissions: { contents: write }
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix: { variant: [final-a, final-b] }
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch in the probe
+        run: |
+          cp Probe/FWDProbe.swift FwdSequencer/FWDProbe.swift
+          sed -i '' 's/SelectAllOnEdit.install()/SelectAllOnEdit.install(); FWDProbe.start()/' FwdSequencer/FwdSequencerApp.swift
+          python3 -c "import re;p='FwdSequencer/Views/ProjectBrowserView.swift';s=open(p).read();a='.onOpenURL { url in importSong(at: url) }';assert a in s;s=s.replace(a,a+' .onAppear { if FWDProbe.step != nil { createSongAndOpen(.instrumentHost, named: \\\"Probe\\\") } }',1);open(p,'w').write(s)"
+          git diff --stat
+          grep -n "FWDProbe" FwdSequencer/FwdSequencerApp.swift FwdSequencer/Views/ProjectBrowserView.swift
+      - name: Get iOS 16.4 simulator
+        run: |
+          xcodebuild -version
+          xcrun simctl list devices >/dev/null; sleep 10
+          for t in 1 2 3; do xcodebuild -downloadPlatform iOS -buildVersion 16.4 2>&1 | grep -v "Downloading iOS"; xcrun simctl list runtimes | grep -q "iOS 16" && break; sleep 30; done
+          xcrun simctl list runtimes -j > rt.json
+          python3 - > pair.txt <<'PY'
+          import json
+          for r in json.load(open('rt.json'))['runtimes']:
+              if r['platform']=='iOS' and r['isAvailable'] and r['version'].startswith('16'):
+                  ipads=[d['identifier'] for d in r.get('supportedDeviceTypes',[]) if 'iPad' in d['identifier']]
+                  if ipads: print(r['identifier'], r['version'], ipads[-1]); break
+          PY
+          cat pair.txt
+      - name: Build
+        run: |
+          set -o pipefail
+          xcodebuild -project FwdSequencer.xcodeproj -scheme FwdSequencer -configuration Release \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath dd \
+            CODE_SIGNING_ALLOWED=NO IPHONEOS_DEPLOYMENT_TARGET=16.4 build > build.log 2>&1 || { grep -E 'error:' build.log | sort -u | head -20 | sed 's/^/::error::/'; tail -20 build.log; exit 1; }
+      - name: Press each control
+        run: |
+          mkdir -p results
+          APP=$(find dd/Build/Products -name "*.app" -maxdepth 2 | head -1); echo "$APP"
+          read rt ver dt < pair.txt
+          udid=$(xcrun simctl create "probe" "$dt" "$rt")
+          xcrun simctl boot "$udid"; xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" "$APP"
+          BID=$(/usr/libexec/PlistBuddy -c "Print CFBundleIdentifier" "$APP/Info.plist")
+          n=0
+          while read -r size s; do
+            n=$((n+1))
+            xcrun simctl ui "$udid" content_size "$size" || echo "::warning::content_size $size failed"
+            SIMCTL_CHILD_FWD_PROBE="$s" xcrun simctl launch --console-pty "$udid" "$BID" > results/console-$n.txt 2>&1 &
+            sleep 11; xcrun simctl io "$udid" screenshot results/$n-before.png || true
+            sleep 13; xcrun simctl io "$udid" screenshot results/$n-after.png || true
+            grep "\[LAYOUT\]" results/console-$n.txt | sort -u | tail -4 | sed 's/.*\[LAYOUT\]/::notice::/' | cut -c1-1500
+            echo "::notice::${{ matrix.variant }} $n [$size $s]: alive=$(grep -c 'alive after' results/console-$n.txt) $(grep -E 'activated|no element|precondition|Fatal' results/console-$n.txt | head -3 | sed 's/.*\]: //' | tr '\n' ' ' | cut -c1-300)"
+            xcrun simctl terminate "$udid" "$BID" || true
+            sleep 3
+          done <<'STEPS'
+          medium ax2:Play
+          medium ax2:Play
+          medium ax:Close manual keyboard
+          medium learn
+          STEPS
+          xcrun simctl spawn "$udid" log show --last 10m --style compact --predicate 'process == "FwdSequencer"' 2>/dev/null | grep -i -B2 -A4 "precondition\|attributegraph" | head -40 > results/ag.txt || true
+          echo "::notice::${{ matrix.variant }} AG log: $(head -c 600 results/ag.txt | tr '\n' ' ')"
+          cp ~/Library/Logs/DiagnosticReports/*FwdSequencer* results/ 2>/dev/null || true
+          mkdir -p r2 && mv results r2/${{ matrix.variant }} && mkdir results && mv r2/${{ matrix.variant }} results/
+          ls results ~/Library/Logs/DiagnosticReports | head -60
+      - name: Commit results
+        if: always()
+        run: |
+          git config user.name probe; git config user.email probe@example.com
+          git checkout -- FwdSequencer
+          rm -f FwdSequencer/FWDProbe.swift
+          git add results; git commit -qm "probe results ${{ matrix.variant }}" || exit 0
+          for i in 1 2 3; do git pull --rebase -q && git push && exit 0; sleep 5; done
