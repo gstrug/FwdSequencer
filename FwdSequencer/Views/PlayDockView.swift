@@ -313,6 +313,9 @@ private struct PlayableKeyboard: View {
     private static func isWhite(_ m: Int) -> Bool { [0,2,4,5,7,9,11].contains(m % 12) }
     private static let whiteKeys: [Int] = (lowMidi...highMidi).filter { isWhite($0) }
     private static let blackKeys: [Int] = (lowMidi...highMidi).filter { !isWhite($0) }
+    /// White keys with a black key just above them (C, D, F, G, A), within the range.
+    private static let hasBlackAfter: Set<Int> =
+        Set(whiteKeys.filter { $0 + 1 <= highMidi && !isWhite($0 + 1) })
     private static let whiteIndex: [Int: Int] =
         Dictionary(uniqueKeysWithValues: whiteKeys.enumerated().map { ($1, $0) })
 
@@ -379,12 +382,28 @@ private struct PlayableKeyboard: View {
                                 .overlay(alignment: .bottom) { octaveLabel(m) }
                         }
                     }
-                    ForEach(Self.blackKeys, id: \.self) { m in
-                        PlayKey(midi: m, isBlack: true, width: blackW, height: blackH,
-                                pressed: held.contains(m) || controllerHeld.contains(m),
-                                enabled: plays(m),
-                                onNoteOn: onNoteOn, onNoteOff: onNoteOff)
-                            .offset(x: blackX(m))
+                    // The black keys as one row, like the white keys: each white key's
+                    // slot carries the black key on its right-hand edge. Placed one by
+                    // one (each offset from the left end), iPadOS 16 and 17 did not draw
+                    // them once the keyboard was slid to the middle octave: they still
+                    // played but were invisible until an octave change redrew them
+                    // (Graham, 2026-11-26; reproduced on iOS 16.4 and 17.5 simulators,
+                    // and this row fixes it there; iPadOS 26 drew them either way).
+                    HStack(spacing: 0) {
+                        ForEach(Self.whiteKeys, id: \.self) { w in
+                            Color.clear
+                                .frame(width: whiteW, height: blackH)
+                                .overlay(alignment: .topTrailing) {
+                                    if Self.hasBlackAfter.contains(w) {
+                                        let m = w + 1
+                                        PlayKey(midi: m, isBlack: true, width: blackW, height: blackH,
+                                                pressed: held.contains(m) || controllerHeld.contains(m),
+                                                enabled: plays(m),
+                                                onNoteOn: onNoteOn, onNoteOff: onNoteOff)
+                                            .offset(x: blackW / 2)
+                                    }
+                                }
+                        }
                     }
                 }
                 .frame(width: totalW, height: keyH, alignment: .topLeading)
