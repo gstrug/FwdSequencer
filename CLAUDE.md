@@ -270,6 +270,15 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
 9. Removed on purpose: undo/redo was removed (2026-08-25) and the master limiter was
    removed (it added crackle). Pattern-era code is gone; the app is song-only.
 
+- **iPadOS 16 and 17 differ from 18+ (found 2026-11-26 on Graham's old iPads, 16.7 and
+  17.7).** (a) Opening a full-screen cover while a sheet is still closing presents it
+  inside the sheet (a square mid-screen) and its onDismiss never runs: open it from the
+  sheet's onDismiss instead (Examples sheet). (b) Views placed one by one with `.offset`
+  inside content slid by an outer offset and clipped are not drawn (Play keyboard's black
+  keys): lay them out as a row. Reproduce with a throwaway SwiftUI app on a GitHub Mac
+  runner: `xcodebuild -downloadPlatform iOS -buildVersion 17.5` (or 16.4), pick an iPad
+  from the runtime's supportedDeviceTypes, `simctl io … screenshot`, commit the PNGs back.
+
 ## Open items and ideas
 
 - **Plugin screen, reported 2026-10-17 — both items DONE 2026-10-20 (build 87):**
