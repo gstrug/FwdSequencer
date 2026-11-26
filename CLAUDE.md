@@ -275,7 +275,15 @@ export, master recording (WAV/CAF), optional CoreMIDI clock output.
   inside the sheet (a square mid-screen) and its onDismiss never runs: open it from the
   sheet's onDismiss instead (Examples sheet). (b) Views placed one by one with `.offset`
   inside content slid by an outer offset and clipped are not drawn (Play keyboard's black
-  keys): lay them out as a row. Reproduce with a throwaway SwiftUI app on a GitHub Mac
+  keys): lay them out as a row. (c) **ViewThatFits crashes iPadOS 16** ("precondition
+  failure: accessing attribute in a different namespace" in AttributeGraph, on almost
+  any change in an open song; build 96 on Graham's wife's iPad 16.7). All six uses were
+  replaced 2026-11-26 by `FlowLayout`, `RowOrTwoRows`, `TrackBodyLayout` and
+  `WidthReader` (`Views/AdaptiveLayouts.swift`) — **never use ViewThatFits** while 16 is
+  supported. Found by running the real app on an iOS 16.4 simulator: branch
+  `claude/ios16-crash-probe` (Probe/FWDProbe.swift is copied in by its workflow, opens
+  an Instrument Host song and presses a control through accessibility; idb did not
+  install; the AG error text comes from `simctl spawn … log show`). Reproduce with a throwaway SwiftUI app on a GitHub Mac
   runner: `xcodebuild -downloadPlatform iOS -buildVersion 17.5` (or 16.4), pick an iPad
   from the runtime's supportedDeviceTypes, `simctl io … screenshot`, commit the PNGs back.
 
