@@ -20,15 +20,22 @@ jobs:
           xcrun --sdk iphonesimulator swiftc -parse-as-library -target arm64-apple-ios16.0-simulator -sdk "$SDK" Sources/*.swift -o Harness.app/Harness
           cp Info.plist Harness.app/
           codesign -s - --force Harness.app || true
-          for rt in $(xcrun simctl list runtimes -j | python3 -c "import json,sys;[print(r['identifier']) for r in json.load(sys.stdin)['runtimes'] if r['platform']=='iOS' and r['isAvailable'] and r['version'].startswith('${{ matrix.ios }}'[:2])]"); do
-            ver=${rt##*iOS-}
-            dt=$(xcrun simctl list devicetypes -j | python3 -c "import json,sys;t=[d['identifier'] for d in json.load(sys.stdin)['devicetypes'] if 'iPad-Air' in d['identifier'] or 'iPad-Pro' in d['identifier']];print(t[0])")
+          xcrun simctl list runtimes -j > rt.json
+          python3 - "${{ matrix.ios }}" > pairs.txt <<'PY'
+          import json,sys
+          want=sys.argv[1][:2]
+          for r in json.load(open('rt.json'))['runtimes']:
+              if r['platform']=='iOS' and r['isAvailable'] and r['version'].startswith(want):
+                  ipads=[d['identifier'] for d in r.get('supportedDeviceTypes',[]) if 'iPad' in d['identifier']]
+                  if ipads: print(r['identifier'], r['version'], ipads[-1])
+          PY
+          cat pairs.txt
+          while read rt ver dt; do
             udid=$(xcrun simctl create "h-$ver" "$dt" "$rt") || continue
-            xcrun simctl boot "$udid" && xcrun simctl bootstatus "$udid" -b || continue
-            xcrun simctl install "$udid" Harness.app && xcrun simctl launch "$udid" com.example.kbharness && sleep 8 && xcrun simctl io "$udid" screenshot "shots/ios-$ver.png"
-            xcrun simctl shutdown "$udid"
-            echo "::notice::shot ios $ver on ${{ matrix.runner }}"
-          done
+            xcrun simctl boot "$udid"; xcrun simctl bootstatus "$udid" -b || continue
+            xcrun simctl install "$udid" Harness.app && xcrun simctl launch "$udid" com.example.kbharness && sleep 10 && xcrun simctl io "$udid" screenshot "shots/ios-$ver.png"
+            echo "::notice::shot ios $ver $dt"
+          done < pairs.txt
           ls shots
       - name: Commit shots
         if: always()
