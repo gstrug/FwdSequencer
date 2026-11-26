@@ -1,0 +1,9 @@
+2026-11-26 19:00:43.321 FwdSequencer[15342:46507] [FWD-BUILD] MAIN bundle=com.grahamstruwig.FwdSequencer version=1.0 build=96
+2026-11-26 19:00:43.321 FwdSequencer[15342:46507] [PROBE] start step=learn
+2026-11-26 19:00:43.336 FwdSequencer[15342:46507] [PROBE] AX automation on
+2026-11-26 19:00:46.360 FwdSequencer[15342:46507] [PROBE] rotate failed: The current windowing mode does not allow for programmatic changes to interface orientation.
+2026-11-26 19:00:46.360 FwdSequencer[15342:46507] [PROBE] asked for landscape
+2026-11-26 19:00:55.345 FwdSequencer[15342:46507] [PROBE] acting learn
+2026-11-26 19:00:55.347 FwdSequencer[15342:46507] [PROBE] did learn
+2026-11-26 19:01:05.368 FwdSequencer[15342:46507] [PROBE] alive after step=learn
+com.grahamstruwig.FwdSequencer: 15342
