@@ -192,16 +192,6 @@ struct Shift: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         switch variant {
         case .blackRowMoved: content.offset(x: -by - 140)
-        case .scrollView:
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    content.overlay(alignment: .topLeading) {
-                        Color.clear.frame(width: 1, height: 1).offset(x: by).id("anchor")
-                    }
-                }
-                .scrollDisabled(true)
-                .onAppear { proxy.scrollTo("anchor", anchor: .leading) }
-            }
         default: content.offset(x: -by)
         }
     }
