@@ -18,7 +18,7 @@ import SwiftUI
 // while iPadOS 16 is supported.
 
 /// Where a subview goes in `RowOrTwoRows` when the one-line arrangement does not fit.
-enum CompactRow {
+nonisolated enum CompactRow: Equatable {
     /// First row, left to right.
     case first
     /// First row, at the right-hand end.
@@ -29,7 +29,7 @@ enum CompactRow {
     case secondFlexible
 }
 
-private struct CompactRowKey: LayoutValueKey {
+private nonisolated struct CompactRowKey: LayoutValueKey {
     static let defaultValue: CompactRow = .second
 }
 
